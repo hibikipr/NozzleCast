@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+<style>
+  body{margin:0}
+  @keyframes pulseDot{0%,100%{opacity:1}50%{opacity:0.35}}
+  @keyframes scanLine{0%{top:6%}50%{top:92%}100%{top:6%}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes popIn{0%{transform:scale(0.6);opacity:0}100%{transform:scale(1);opacity:1}}
+  input.nc-input{outline:none}
+  input.nc-input::placeholder{color:rgba(235,235,245,0.35)}
+</style>
+</helmet>
+<div style="min-height:100vh;background:radial-gradient(circle at 50% 0%,#232323,#0c0c0d 70%);display:flex;align-items:center;justify-content:center;padding:40px 0;font-family:-apple-system,'SF Pro Text',system-ui,sans-serif">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402px,874px">
+<div style="position:relative;width:100%;height:100%;background:#1a1a1a;overflow:hidden">
+
+<sc-if value="{{ showMonitor }}" hint-placeholder-val="{{ true }}">
+<div style="position:absolute;inset:0;overflow:auto;padding:64px 16px 110px;display:flex;flex-direction:column;gap:18px;box-sizing:border-box">
+  <div>
+    <div style="font-size:34px;font-weight:700;color:#fff;letter-spacing:0.2px">NoozleCast</div>
+    <div style="font-size:15px;color:rgba(235,235,245,0.6);margin-top:2px">{{ printingCount }} printing &middot; {{ printerCount }} printers</div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <sc-for list="{{ printers }}" as="p" hint-placeholder-count="3">
+      <div onClick="{{ p.onOpen }}" style="display:flex;gap:12px;padding:14px;border-radius:20px;background:rgba(45,45,45,0.55);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 20px rgba(0,0,0,0.35);cursor:pointer">
+        <div style="width:60px;height:60px;border-radius:14px;background:#111;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative">
+          <sc-if value="{{ p.state === 'printing' }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;background:linear-gradient(160deg,#161616,#050505);display:flex;align-items:center;justify-content:center">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="opacity:0.5"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" stroke="#c9c9c9" stroke-width="1.4"/><circle cx="12" cy="13" r="3.4" stroke="#c9c9c9" stroke-width="1.4"/></svg>
+            </div>
+            <div style="position:absolute;top:4px;left:4px;display:flex;align-items:center;gap:3px;padding:2px 5px;border-radius:99px;background:rgba(0,0,0,0.55)">
+              <div style="width:5px;height:5px;border-radius:99px;background:#22c55e;animation:pulseDot 1.6s ease-in-out infinite"></div>
+              <span style="font-size:7px;font-weight:700;color:#fff;letter-spacing:0.3px">LIVE</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ p.state !== 'printing' }}" hint-placeholder-val="{{ true }}">
+            <img src="{{ p.image }}" alt="" style="width:82%;height:82%;object-fit:contain"/>
+          </sc-if>
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;justify-content:center">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+            <div style="font-size:16px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</div>
+            <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+              <div style="width:7px;height:7px;border-radius:99px;background:{{ p.dotColor }};animation:{{ p.pulseAnim }}"></div>
+              <span style="font-size:12px;color:rgba(235,235,245,0.6);font-weight:500">{{ p.statusLabel }}</span>
+            </div>
+          </div>
+          <sc-if value="{{ p.state === 'printing' }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:12.5px;color:rgba(235,235,245,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.job }}</div>
+              <div style="height:5px;border-radius:99px;background:rgba(255,255,255,0.1);overflow:hidden">
+                <div style="height:100%;border-radius:99px;background:#2a5fcc;width:{{ p.progress }}%"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between">
+                <span style="font-size:11px;color:rgba(235,235,245,0.45)">{{ p.progress }}%</span>
+                <span style="font-size:11px;color:rgba(235,235,245,0.45)">{{ p.eta }} left</span>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ p.state !== 'printing' }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;gap:6px">
+              <sc-for list="{{ p.amsSlots }}" as="slot" hint-placeholder-count="4">
+                <div style="width:15px;height:15px;border-radius:99px;background:{{ slot.dotBg }};border:1px solid rgba(255,255,255,0.15)"></div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+        <svg width="8" height="14" viewBox="0 0 8 14" style="flex-shrink:0;align-self:center"><path d="M1 1l6 6-6 6" stroke="rgba(235,235,245,0.3)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showInventory }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;overflow:auto;padding:64px 16px 110px;box-sizing:border-box">
+  <div>
+    <div style="font-size:34px;font-weight:700;color:#fff">Filament</div>
+    <div style="font-size:15px;color:rgba(235,235,245,0.6);margin-top:2px">{{ spoolCount }} spools &middot; {{ totalGrams }} g on hand</div>
+  </div>
+  <div style="display:flex;gap:8px;overflow-x:auto;padding:16px 0 4px">
+    <sc-for list="{{ invFilters }}" as="f" hint-placeholder-count="5">
+      <div onClick="{{ f.onClick }}" style="flex-shrink:0;padding:7px 14px;border-radius:99px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;background:{{ f.bg }};color:{{ f.color }};border:1px solid {{ f.border }}">{{ f.label }}</div>
+    </sc-for>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px">
+    <sc-for list="{{ filteredSpools }}" as="s" hint-placeholder-count="6">
+      <div style="border-radius:18px;overflow:hidden;background:rgba(45,45,45,0.55);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.08)">
+        <div style="height:60px;background:{{ s.color }};display:flex;align-items:flex-end;padding:6px 8px">
+          <span style="font-size:10.5px;font-weight:700;color:{{ s.labelColor }};text-shadow:{{ s.labelShadow }}">{{ s.material }}</span>
+        </div>
+        <div style="padding:8px 10px 10px;display:flex;flex-direction:column;gap:5px">
+          <div style="font-size:12.5px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.colorName }}</div>
+          <div style="font-size:10.5px;color:rgba(235,235,245,0.5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.brand }}</div>
+          <div style="height:3px;border-radius:99px;background:rgba(255,255,255,0.1);overflow:hidden;margin-top:2px">
+            <div style="height:100%;border-radius:99px;background:{{ s.color }};width:{{ s.remaining }}%"></div>
+          </div>
+          <div style="font-size:9.5px;color:rgba(235,235,245,0.4);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.location }}</div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+<div onClick="{{ goToScan }}" style="position:absolute;right:20px;bottom:104px;width:52px;height:52px;border-radius:99px;background:#2a5fcc;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(0,174,66,0.45);cursor:pointer;z-index:5">
+  <svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 2v16M2 10h16" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
+</div>
+</sc-if>
+
+<sc-if value="{{ showScan }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;background:#050505;overflow:hidden">
+
+  <sc-if value="{{ scanStep === 'capture' }}" hint-placeholder-val="{{ true }}">
+  <div style="position:absolute;inset:0;display:flex;flex-direction:column;box-sizing:border-box">
+    <div style="padding:64px 16px 0">
+      <div style="font-size:24px;font-weight:700;color:#fff">Scan Filament</div>
+      <div style="display:flex;gap:2px;margin-top:14px;background:rgba(120,120,128,0.24);border-radius:9px;padding:2px">
+        <div onClick="{{ setModeBarcode }}" style="flex:1;text-align:center;padding:6px 0;border-radius:7px;font-size:13px;font-weight:{{ barcodeTabWeight }};cursor:pointer;background:{{ barcodeTabBg }};color:{{ barcodeTabColor }};box-shadow:{{ barcodeTabShadow }}">Barcode</div>
+        <div onClick="{{ setModeLabel }}" style="flex:1;text-align:center;padding:6px 0;border-radius:7px;font-size:13px;font-weight:{{ labelTabWeight }};cursor:pointer;background:{{ labelTabBg }};color:{{ labelTabColor }};box-shadow:{{ labelTabShadow }}">Label Photo</div>
+      </div>
+    </div>
+    <div style="flex:1;position:relative;margin:16px;border-radius:24px;overflow:hidden;background:linear-gradient(180deg,#141414,#050505)">
+      <div style="position:absolute;left:26px;right:26px;height:2px;background:#4f7fe0;box-shadow:0 0 12px 2px rgba(79,127,224,0.7);animation:scanLine 2.4s ease-in-out infinite"></div>
+      <div style="position:absolute;top:24px;left:24px;width:26px;height:26px;border-top:3px solid rgba(255,255,255,0.6);border-left:3px solid rgba(255,255,255,0.6);border-radius:6px 0 0 0"></div>
+      <div style="position:absolute;top:24px;right:24px;width:26px;height:26px;border-top:3px solid rgba(255,255,255,0.6);border-right:3px solid rgba(255,255,255,0.6);border-radius:0 6px 0 0"></div>
+      <div style="position:absolute;bottom:24px;left:24px;width:26px;height:26px;border-bottom:3px solid rgba(255,255,255,0.6);border-left:3px solid rgba(255,255,255,0.6);border-radius:0 0 0 6px"></div>
+      <div style="position:absolute;bottom:24px;right:24px;width:26px;height:26px;border-bottom:3px solid rgba(255,255,255,0.6);border-right:3px solid rgba(255,255,255,0.6);border-radius:0 0 6px 0"></div>
+      <div style="position:absolute;left:0;right:0;bottom:14px;text-align:center;font-size:13px;color:rgba(255,255,255,0.55)">{{ scanHint }}</div>
+    </div>
+    <div style="padding:8px 20px 130px;display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div onClick="{{ startCapture }}" style="width:72px;height:72px;border-radius:99px;border:4px solid rgba(255,255,255,0.85);display:flex;align-items:center;justify-content:center;cursor:pointer">
+        <div style="width:58px;height:58px;border-radius:99px;background:#fff"></div>
+      </div>
+      <span style="font-size:13px;color:rgba(235,235,245,0.5)">or enter code manually</span>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ scanStep === 'loading' }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:32px 40px;border-radius:22px;background:rgba(45,45,45,0.7);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08)">
+      <div style="width:34px;height:34px;border-radius:99px;border:3px solid rgba(255,255,255,0.15);border-top-color:#2a5fcc;animation:spin 0.8s linear infinite"></div>
+      <span style="font-size:14px;color:#fff;font-weight:500">Looking up filament&hellip;</span>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ scanStep === 'review' }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;inset:0;overflow:auto;padding:64px 20px 24px;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+    <div style="font-size:24px;font-weight:700;color:#fff">Review Details</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="width:44px;height:44px;border-radius:12px;background:{{ scanForm.color }};border:1px solid rgba(255,255,255,0.15)"></div>
+      <div style="font-size:13px;color:rgba(235,235,245,0.5)">Also matches: {{ scanMatch }}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <div style="font-size:12px;color:rgba(235,235,245,0.5);margin-bottom:6px">Brand</div>
+        <input class="nc-input" value="{{ scanForm.brand }}" onChange="{{ setBrand }}" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;font-size:15px;color:#fff"/>
+      </div>
+      <div>
+        <div style="font-size:12px;color:rgba(235,235,245,0.5);margin-bottom:6px">Material</div>
+        <input class="nc-input" value="{{ scanForm.material }}" onChange="{{ setMaterial }}" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;font-size:15px;color:#fff"/>
+      </div>
+      <div>
+        <div style="font-size:12px;color:rgba(235,235,245,0.5);margin-bottom:6px">Color name</div>
+        <input class="nc-input" value="{{ scanForm.colorName }}" onChange="{{ setColorName }}" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;font-size:15px;color:#fff"/>
+      </div>
+      <div>
+        <div style="font-size:12px;color:rgba(235,235,245,0.5);margin-bottom:6px">Net weight (g)</div>
+        <input class="nc-input" value="{{ scanForm.weight }}" onChange="{{ setWeight }}" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;font-size:15px;color:#fff"/>
+      </div>
+    </div>
+    <div onClick="{{ confirmAdd }}" style="margin-top:8px;padding:15px;border-radius:14px;background:#2a5fcc;text-align:center;font-size:15px;font-weight:700;color:#fff;cursor:pointer">Add to Inventory</div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ scanStep === 'done' }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:0 24px;box-sizing:border-box">
+    <div style="width:64px;height:64px;border-radius:99px;background:rgba(42,95,204,0.15);display:flex;align-items:center;justify-content:center;animation:popIn 0.35s ease-out">
+      <svg width="30" height="24" viewBox="0 0 30 24"><path d="M2 12l9 9L28 2" stroke="#4f7fe0" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div style="font-size:20px;font-weight:700;color:#fff">Added to Inventory</div>
+    <div style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;background:rgba(45,45,45,0.6);border:1px solid rgba(255,255,255,0.08)">
+      <div style="width:30px;height:30px;border-radius:8px;background:{{ scanForm.color }};flex-shrink:0"></div>
+      <div style="font-size:13.5px;color:#fff;font-weight:600">{{ scanForm.material }} &middot; {{ scanForm.colorName }}</div>
+    </div>
+    <div onClick="{{ startAssignFromScan }}" style="width:100%;padding:15px;border-radius:14px;background:#2a5fcc;text-align:center;font-size:15px;font-weight:700;color:#fff;cursor:pointer;box-sizing:border-box">Assign to a Printer</div>
+    <div onClick="{{ finishScan }}" style="width:100%;padding:15px;border-radius:14px;background:rgba(255,255,255,0.08);text-align:center;font-size:15px;font-weight:600;color:#fff;cursor:pointer;box-sizing:border-box">Done</div>
+  </div>
+  </sc-if>
+
+</div>
+</sc-if>
+
+<sc-if value="{{ showSettings }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;overflow:auto;padding:64px 16px 110px;box-sizing:border-box;display:flex;flex-direction:column;gap:22px">
+  <div style="font-size:34px;font-weight:700;color:#fff">Settings</div>
+
+  <div>
+    <div style="font-size:13px;font-weight:400;color:rgba(235,235,245,0.6);margin-bottom:6px;padding-left:20px">BAMBUDDY SERVER</div>
+    <div style="border-radius:10px;background:#1c1c1e;overflow:hidden">
+      <div style="display:flex;align-items:center;min-height:44px;padding:0 16px;border-bottom:0.5px solid rgba(84,84,88,0.55)"><span style="flex:1;font-size:15px;color:#fff">Server</span><span style="font-size:15px;color:rgba(235,235,245,0.55)">bambuddy.local:8000</span></div>
+      <div style="display:flex;align-items:center;min-height:44px;padding:0 16px;border-bottom:0.5px solid rgba(84,84,88,0.55)"><span style="flex:1;font-size:15px;color:#fff">API Key</span><span style="font-size:15px;color:rgba(235,235,245,0.55);letter-spacing:1.5px">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;3f2c</span></div>
+      <div style="display:flex;align-items:center;min-height:44px;padding:0 16px">
+        <span style="flex:1;font-size:15px;color:#fff">Status</span>
+        <div style="display:flex;align-items:center;gap:5px"><div style="width:6px;height:6px;border-radius:99px;background:#22c55e"></div><span style="font-size:15px;color:rgba(235,235,245,0.55)">Connected</span></div>
+      </div>
+    </div>
+    <div style="font-size:13px;color:rgba(235,235,245,0.4);margin-top:6px;padding-left:20px">Manage Inventory, Read Status permissions granted.</div>
+  </div>
+
+  <div>
+    <div style="font-size:13px;font-weight:400;color:rgba(235,235,245,0.6);margin-bottom:6px;padding-left:20px">PRINTERS</div>
+    <div style="border-radius:10px;background:#1c1c1e;overflow:hidden">
+      <sc-for list="{{ printers }}" as="p" hint-placeholder-count="3">
+        <div onClick="{{ p.onOpen }}" style="display:flex;align-items:center;gap:12px;min-height:52px;padding:6px 16px;cursor:pointer;position:relative">
+          <div style="width:30px;height:30px;border-radius:7px;background:#111;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0"><img src="{{ p.image }}" alt="" style="width:80%;height:80%;object-fit:contain"/></div>
+          <div style="flex:1;font-size:15px;color:#fff">{{ p.name }}</div>
+          <span style="font-size:15px;color:rgba(235,235,245,0.4);margin-right:2px">{{ p.model }}</span>
+          <svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" stroke="rgba(235,235,245,0.3)" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="position:absolute;bottom:0;left:58px;right:0;height:0.5px;background:rgba(84,84,88,0.55)"></div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:6px">
+    <img src="assets/icons/app-icon.png" alt="" style="width:64px;height:64px;border-radius:16px;box-shadow:0 6px 16px rgba(0,0,0,0.4)"/>
+    <div style="font-size:13px;color:rgba(235,235,245,0.4)">NoozleCast 1.0.0</div>
+    <div style="font-size:12px;color:rgba(235,235,245,0.3)">Local-first control for your farm.</div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showDetail }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;background:#1a1a1a;overflow:auto;z-index:30">
+  <div style="position:relative;height:250px;background:linear-gradient(160deg,#0d0d0d,#1f1f1f);overflow:hidden;flex-shrink:0">
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0.3">
+      <svg width="66" height="66" viewBox="0 0 24 24" fill="none"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" stroke="#808080" stroke-width="1.4"/><circle cx="12" cy="13" r="3.4" stroke="#808080" stroke-width="1.4"/></svg>
+    </div>
+    <div style="position:absolute;top:60px;left:16px;display:flex;align-items:center;gap:6px;padding:5px 10px 5px 8px;border-radius:99px;background:rgba(0,0,0,0.45);backdrop-filter:blur(10px)">
+      <div style="width:7px;height:7px;border-radius:99px;background:{{ detailPrinter.liveColor }};animation:{{ detailPrinter.livePulse }}"></div>
+      <span style="font-size:11px;font-weight:700;color:#fff;letter-spacing:0.5px">{{ detailPrinter.liveLabel }}</span>
+    </div>
+    <div style="position:absolute;top:60px;left:0;right:0;display:flex;justify-content:space-between;padding:0 16px">
+      <div onClick="{{ closeScreen }}" style="width:36px;height:36px;border-radius:99px;background:rgba(0,0,0,0.45);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;cursor:pointer">
+        <svg width="11" height="18" viewBox="0 0 11 18"><path d="M9 1L1 9l8 8" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div style="width:36px;height:36px;border-radius:99px;background:rgba(0,0,0,0.45);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center">
+        <svg width="20" height="5" viewBox="0 0 20 5"><circle cx="2.5" cy="2.5" r="2.2" fill="#fff"/><circle cx="10" cy="2.5" r="2.2" fill="#fff"/><circle cx="17.5" cy="2.5" r="2.2" fill="#fff"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:18px 16px 130px;display:flex;flex-direction:column;gap:20px">
+    <div>
+      <div style="font-size:24px;font-weight:700;color:#fff">{{ detailPrinter.name }}</div>
+      <div style="font-size:13px;color:rgba(235,235,245,0.5);margin-top:2px">{{ detailPrinter.model }} &middot; {{ detailPrinter.statusLabel }}</div>
+    </div>
+
+    <sc-if value="{{ detailPrinter.showJob }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:16px;border-radius:18px;background:rgba(45,45,45,0.55);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <span style="font-size:14px;color:#fff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">{{ detailPrinter.job }}</span>
+          <span style="font-size:14px;color:#fff;font-weight:700">{{ detailPrinter.progress }}%</span>
+        </div>
+        <div style="height:7px;border-radius:99px;background:rgba(255,255,255,0.1);overflow:hidden">
+          <div style="height:100%;border-radius:99px;background:#2a5fcc;width:{{ detailPrinter.progress }}%"></div>
+        </div>
+        <div style="font-size:12px;color:rgba(235,235,245,0.5)">{{ detailPrinter.eta }} remaining</div>
+      </div>
+    </sc-if>
+
+    <div style="display:flex;justify-content:space-around;padding:4px 0">
+      <div onClick="{{ detailPrinter.onTogglePause }}" style="display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
+        <div style="width:52px;height:52px;border-radius:99px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center">
+          <sc-if value="{{ detailPrinter.state === 'printing' }}" hint-placeholder-val="{{ true }}">
+            <svg width="16" height="18" viewBox="0 0 16 18"><rect width="5" height="18" rx="1.5" fill="#fff"/><rect x="11" width="5" height="18" rx="1.5" fill="#fff"/></svg>
+          </sc-if>
+          <sc-if value="{{ detailPrinter.state !== 'printing' }}" hint-placeholder-val="{{ false }}">
+            <svg width="16" height="18" viewBox="0 0 16 18"><path d="M0 1v16l16-8z" fill="#fff"/></svg>
+          </sc-if>
+        </div>
+        <span style="font-size:11px;color:rgba(235,235,245,0.6)">{{ detailPrinter.pauseLabel }}</span>
+      </div>
+      <div onClick="{{ detailPrinter.onStop }}" style="display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
+        <div style="width:52px;height:52px;border-radius:99px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center">
+          <svg width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="#fff"/></svg>
+        </div>
+        <span style="font-size:11px;color:rgba(235,235,245,0.6)">Stop</span>
+      </div>
+      <div onClick="{{ detailPrinter.onToggleLight }}" style="display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
+        <div style="width:52px;height:52px;border-radius:99px;background:{{ detailPrinter.lightBg }};border:{{ detailPrinter.lightBorder }};display:flex;align-items:center;justify-content:center">
+          <svg width="16" height="20" viewBox="0 0 16 20"><path d="M8 1a6 6 0 0 0-3 11.2V15h6v-2.8A6 6 0 0 0 8 1z" fill="none" stroke="{{ detailPrinter.lightIconColor }}" stroke-width="1.5"/><rect x="5.5" y="16" width="5" height="2.5" rx="1" fill="{{ detailPrinter.lightIconColor }}"/></svg>
+        </div>
+        <span style="font-size:11px;color:rgba(235,235,245,0.6)">Light</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer">
+        <div style="width:52px;height:52px;border-radius:99px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center">
+          <svg width="22" height="5" viewBox="0 0 22 5"><circle cx="2.5" cy="2.5" r="2.2" fill="#fff"/><circle cx="11" cy="2.5" r="2.2" fill="#fff"/><circle cx="19.5" cy="2.5" r="2.2" fill="#fff"/></svg>
+        </div>
+        <span style="font-size:11px;color:rgba(235,235,245,0.6)">More</span>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:13px;font-weight:600;color:rgba(235,235,245,0.6);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px">Temperatures</div>
+      <div style="display:flex;gap:10px">
+        <div style="flex:1;padding:12px;border-radius:14px;background:rgba(45,45,45,0.55);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:6px;align-items:center">
+          <img src="assets/icons/hotend.svg" style="width:18px;height:18px;opacity:0.8" alt=""/>
+          <span style="font-size:14px;color:#fff;font-weight:600">{{ detailPrinter.nozzleTemp }}&deg;<span style="color:rgba(235,235,245,0.4);font-weight:400">/{{ detailPrinter.nozzleTarget }}&deg;</span></span>
+          <span style="font-size:10.5px;color:rgba(235,235,245,0.4)">Nozzle</span>
+        </div>
+        <div style="flex:1;padding:12px;border-radius:14px;background:rgba(45,45,45,0.55);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:6px;align-items:center">
+          <img src="assets/icons/heatbed.svg" style="width:18px;height:18px;opacity:0.8" alt=""/>
+          <span style="font-size:14px;color:#fff;font-weight:600">{{ detailPrinter.bedTemp }}&deg;<span style="color:rgba(235,235,245,0.4);font-weight:400">/{{ detailPrinter.bedTarget }}&deg;</span></span>
+          <span style="font-size:10.5px;color:rgba(235,235,245,0.4)">Bed</span>
+        </div>
+        <sc-if value="{{ detailPrinter.chamberTemp !== null }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;padding:12px;border-radius:14px;background:rgba(45,45,45,0.55);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:6px;align-items:center">
+            <img src="assets/icons/chamber.svg" style="width:18px;height:18px;opacity:0.8" alt=""/>
+            <span style="font-size:14px;color:#fff;font-weight:600">{{ detailPrinter.chamberTemp }}&deg;</span>
+            <span style="font-size:10.5px;color:rgba(235,235,245,0.4)">Chamber</span>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:13px;font-weight:600;color:rgba(235,235,245,0.6);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px">AMS Filament</div>
+      <div style="display:flex;gap:8px">
+        <sc-for list="{{ detailPrinter.amsSlots }}" as="slot" hint-placeholder-count="4">
+          <div onClick="{{ slot.onClick }}" style="flex:1;border-radius:14px;overflow:hidden;border:{{ slot.border }};background:#141414;cursor:pointer">
+            <div style="height:50px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:{{ slot.textColor }};background:{{ slot.swatchBg }}">{{ slot.topLabel }}</div>
+            <div style="padding:6px 4px;font-size:9px;color:rgba(235,235,245,0.5);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ slot.bottomLabel }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showTabBar }}" hint-placeholder-val="{{ true }}">
+<div style="position:absolute;left:0;right:0;bottom:0;padding-bottom:20px;height:83px;background:rgba(22,22,24,0.78);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border-top:0.5px solid rgba(255,255,255,0.15);display:flex;align-items:flex-start;padding-top:8px;justify-content:space-around;z-index:20;box-sizing:border-box">
+  <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+    <div onClick="{{ t.onClick }}" style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;flex:1">
+      <div style="width:25px;height:25px;color:{{ t.color }}" data-icon="{{ t.key }}">
+        <sc-if value="{{ t.key === 'monitor' }}" hint-placeholder-val="{{ true }}"><svg width="25" height="25" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="8" height="8" rx="2" stroke="{{ t.color }}" stroke-width="1.6"/><rect x="13" y="3" width="8" height="8" rx="2" stroke="{{ t.color }}" stroke-width="1.6"/><rect x="3" y="13" width="8" height="8" rx="2" stroke="{{ t.color }}" stroke-width="1.6"/><rect x="13" y="13" width="8" height="8" rx="2" stroke="{{ t.color }}" stroke-width="1.6"/></svg></sc-if>
+        <sc-if value="{{ t.key === 'inventory' }}" hint-placeholder-val="{{ false }}"><svg width="25" height="25" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="6" stroke="{{ t.color }}" stroke-width="1.6"/><path d="M6 14v6M18 14v6M9 8h6" stroke="{{ t.color }}" stroke-width="1.6" stroke-linecap="round"/></svg></sc-if>
+        <sc-if value="{{ t.key === 'scan' }}" hint-placeholder-val="{{ false }}"><svg width="25" height="25" viewBox="0 0 24 24" fill="none"><path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 1-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3" stroke="{{ t.color }}" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="12" r="3.4" stroke="{{ t.color }}" stroke-width="1.6"/></svg></sc-if>
+        <sc-if value="{{ t.key === 'settings' }}" hint-placeholder-val="{{ false }}"><svg width="25" height="25" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="{{ t.color }}" stroke-width="1.6"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="{{ t.color }}" stroke-width="1.6" stroke-linecap="round"/></svg></sc-if>
+      </div>
+      <span style="font-size:10px;font-weight:500;color:{{ t.color }}">{{ t.label }}</span>
+    </div>
+  </sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ amsSheet }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;z-index:50">
+  <div onClick="{{ closeAms }}" style="position:absolute;inset:0;background:rgba(0,0,0,0.6)"></div>
+  <div style="position:absolute;left:0;right:0;bottom:0;max-height:78%;background:#212121;border-radius:24px 24px 0 0;border:1px solid rgba(255,255,255,0.08);box-shadow:0 -10px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:center;padding:10px 0 4px"><div style="width:36px;height:5px;border-radius:99px;background:rgba(255,255,255,0.2)"></div></div>
+    <div style="padding:6px 20px 14px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid rgba(255,255,255,0.08)">
+      <div style="font-size:17px;font-weight:700;color:#fff">{{ amsSheet.title }}</div>
+      <sc-if value="{{ amsSheet.occupant }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:22px;height:22px;border-radius:6px;background:{{ amsSheet.occupant.color }}"></div>
+          <span style="font-size:13px;color:rgba(235,235,245,0.7)">{{ amsSheet.occupant.material }} &middot; {{ amsSheet.occupant.colorName }}</span>
+          <span onClick="{{ removeSpool }}" style="margin-left:auto;font-size:13px;color:#ef4444;cursor:pointer">Remove</span>
+        </div>
+      </sc-if>
+      <sc-if value="{{ !amsSheet.occupant }}" hint-placeholder-val="{{ true }}">
+        <div style="font-size:13px;color:rgba(235,235,245,0.45)">Empty slot &mdash; assign a spool from inventory</div>
+      </sc-if>
+    </div>
+    <div style="overflow:auto;padding:8px 12px 28px;display:flex;flex-direction:column;gap:8px">
+      <sc-for list="{{ amsCandidates }}" as="s" hint-placeholder-count="4">
+        <div onClick="{{ s.onAssign }}" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:14px;background:rgba(255,255,255,0.05);cursor:pointer">
+          <div style="width:34px;height:34px;border-radius:8px;background:{{ s.color }};flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;color:#fff;font-weight:600">{{ s.material }} &middot; {{ s.colorName }}</div>
+            <div style="font-size:11.5px;color:rgba(235,235,245,0.5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.brand }} &middot; {{ s.location }}</div>
+          </div>
+          <div style="font-size:12px;color:rgba(235,235,245,0.5);font-weight:600;flex-shrink:0">{{ s.remaining }}%</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ assignPicker }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;z-index:55">
+  <div onClick="{{ closeAssignPicker }}" style="position:absolute;inset:0;background:rgba(0,0,0,0.6)"></div>
+  <div style="position:absolute;left:0;right:0;bottom:0;max-height:78%;background:#212121;border-radius:24px 24px 0 0;border:1px solid rgba(255,255,255,0.08);box-shadow:0 -10px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:center;padding:10px 0 4px"><div style="width:36px;height:5px;border-radius:99px;background:rgba(255,255,255,0.2)"></div></div>
+    <div style="padding:6px 20px 14px;font-size:17px;font-weight:700;color:#fff;border-bottom:1px solid rgba(255,255,255,0.08)">{{ assignPickerTitle }}</div>
+
+    <sc-if value="{{ assignPicker.step === 'printer' }}" hint-placeholder-val="{{ true }}">
+      <div style="overflow:auto;padding:8px 12px 28px;display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ pickerPrinters }}" as="p" hint-placeholder-count="3">
+          <div onClick="{{ p.onPick }}" style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:14px;background:rgba(255,255,255,0.05);cursor:pointer">
+            <div style="width:36px;height:36px;border-radius:9px;background:#111;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0"><img src="{{ p.image }}" alt="" style="width:80%;height:80%;object-fit:contain"/></div>
+            <div style="font-size:15px;color:#fff;font-weight:600">{{ p.name }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ assignPicker.step === 'slot' }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px 20px 28px;display:flex;gap:8px">
+        <sc-for list="{{ pickerSlots }}" as="slot" hint-placeholder-count="4">
+          <div onClick="{{ slot.onClick }}" style="flex:1;border-radius:14px;overflow:hidden;border:{{ slot.border }};background:#141414;cursor:pointer">
+            <div style="height:50px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:{{ slot.textColor }};background:{{ slot.swatchBg }}">{{ slot.topLabel }}</div>
+            <div style="padding:6px 4px;font-size:9px;color:rgba(235,235,245,0.5);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ slot.bottomLabel }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+</div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    tab: 'monitor',
+    screen: null,
+    amsSheet: null,
+    assignPicker: null,
+    invFilter: 'all',
+    scanStep: 'capture',
+    scanMode: 'barcode',
+    scanForm: { material: 'PLA', brand: 'Prusament', colorName: 'Galaxy Silver', color: '#b8bcc2', weight: 1000 },
+    notifPush: true,
+    printers: [
+      { id: 1, name: 'Workshop X1C', model: 'X1 Carbon', image: 'assets/printers/x1c.png', state: 'printing', job: 'Articulated_Dragon_v2.3mf', progress: 64, eta: '1h 12m', nozzleTemp: 238, nozzleTarget: 240, bedTemp: 59, bedTarget: 60, chamberTemp: 38, lightOn: true, amsSlotIds: [1, 2, 3, null] },
+      { id: 2, name: 'Garage A1', model: 'A1', image: 'assets/printers/a1.png', state: 'idle', job: null, progress: 0, eta: null, nozzleTemp: 24, nozzleTarget: 0, bedTemp: 23, bedTarget: 0, chamberTemp: null, lightOn: false, amsSlotIds: [4, null, null, null] },
+      { id: 3, name: 'Office P1S', model: 'P1S', image: 'assets/printers/p1s.png', state: 'paused', job: 'Case_Lid_v3.3mf', progress: 41, eta: '—', nozzleTemp: 210, nozzleTarget: 230, bedTemp: 55, bedTarget: 60, chamberTemp: 41, lightOn: true, amsSlotIds: [7, null, 8, null] },
+    ],
+    spools: [
+      { id: 1, material: 'PLA', brand: 'Bambu Lab', colorName: 'Sunset Orange', color: '#e8552e', remaining: 72, weight: 720 },
+      { id: 2, material: 'PLA', brand: 'Bambu Lab', colorName: 'Onyx Black', color: '#17181a', remaining: 31, weight: 310 },
+      { id: 3, material: 'PETG', brand: 'Polymaker', colorName: 'Cobalt Blue', color: '#2e6be8', remaining: 88, weight: 880 },
+      { id: 4, material: 'PLA', brand: 'eSun', colorName: 'Amber Gold', color: '#d4a017', remaining: 100, weight: 1000 },
+      { id: 5, material: 'ABS', brand: 'Bambu Lab', colorName: 'Cloud White', color: '#f2f2f0', remaining: 54, weight: 540 },
+      { id: 6, material: 'TPU', brand: 'Overture', colorName: 'Forest Green', color: '#1f8f5a', remaining: 18, weight: 180 },
+      { id: 7, material: 'PLA', brand: 'Bambu Lab', colorName: 'Racing Red', color: '#c62828', remaining: 65, weight: 650 },
+      { id: 8, material: 'PETG', brand: 'Prusament', colorName: 'Amethyst', color: '#8b5cf6', remaining: 8, weight: 80 },
+    ],
+    nextSpoolId: 9,
+  };
+
+  isLight(hex) {
+    const c = (hex || '').replace('#', '');
+    if (c.length < 6) return false;
+    const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 165;
+  }
+
+  statusMeta(state) {
+    const map = {
+      printing: { label: 'Printing', dot: '#22c55e', pulse: 'pulseDot 1.6s ease-in-out infinite' },
+      paused: { label: 'Paused', dot: '#f59e0b', pulse: 'none' },
+      idle: { label: 'Idle', dot: '#6b6b6b', pulse: 'none' },
+      error: { label: 'Error', dot: '#ef4444', pulse: 'none' },
+      offline: { label: 'Offline', dot: '#4a4a4a', pulse: 'none' },
+    };
+    return map[state] || map.idle;
+  }
+
+  findSpool(id) { return this.state.spools.find(s => s.id === id) || null; }
+
+  spoolLocation(id) {
+    for (const p of this.state.printers) {
+      const idx = p.amsSlotIds.indexOf(id);
+      if (idx !== -1) return `${p.name} \u00b7 Slot ${idx + 1}`;
+    }
+    return 'In storage';
+  }
+
+  buildAmsSlots(printer, onSlotClick) {
+    return printer.amsSlotIds.map((spoolId, i) => {
+      const active = spoolId != null;
+      const spool = active ? this.findSpool(spoolId) : null;
+      const onClick = () => onSlotClick(printer.id, i);
+      if (!active || !spool) {
+        return {
+          index: i, onClick, dotBg: 'rgba(255,255,255,0.08)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          swatchBg: 'repeating-linear-gradient(45deg,#2a2a2a,#2a2a2a 3px,#1c1c1c 3px,#1c1c1c 6px)',
+          textColor: 'rgba(235,235,245,0.4)', topLabel: 'Empty', bottomLabel: `Slot ${i + 1}`,
+        };
+      }
+      const light = this.isLight(spool.color);
+      return {
+        index: i, onClick, dotBg: spool.color,
+        border: '1px solid rgba(255,255,255,0.12)', swatchBg: spool.color,
+        textColor: light ? 'rgba(0,0,0,0.75)' : '#fff', topLabel: spool.material, bottomLabel: spool.colorName,
+      };
+    });
+  }
+
+  setTab(key) { this.setState({ tab: key, screen: null }); if (key === 'scan') this.resetScan(); }
+  openPrinter(id) { this.setState({ screen: { type: 'printer', id } }); }
+  closeScreen() { this.setState({ screen: null }); }
+  openAms(printerId, slotIndex) { this.setState({ amsSheet: { printerId, slotIndex } }); }
+  closeAms() { this.setState({ amsSheet: null }); }
+
+  assignSpool(spoolId, printerId, slotIndex) {
+    const printers = this.state.printers.map(p => {
+      if (p.id !== printerId) {
+        const cleaned = p.amsSlotIds.map(id => (id === spoolId ? null : id));
+        return { ...p, amsSlotIds: cleaned };
+      }
+      const slots = p.amsSlotIds.map((id, i) => (i === slotIndex ? spoolId : (id === spoolId ? null : id)));
+      return { ...p, amsSlotIds: slots };
+    });
+    this.setState({ printers });
+  }
+
+  removeSpool() {
+    if (!this.state.amsSheet) return;
+    const { printerId, slotIndex } = this.state.amsSheet;
+    const printers = this.state.printers.map(p => p.id !== printerId ? p : { ...p, amsSlotIds: p.amsSlotIds.map((id, i) => i === slotIndex ? null : id) });
+    this.setState({ printers, amsSheet: null });
+  }
+
+  togglePause(printerId) {
+    const printers = this.state.printers.map(p => {
+      if (p.id !== printerId) return p;
+      if (p.state === 'printing') return { ...p, state: 'paused' };
+      if (p.state === 'paused') return { ...p, state: 'printing' };
+      return { ...p, state: 'printing', job: p.job || 'New_Print.3mf', progress: p.progress || 1 };
+    });
+    this.setState({ printers });
+  }
+  stopPrint(printerId) {
+    const printers = this.state.printers.map(p => p.id !== printerId ? p : { ...p, state: 'idle', job: null, progress: 0, eta: null });
+    this.setState({ printers });
+  }
+  toggleLight(printerId) {
+    const printers = this.state.printers.map(p => p.id !== printerId ? p : { ...p, lightOn: !p.lightOn });
+    this.setState({ printers });
+  }
+
+  setInvFilter(key) { this.setState({ invFilter: key }); }
+  goToScan() { this.setTab('scan'); }
+  resetScan() { this.setState({ scanStep: 'capture' }); }
+  setModeBarcode() { this.setState({ scanMode: 'barcode' }); }
+  setModeLabel() { this.setState({ scanMode: 'label' }); }
+
+  startCapture() {
+    this.setState({ scanStep: 'loading' });
+    setTimeout(() => {
+      this.setState({
+        scanStep: 'review',
+        scanForm: { material: 'PLA', brand: 'Prusament', colorName: 'Galaxy Silver', color: '#b8bcc2', weight: 1000 },
+      });
+    }, 1000);
+  }
+
+  setBrand(e) { this.setState({ scanForm: { ...this.state.scanForm, brand: e.target.value } }); }
+  setMaterial(e) { this.setState({ scanForm: { ...this.state.scanForm, material: e.target.value } }); }
+  setColorName(e) { this.setState({ scanForm: { ...this.state.scanForm, colorName: e.target.value } }); }
+  setWeight(e) { this.setState({ scanForm: { ...this.state.scanForm, weight: e.target.value } }); }
+
+  confirmAdd() {
+    const id = this.state.nextSpoolId;
+    const f = this.state.scanForm;
+    const newSpool = { id, material: f.material, brand: f.brand, colorName: f.colorName, color: f.color, remaining: 100, weight: Number(f.weight) || 1000 };
+    this.setState({ spools: [...this.state.spools, newSpool], nextSpoolId: id + 1, scanStep: 'done', lastAddedId: id });
+  }
+
+  finishScan() { this.setState({ tab: 'inventory', screen: null }); this.resetScan(); }
+  startAssignFromScan() { this.setState({ assignPicker: { step: 'printer', spoolId: this.state.lastAddedId } }); }
+  closeAssignPicker() { this.setState({ assignPicker: null }); }
+  pickAssignPrinter(printerId) { this.setState({ assignPicker: { ...this.state.assignPicker, step: 'slot', printerId } }); }
+  pickAssignSlot(printerId, slotIndex) {
+    this.assignSpool(this.state.assignPicker.spoolId, printerId, slotIndex);
+    this.setState({ assignPicker: null, tab: 'inventory', screen: null });
+    this.resetScan();
+  }
+  toggleNotif() { this.setState({ notifPush: !this.state.notifPush }); }
+
+  renderVals() {
+    const s = this.state;
+    const printers = s.printers.map(p => {
+      const meta = this.statusMeta(p.state);
+      return {
+        ...p, statusLabel: meta.label, dotColor: meta.dot, pulseAnim: meta.pulse,
+        onOpen: () => this.openPrinter(p.id),
+        amsSlots: this.buildAmsSlots(p, (pid, idx) => this.openAms(pid, idx)),
+      };
+    });
+    const printingCount = printers.filter(p => p.state === 'printing').length;
+
+    let detailPrinter = null;
+    const showDetail = !!(s.screen && s.screen.type === 'printer');
+    if (showDetail) {
+      const base = printers.find(p => p.id === s.screen.id);
+      const meta = this.statusMeta(base.state);
+      const live = base.state === 'printing' || base.state === 'paused';
+      detailPrinter = {
+        ...base, statusLabel: meta.label,
+        showJob: base.state === 'printing' || base.state === 'paused',
+        pauseLabel: base.state === 'printing' ? 'Pause' : base.state === 'paused' ? 'Resume' : 'Start',
+        liveLabel: live ? 'LIVE' : 'OFFLINE',
+        liveColor: live ? '#22c55e' : '#6b6b6b',
+        livePulse: live ? 'pulseDot 1.6s ease-in-out infinite' : 'none',
+        lightBg: base.lightOn ? 'rgba(42,95,204,0.22)' : 'rgba(255,255,255,0.08)',
+        lightBorder: base.lightOn ? '1px solid rgba(79,127,224,0.5)' : '1px solid rgba(255,255,255,0.1)',
+        lightIconColor: base.lightOn ? '#4f7fe0' : '#fff',
+        onTogglePause: () => this.togglePause(base.id),
+        onStop: () => this.stopPrint(base.id),
+        onToggleLight: () => this.toggleLight(base.id),
+        amsSlots: this.buildAmsSlots(base, (pid, idx) => this.openAms(pid, idx)),
+      };
+    }
+
+    let amsSheetData = null, amsCandidates = [];
+    if (s.amsSheet) {
+      const p = s.printers.find(pp => pp.id === s.amsSheet.printerId);
+      const occId = p.amsSlotIds[s.amsSheet.slotIndex];
+      const occSpool = occId != null ? this.findSpool(occId) : null;
+      amsSheetData = { title: `${p.name} \u00b7 Slot ${s.amsSheet.slotIndex + 1}`, occupant: occSpool };
+      amsCandidates = s.spools.map(sp => ({
+        ...sp, location: this.spoolLocation(sp.id),
+        onAssign: () => { this.assignSpool(sp.id, p.id, s.amsSheet.slotIndex); this.setState({ amsSheet: null }); },
+      }));
+    }
+
+    let pickerPrinters = [], pickerSlots = [], assignPickerTitle = '';
+    if (s.assignPicker) {
+      if (s.assignPicker.step === 'printer') {
+        assignPickerTitle = 'Assign to which printer?';
+        pickerPrinters = s.printers.map(p => ({ ...p, onPick: () => this.pickAssignPrinter(p.id) }));
+      } else {
+        const p = s.printers.find(pp => pp.id === s.assignPicker.printerId);
+        assignPickerTitle = `${p.name} \u00b7 choose a slot`;
+        pickerSlots = this.buildAmsSlots(p, (pid, idx) => this.pickAssignSlot(pid, idx));
+      }
+    }
+
+    const spoolsView = s.spools.map(sp => {
+      const light = this.isLight(sp.color);
+      return { ...sp, location: this.spoolLocation(sp.id), labelColor: light ? 'rgba(0,0,0,0.75)' : '#fff', labelShadow: light ? 'none' : '0 1px 2px rgba(0,0,0,0.5)' };
+    });
+    const invFilters = [
+      { key: 'all', label: 'All' }, { key: 'in_ams', label: 'In AMS' }, { key: 'in_storage', label: 'In Storage' },
+      { key: 'PLA', label: 'PLA' }, { key: 'PETG', label: 'PETG' }, { key: 'ABS', label: 'ABS' }, { key: 'TPU', label: 'TPU' },
+    ].map(f => {
+      const active = s.invFilter === f.key;
+      return { ...f, onClick: () => this.setInvFilter(f.key), bg: active ? '#2a5fcc' : 'rgba(255,255,255,0.07)', color: active ? '#fff' : 'rgba(235,235,245,0.65)', border: active ? '#2a5fcc' : 'rgba(255,255,255,0.1)' };
+    });
+    const filteredSpools = spoolsView.filter(sp => {
+      if (s.invFilter === 'all') return true;
+      if (s.invFilter === 'in_ams') return sp.location !== 'In storage';
+      if (s.invFilter === 'in_storage') return sp.location === 'In storage';
+      return sp.material === s.invFilter;
+    });
+    const totalGrams = spoolsView.reduce((a, b) => a + b.weight, 0);
+
+    const tabs = ['monitor', 'inventory', 'scan', 'settings'].map(key => {
+      const active = s.tab === key && !s.screen;
+      const labels = { monitor: 'Monitor', inventory: 'Inventory', scan: 'Scan', settings: 'Settings' };
+      return { key, label: labels[key], onClick: () => this.setTab(key), color: active ? '#4f7fe0' : 'rgba(235,235,245,0.55)' };
+    });
+
+    return {
+      printers, printingCount, printerCount: printers.length,
+      showMonitor: s.tab === 'monitor' && !s.screen,
+      showInventory: s.tab === 'inventory' && !s.screen,
+      showScan: s.tab === 'scan' && !s.screen,
+      showSettings: s.tab === 'settings' && !s.screen,
+      showDetail, detailPrinter: detailPrinter || {},
+      showTabBar: !s.screen,
+      tabs,
+      amsSheet: amsSheetData, amsCandidates, closeAms: () => this.closeAms(), removeSpool: () => this.removeSpool(),
+      closeScreen: () => this.closeScreen(),
+      assignPicker: s.assignPicker, pickerPrinters, pickerSlots, assignPickerTitle, closeAssignPicker: () => this.closeAssignPicker(),
+      spoolCount: s.spools.length, totalGrams, invFilters, filteredSpools,
+      goToScan: () => this.goToScan(),
+      scanStep: s.scanStep, scanMode: s.scanMode,
+      scanHint: s.scanMode === 'barcode' ? 'Point at the box barcode' : 'Photograph the filament label',
+      barcodeTabBg: s.scanMode === 'barcode' ? '#6b6b70' : 'transparent', barcodeTabColor: s.scanMode === 'barcode' ? '#fff' : 'rgba(235,235,245,0.6)',
+      barcodeTabWeight: s.scanMode === 'barcode' ? 600 : 500, barcodeTabShadow: s.scanMode === 'barcode' ? '0 1px 3px rgba(0,0,0,0.4)' : 'none',
+      labelTabBg: s.scanMode === 'label' ? '#6b6b70' : 'transparent', labelTabColor: s.scanMode === 'label' ? '#fff' : 'rgba(235,235,245,0.6)',
+      labelTabWeight: s.scanMode === 'label' ? 600 : 500, labelTabShadow: s.scanMode === 'label' ? '0 1px 3px rgba(0,0,0,0.4)' : 'none',
+      setModeBarcode: () => this.setModeBarcode(), setModeLabel: () => this.setModeLabel(),
+      startCapture: () => this.startCapture(),
+      scanForm: s.scanForm, scanMatch: 'Prusament PLA 750g (refill spool)',
+      setBrand: (e) => this.setBrand(e), setMaterial: (e) => this.setMaterial(e), setColorName: (e) => this.setColorName(e), setWeight: (e) => this.setWeight(e),
+      confirmAdd: () => this.confirmAdd(), finishScan: () => this.finishScan(), startAssignFromScan: () => this.startAssignFromScan(),
+      notifPush: s.notifPush, notifBg: s.notifPush ? '#2a5fcc' : 'rgba(255,255,255,0.15)', notifKnobLeft: s.notifPush ? 22 : 2,
+      toggleNotif: () => this.toggleNotif(),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

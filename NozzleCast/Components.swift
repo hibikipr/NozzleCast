@@ -1,0 +1,199 @@
+import SwiftUI
+
+/// The 60px-swatch / caption card used for AMS slots on Detail, the AMS sheet, and the post-scan slot picker.
+struct AMSSlotCard: View {
+    var spool: Spool?
+    var slotIndex: Int
+    var isActive: Bool = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                if let spool {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(hex: spool.colorHex))
+                    Text(spool.material.rawValue)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black : .white)
+                        .padding(.horizontal, 4)
+                } else {
+                    StripePattern()
+                    Text("Empty")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(NCColor.textTertiary)
+                }
+            }
+            .frame(height: 50)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            Text(spool?.colorName ?? "Slot \(slotIndex + 1)")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(NCColor.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(6)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(NCColor.well)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(isActive ? NCColor.accent : Color.white.opacity(0.1), lineWidth: isActive ? 2 : 1)
+        )
+    }
+}
+
+/// 45°-stripe fill for empty AMS slot wells.
+struct StripePattern: View {
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(hex: "#2a2a2a")))
+            let stripeWidth: CGFloat = 8
+            let stripeColor = Color(hex: "#1c1c1c")
+            var x: CGFloat = -size.height
+            while x < size.width {
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                path.addLine(to: CGPoint(x: x + size.height + stripeWidth, y: 0))
+                path.addLine(to: CGPoint(x: x + stripeWidth, y: size.height))
+                path.closeSubpath()
+                context.fill(path, with: .color(stripeColor))
+                x += stripeWidth * 2
+            }
+        }
+    }
+}
+
+struct StatusDot: View {
+    var state: PrinterState
+    var size: CGFloat = 7
+
+    var body: some View {
+        Circle()
+            .fill(state.color)
+            .frame(width: size, height: size)
+            .modifier(PulseEffect(active: state.pulses))
+    }
+}
+
+struct PulseEffect: ViewModifier {
+    var active: Bool
+    @State private var animate = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                Circle()
+                    .stroke(NCColor.statusPrinting, lineWidth: 2)
+                    .scaleEffect(animate ? 2.2 : 1)
+                    .opacity(active ? (animate ? 0 : 0.6) : 0)
+            )
+            .onAppear {
+                guard active else { return }
+                withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) {
+                    animate = true
+                }
+            }
+    }
+}
+
+struct LiveBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(NCColor.statusPrinting)
+                .frame(width: 5, height: 5)
+                .modifier(PulseEffect(active: true))
+            Text("LIVE")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.black.opacity(0.55)))
+    }
+}
+
+struct FilterChip: View {
+    var title: String
+    var isActive: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isActive ? .white : NCColor.textSecondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule().fill(isActive ? NCColor.accent : Color.white.opacity(0.07))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct GlassIconButton: View {
+    var systemName: String
+    var size: CGFloat = 36
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size * 0.42, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(Circle().fill(.black.opacity(0.45)))
+                .background(Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct ControlButton: View {
+    var systemName: String
+    var label: String
+    var isActive: Bool = false
+    var isDestructiveHint: Bool = false
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: systemName)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(isActive ? NCColor.accentLight : .white)
+                    .frame(width: 52, height: 52)
+                    .background(
+                        Circle().fill(isActive ? NCColor.accent.opacity(0.22) : Color.white.opacity(0.08))
+                    )
+                    .overlay(
+                        Circle().strokeBorder(isActive ? NCColor.accent : Color.white.opacity(0.1), lineWidth: 1)
+                    )
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(NCColor.textSecondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct ProgressBar: View {
+    var progress: Double
+    var height: CGFloat = 5
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.12))
+                Capsule().fill(NCColor.accent)
+                    .frame(width: geo.size.width * max(0, min(1, progress)))
+            }
+        }
+        .frame(height: height)
+    }
+}
