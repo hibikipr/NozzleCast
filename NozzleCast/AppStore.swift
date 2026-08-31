@@ -124,7 +124,15 @@ final class AppStore {
     private static func assetName(forModel model: String) -> String? {
         let m = model.uppercased()
         if m.contains("X1C") || m.contains("X1 CARBON") { return "PrinterX1C" }
+        if m.contains("X1E") { return "PrinterX1E" }
         if m.contains("P1S") { return "PrinterP1S" }
+        if m.contains("P1P") { return "PrinterP1P" }
+        if m.contains("P2S") { return "PrinterP2S" }
+        if m.contains("H2C") { return "PrinterH2C" }
+        if m.contains("H2S") { return "PrinterH2S" }
+        if m.contains("H2D") { return "PrinterH2D" }
+        if m.contains("X2D") { return "PrinterX2D" }
+        if m.contains("A2L") { return "PrinterA2L" }
         if m == "A1" { return "PrinterA1" }
         return nil
     }
