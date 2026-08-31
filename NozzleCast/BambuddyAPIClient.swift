@@ -208,6 +208,10 @@ struct BambuddyAPIClient {
         ))
     }
 
+    func homeAxes(printerID: Int) async throws {
+        _ = try await send(request("/api/v1/printers/\(printerID)/home-axes", method: "POST"))
+    }
+
     // MARK: Camera
 
     private struct StreamTokenResponse: Decodable { var token: String }

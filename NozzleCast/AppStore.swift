@@ -289,6 +289,23 @@ final class AppStore {
         }
     }
 
+    func homeAxes(_ printerID: String) {
+        guard isLive, let client, let bbID = bambuddyID(printerID) else { return }
+        Task {
+            do {
+                try await client.homeAxes(printerID: bbID)
+            } catch {
+                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+    }
+
+    /// Deep link into Bambuddy's own web UI for this printer's live camera page.
+    func webCameraURL(printerID: String) -> URL? {
+        guard let serverURL = config.serverURL, let bbID = bambuddyID(printerID) else { return nil }
+        return serverURL.appendingPathComponent("camera/\(bbID)")
+    }
+
     // MARK: - AMS assignment
 
     func assign(spoolID: String, toPrinter printerID: String, amsIndex: Int, trayIndex: Int) {

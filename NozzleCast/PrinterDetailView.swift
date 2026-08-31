@@ -4,6 +4,7 @@ struct PrinterDetailView: View {
     var printerID: String
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var assignTray: AMSTray?
 
     private var printer: Printer? { store.printer(printerID) }
@@ -70,7 +71,16 @@ struct PrinterDetailView: View {
             HStack {
                 GlassIconButton(systemName: "chevron.left") { dismiss() }
                 Spacer()
-                GlassIconButton(systemName: "ellipsis") {}
+                Menu {
+                    moreMenuItems(printer)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(.black.opacity(0.45)))
+                        .background(Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
+                }
             }
             .padding(16)
         }
@@ -127,8 +137,47 @@ struct PrinterDetailView: View {
             ControlButton(systemName: "lightbulb.fill", label: "Light", isActive: printer.lightOn) {
                 store.toggleLight(printer.id)
             }
-            ControlButton(systemName: "ellipsis", label: "More") {}
+            Menu {
+                moreMenuItems(printer)
+            } label: {
+                VStack(spacing: 6) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 52, height: 52)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .overlay(Circle().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+                    Text("More")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NCColor.textSecondary)
+                }
+            }
             Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private func moreMenuItems(_ printer: Printer) -> some View {
+        Button {
+            Task { await store.refresh() }
+        } label: {
+            Label("Refresh Status", systemImage: "arrow.clockwise")
+        }
+
+        if store.isLive {
+            Button {
+                store.homeAxes(printer.id)
+            } label: {
+                Label("Home Axes", systemImage: "house")
+            }
+
+            if let url = store.webCameraURL(printerID: printer.id) {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label("Open Camera in Browser", systemImage: "safari")
+                }
+            }
         }
     }
 
