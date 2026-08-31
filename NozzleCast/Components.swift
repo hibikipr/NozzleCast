@@ -182,6 +182,25 @@ struct ControlButton: View {
     }
 }
 
+/// Printer product photo when a known asset exists, otherwise a generic glyph.
+struct PrinterThumbnailImage: View {
+    var assetName: String?
+
+    var body: some View {
+        if let assetName {
+            Image(assetName)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "printer.fill")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .foregroundStyle(NCColor.textTertiary)
+                .padding(6)
+        }
+    }
+}
+
 struct ProgressBar: View {
     var progress: Double
     var height: CGFloat = 5

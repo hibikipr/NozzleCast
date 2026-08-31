@@ -26,7 +26,7 @@ struct InventoryView: View {
             switch filter {
             case .all: true
             case .inAMS: if case .ams = spool.location { true } else { false }
-            case .inStorage: spool.location == .storage
+            case .inStorage: if case .storage = spool.location { true } else { false }
             case .pla: spool.material == .pla
             case .petg: spool.material == .petg
             case .abs: spool.material == .abs
@@ -76,6 +76,7 @@ struct InventoryView: View {
                 }
                 .background(NCColor.canvasBackground.ignoresSafeArea())
                 .navigationBarHidden(true)
+                .refreshable { await store.refresh() }
 
                 Button {
                     selectedTab = .scan

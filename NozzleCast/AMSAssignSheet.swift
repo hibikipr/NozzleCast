@@ -1,13 +1,17 @@
 import SwiftUI
 
 struct AMSAssignSheet: View {
-    var printerID: UUID
-    var slot: Int
+    var printerID: String
+    var amsIndex: Int
+    var trayIndex: Int
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     private var printer: Printer? { store.printer(printerID) }
-    private var occupant: Spool? { store.spool(printer?.amsSlotSpoolIDs[slot]) }
+    private var occupantSpoolID: String? {
+        printer?.amsUnits.first { $0.index == amsIndex }?.trays.first { $0.trayIndex == trayIndex }?.spoolID
+    }
+    private var occupant: Spool? { store.spool(occupantSpoolID) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,7 +22,7 @@ struct AMSAssignSheet: View {
                 .padding(.bottom, 16)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(printer?.name ?? "Printer") · Slot \(slot + 1)")
+                Text("\(printer?.name ?? "Printer") · " + ((printer?.amsUnits.count ?? 1) > 1 ? "AMS \(amsIndex + 1) · Slot \(trayIndex + 1)" : "Slot \(trayIndex + 1)"))
                     .font(.system(size: 17, weight: .bold))
 
                 if let occupant {
@@ -29,7 +33,7 @@ struct AMSAssignSheet: View {
                             .foregroundStyle(NCColor.textSecondary)
                         Spacer()
                         Button("Remove") {
-                            store.unassign(printerID: printerID, slot: slot)
+                            store.unassign(printerID: printerID, amsIndex: amsIndex, trayIndex: trayIndex)
                             dismiss()
                         }
                         .font(.system(size: 14, weight: .semibold))
@@ -50,7 +54,7 @@ struct AMSAssignSheet: View {
                 LazyVStack(spacing: 0) {
                     ForEach(store.spools) { spool in
                         Button {
-                            store.assign(spoolID: spool.id, toPrinter: printerID, slot: slot)
+                            store.assign(spoolID: spool.id, toPrinter: printerID, amsIndex: amsIndex, trayIndex: trayIndex)
                             dismiss()
                         } label: {
                             SpoolRow(spool: spool)

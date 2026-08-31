@@ -1,32 +1,38 @@
 import Foundation
 
 enum MockData {
-    static let workshopX1C = UUID()
-    static let garageA1 = UUID()
-    static let officeP1S = UUID()
+    static let workshopX1C = "mock-workshop-x1c"
+    static let garageA1 = "mock-garage-a1"
+    static let officeP1S = "mock-office-p1s"
 
-    static let sunsetOrange = UUID()
-    static let onyxBlack = UUID()
-    static let cobaltBlue = UUID()
-    static let amberGold = UUID()
-    static let forestGreen = UUID()
-    static let pureWhite = UUID()
-    static let magentaPink = UUID()
-    static let charcoalGrey = UUID()
+    static let sunsetOrange = "mock-spool-sunset-orange"
+    static let onyxBlack = "mock-spool-onyx-black"
+    static let cobaltBlue = "mock-spool-cobalt-blue"
+    static let amberGold = "mock-spool-amber-gold"
+    static let forestGreen = "mock-spool-forest-green"
+    static let pureWhite = "mock-spool-pure-white"
+    static let magentaPink = "mock-spool-magenta-pink"
+    static let charcoalGrey = "mock-spool-charcoal-grey"
 
-    static func makeStore() -> AppStore {
-        let spools: [Spool] = [
-            Spool(id: sunsetOrange, material: .pla, colorName: "Sunset Orange", colorHex: "#E8622C", brand: "Bambu Lab", remainingPercent: 72, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, slot: 0)),
-            Spool(id: onyxBlack, material: .pla, colorName: "Onyx Black", colorHex: "#1A1A1A", brand: "Bambu Lab", remainingPercent: 45, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, slot: 1)),
-            Spool(id: cobaltBlue, material: .petg, colorName: "Cobalt Blue", colorHex: "#2A5FCC", brand: "Polymaker", remainingPercent: 88, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, slot: 2)),
-            Spool(id: amberGold, material: .pla, colorName: "Amber Gold", colorHex: "#D9A426", brand: "eSun", remainingPercent: 30, netWeightGrams: 1000, location: .ams(printerID: garageA1, slot: 0)),
-            Spool(id: forestGreen, material: .pla, colorName: "Forest Green", colorHex: "#2F6B3A", brand: "Bambu Lab", remainingPercent: 100, netWeightGrams: 1000, location: .storage),
-            Spool(id: pureWhite, material: .abs, colorName: "Pure White", colorHex: "#F2F2F2", brand: "Bambu Lab", remainingPercent: 60, netWeightGrams: 1000, location: .ams(printerID: officeP1S, slot: 2)),
-            Spool(id: magentaPink, material: .tpu, colorName: "Magenta Pink", colorHex: "#C22A7A", brand: "Overture", remainingPercent: 55, netWeightGrams: 500, location: .storage),
-            Spool(id: charcoalGrey, material: .petg, colorName: "Charcoal Grey", colorHex: "#4A4A4A", brand: "Polymaker", remainingPercent: 20, netWeightGrams: 1000, location: .storage),
+    static func makeSpools() -> [Spool] {
+        [
+            Spool(id: sunsetOrange, material: .pla, colorName: "Sunset Orange", colorHex: "#E8622C", brand: "Bambu Lab", remainingPercent: 72, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 0)),
+            Spool(id: onyxBlack, material: .pla, colorName: "Onyx Black", colorHex: "#1A1A1A", brand: "Bambu Lab", remainingPercent: 45, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 1)),
+            Spool(id: cobaltBlue, material: .petg, colorName: "Cobalt Blue", colorHex: "#2A5FCC", brand: "Polymaker", remainingPercent: 88, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 2)),
+            Spool(id: amberGold, material: .pla, colorName: "Amber Gold", colorHex: "#D9A426", brand: "eSun", remainingPercent: 30, netWeightGrams: 1000, location: .ams(printerID: garageA1, amsIndex: 0, trayIndex: 0)),
+            Spool(id: forestGreen, material: .pla, colorName: "Forest Green", colorHex: "#2F6B3A", brand: "Bambu Lab", remainingPercent: 100, netWeightGrams: 1000, location: .storage(name: nil)),
+            Spool(id: pureWhite, material: .abs, colorName: "Pure White", colorHex: "#F2F2F2", brand: "Bambu Lab", remainingPercent: 60, netWeightGrams: 1000, location: .ams(printerID: officeP1S, amsIndex: 0, trayIndex: 2)),
+            Spool(id: magentaPink, material: .tpu, colorName: "Magenta Pink", colorHex: "#C22A7A", brand: "Overture", remainingPercent: 55, netWeightGrams: 500, location: .storage(name: nil)),
+            Spool(id: charcoalGrey, material: .petg, colorName: "Charcoal Grey", colorHex: "#4A4A4A", brand: "Polymaker", remainingPercent: 20, netWeightGrams: 1000, location: .storage(name: nil)),
         ]
+    }
 
-        let printers: [Printer] = [
+    private static func amsUnit(_ trayIDs: [String?]) -> AMSUnit {
+        AMSUnit(index: 0, trays: trayIDs.enumerated().map { AMSTray(amsIndex: 0, trayIndex: $0.offset, spoolID: $0.element) })
+    }
+
+    static func makePrinters() -> [Printer] {
+        [
             Printer(
                 id: workshopX1C,
                 name: "Workshop X1C",
@@ -40,7 +46,7 @@ enum MockData {
                 bed: TemperatureReading(current: 60, target: 60),
                 chamber: TemperatureReading(current: 42, target: nil),
                 lightOn: true,
-                amsSlotSpoolIDs: [sunsetOrange, onyxBlack, cobaltBlue, nil]
+                amsUnits: [amsUnit([sunsetOrange, onyxBlack, cobaltBlue, nil])]
             ),
             Printer(
                 id: garageA1,
@@ -55,7 +61,7 @@ enum MockData {
                 bed: TemperatureReading(current: 24, target: nil),
                 chamber: nil,
                 lightOn: false,
-                amsSlotSpoolIDs: [amberGold, nil, nil, nil]
+                amsUnits: [amsUnit([amberGold, nil, nil, nil])]
             ),
             Printer(
                 id: officeP1S,
@@ -70,10 +76,8 @@ enum MockData {
                 bed: TemperatureReading(current: 55, target: 55),
                 chamber: TemperatureReading(current: 38, target: nil),
                 lightOn: true,
-                amsSlotSpoolIDs: [nil, nil, pureWhite, nil]
+                amsUnits: [amsUnit([nil, nil, pureWhite, nil])]
             ),
         ]
-
-        return AppStore(printers: printers, spools: spools)
     }
 }

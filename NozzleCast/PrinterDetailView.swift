@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct PrinterDetailView: View {
-    var printerID: UUID
+    var printerID: String
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var assignSlot: Int?
+    @State private var assignTray: AMSTray?
 
     private var printer: Printer? { store.printer(printerID) }
 
@@ -34,19 +34,18 @@ struct PrinterDetailView: View {
                     temperaturesSection(printer)
                         .padding(.horizontal, 16)
 
-                    amsSection(printer)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 32)
+                    if !printer.amsUnits.isEmpty {
+                        amsSection(printer)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 32)
+                    }
                 }
             }
             .background(NCColor.canvasBackground.ignoresSafeArea())
             .navigationBarHidden(true)
             .toolbar(.hidden, for: .tabBar)
-            .sheet(item: Binding(
-                get: { assignSlot.map { SlotSelection(slot: $0) } },
-                set: { assignSlot = $0?.slot }
-            )) { selection in
-                AMSAssignSheet(printerID: printerID, slot: selection.slot)
+            .sheet(item: $assignTray) { tray in
+                AMSAssignSheet(printerID: printerID, amsIndex: tray.amsIndex, trayIndex: tray.trayIndex)
             }
         } else {
             ContentUnavailableView("Printer not found", systemImage: "printer.fill")
@@ -163,27 +162,31 @@ struct PrinterDetailView: View {
     }
 
     private func amsSection(_ printer: Printer) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("AMS Filament").sectionEyebrow()
-            HStack(spacing: 8) {
-                ForEach(0..<4, id: \.self) { i in
-                    Button {
-                        assignSlot = i
-                    } label: {
-                        AMSSlotCard(
-                            spool: store.spool(printer.amsSlotSpoolIDs[i]),
-                            slotIndex: i,
-                            isActive: printer.amsSlotSpoolIDs[i] != nil && printer.state == .printing
-                        )
+            ForEach(printer.amsUnits) { unit in
+                VStack(alignment: .leading, spacing: 8) {
+                    if printer.amsUnits.count > 1 {
+                        Text("AMS \(unit.index + 1)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(NCColor.textTertiary)
                     }
-                    .buttonStyle(.plain)
+                    HStack(spacing: 8) {
+                        ForEach(unit.trays) { tray in
+                            Button {
+                                assignTray = tray
+                            } label: {
+                                AMSSlotCard(
+                                    spool: store.spool(tray.spoolID),
+                                    slotIndex: tray.trayIndex,
+                                    isActive: tray.spoolID != nil && printer.state == .printing
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
         }
     }
-}
-
-private struct SlotSelection: Identifiable {
-    var slot: Int
-    var id: Int { slot }
 }

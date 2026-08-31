@@ -32,7 +32,8 @@ struct MonitorView: View {
             }
             .background(NCColor.canvasBackground.ignoresSafeArea())
             .navigationBarHidden(true)
-            .navigationDestination(for: UUID.self) { id in
+            .refreshable { await store.refresh() }
+            .navigationDestination(for: String.self) { id in
                 PrinterDetailView(printerID: id)
             }
         }
@@ -75,10 +76,10 @@ struct PrinterCard: View {
                     }
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(NCColor.textTertiary)
-                } else {
+                } else if !printer.allTrays.isEmpty {
                     HStack(spacing: 7) {
-                        ForEach(0..<4, id: \.self) { i in
-                            let spool = store.spool(printer.amsSlotSpoolIDs[i])
+                        ForEach(printer.amsUnits.first?.trays ?? []) { tray in
+                            let spool = store.spool(tray.spoolID)
                             Circle()
                                 .fill(spool.map { Color(hex: $0.colorHex) } ?? Color.white.opacity(0.08))
                                 .frame(width: 15, height: 15)
@@ -106,9 +107,7 @@ struct PrinterCard: View {
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Image(printer.imageAssetName)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+                PrinterThumbnailImage(assetName: printer.imageAssetName)
                     .padding(8)
             }
         }

@@ -5,7 +5,7 @@ struct AssignPickerSheet: View {
     var onFinished: () -> Void
 
     @Environment(AppStore.self) private var store
-    @State private var selectedPrinterID: UUID?
+    @State private var selectedPrinterID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,9 +40,7 @@ struct AssignPickerSheet: View {
                             selectedPrinterID = printer.id
                         } label: {
                             HStack(spacing: 12) {
-                                Image(printer.imageAssetName)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
+                                PrinterThumbnailImage(assetName: printer.imageAssetName)
                                     .frame(width: 30, height: 30)
                                     .padding(4)
                                     .background(RoundedRectangle(cornerRadius: 8).fill(NCColor.well))
@@ -70,7 +68,7 @@ struct AssignPickerSheet: View {
         }
     }
 
-    private func slotStep(printerID: UUID) -> some View {
+    private func slotStep(printerID: String) -> some View {
         let printer = store.printer(printerID)
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -85,18 +83,38 @@ struct AssignPickerSheet: View {
             }
             .padding(.horizontal, 20)
 
-            HStack(spacing: 8) {
-                ForEach(0..<4, id: \.self) { i in
-                    Button {
-                        store.assign(spoolID: spool.id, toPrinter: printerID, slot: i)
-                        onFinished()
-                    } label: {
-                        AMSSlotCard(spool: store.spool(printer?.amsSlotSpoolIDs[i]), slotIndex: i)
-                    }
-                    .buttonStyle(.plain)
-                }
+            if let printer, printer.amsUnits.isEmpty {
+                Text("This printer has no AMS units.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(NCColor.textTertiary)
+                    .padding(.horizontal, 20)
             }
-            .padding(.horizontal, 20)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(printer?.amsUnits ?? []) { unit in
+                        VStack(alignment: .leading, spacing: 8) {
+                            if (printer?.amsUnits.count ?? 0) > 1 {
+                                Text("AMS \(unit.index + 1)")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(NCColor.textTertiary)
+                            }
+                            HStack(spacing: 8) {
+                                ForEach(unit.trays) { tray in
+                                    Button {
+                                        store.assign(spoolID: spool.id, toPrinter: printerID, amsIndex: unit.index, trayIndex: tray.trayIndex)
+                                        onFinished()
+                                    } label: {
+                                        AMSSlotCard(spool: store.spool(tray.spoolID), slotIndex: tray.trayIndex)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
 
             Spacer()
         }

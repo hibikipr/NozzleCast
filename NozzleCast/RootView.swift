@@ -32,5 +32,5 @@ struct RootView: View {
 
 #Preview {
     RootView()
-        .environment(MockData.makeStore())
+        .environment(AppStore(config: BambuddyConfig()))
 }
