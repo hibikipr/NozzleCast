@@ -22,7 +22,7 @@ final class AppStore {
     init(config: BambuddyConfig) {
         self.config = config
         if config.isConfigured {
-            loadMockData()
+            connectionStatus = .connecting
             Task { await testConnectionAndRefresh() }
         } else {
             loadMockData()

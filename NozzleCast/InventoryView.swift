@@ -41,6 +41,11 @@ struct InventoryView: View {
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
+    private var isConnecting: Bool {
+        if case .connecting = store.connectionStatus, store.spools.isEmpty { return true }
+        return false
+    }
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
@@ -49,28 +54,39 @@ struct InventoryView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Filament")
                                 .font(.system(size: 34, weight: .bold))
-                            Text("\(store.spools.count) spools · \(totalGrams) g on hand")
+                            Text(isConnecting ? "Connecting to Bambuddy…" : "\(store.spools.count) spools · \(totalGrams) g on hand")
                                 .font(.system(size: 15))
                                 .foregroundStyle(NCColor.textSecondary)
                         }
                         .padding(.horizontal, 16)
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(InventoryFilter.allCases, id: \.self) { f in
-                                    FilterChip(title: f.title, isActive: filter == f) { filter = f }
+                        if isConnecting {
+                            VStack(spacing: 14) {
+                                ProgressView().tint(NCColor.accentLight)
+                                Text("Loading your inventory…")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(NCColor.textTertiary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 80)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(InventoryFilter.allCases, id: \.self) { f in
+                                        FilterChip(title: f.title, isActive: filter == f) { filter = f }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                            }
+
+                            LazyVGrid(columns: columns, spacing: 12) {
+                                ForEach(filtered) { spool in
+                                    SpoolCard(spool: spool)
                                 }
                             }
                             .padding(.horizontal, 16)
+                            .padding(.bottom, 100)
                         }
-
-                        LazyVGrid(columns: columns, spacing: 12) {
-                            ForEach(filtered) { spool in
-                                SpoolCard(spool: spool)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 100)
                     }
                     .padding(.top, 8)
                 }

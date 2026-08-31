@@ -5,6 +5,11 @@ struct MonitorView: View {
 
     private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
 
+    private var isConnecting: Bool {
+        if case .connecting = store.connectionStatus, store.printers.isEmpty { return true }
+        return false
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -12,7 +17,7 @@ struct MonitorView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("NoozleCast")
                             .font(.system(size: 34, weight: .bold))
-                        Text("\(printingCount) printing · \(store.printers.count) printers")
+                        Text(isConnecting ? "Connecting to Bambuddy…" : "\(printingCount) printing · \(store.printers.count) printers")
                             .font(.system(size: 15))
                             .foregroundStyle(NCColor.textSecondary)
                     }
@@ -20,12 +25,23 @@ struct MonitorView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 4)
 
-                    ForEach(store.printers) { printer in
-                        NavigationLink(value: printer.id) {
-                            PrinterCard(printer: printer)
+                    if isConnecting {
+                        VStack(spacing: 14) {
+                            ProgressView().tint(NCColor.accentLight)
+                            Text("Loading your printers…")
+                                .font(.system(size: 13))
+                                .foregroundStyle(NCColor.textTertiary)
                         }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 80)
+                    } else {
+                        ForEach(store.printers) { printer in
+                            NavigationLink(value: printer.id) {
+                                PrinterCard(printer: printer)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                        }
                     }
                 }
                 .padding(.bottom, 100)
