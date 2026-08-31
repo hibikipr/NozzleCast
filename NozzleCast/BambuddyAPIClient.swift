@@ -34,6 +34,7 @@ struct BambuddyTrayDTO: Codable {
 struct BambuddyAMSUnitDTO: Codable {
     var id: Int
     var tray: [BambuddyTrayDTO]
+    var isAmsHt: Bool?
 }
 
 struct BambuddyStatusDTO: Codable {

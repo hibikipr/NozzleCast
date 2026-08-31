@@ -1,5 +1,59 @@
 import SwiftUI
 
+/// Wraps its children left-to-right, starting a new row when the next child would overflow
+/// the available width. Used for the AMS dot row so printers with many trays wrap instead of
+/// scrolling off-screen.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 7
+    var rowSpacing: CGFloat = 7
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var rows = rowsFitting(width: width, subviews: subviews)
+        if rows.isEmpty { rows = [[]] }
+        let height = rows.reduce(0) { partial, row in
+            partial + (row.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0)
+        } + rowSpacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: width.isFinite ? width : (rows.first?.reduce(0) { $0 + $1.sizeThatFits(.unspecified).width + spacing } ?? 0), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + rowSpacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: .unspecified)
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+
+    private func rowsFitting(width: CGFloat, subviews: Subviews) -> [[LayoutSubviews.Element]] {
+        var rows: [[LayoutSubviews.Element]] = []
+        var current: [LayoutSubviews.Element] = []
+        var x: CGFloat = 0
+        for subview in subviews {
+            let w = subview.sizeThatFits(.unspecified).width
+            if x + w > width, !current.isEmpty {
+                rows.append(current)
+                current = []
+                x = 0
+            }
+            current.append(subview)
+            x += w + spacing
+        }
+        if !current.isEmpty { rows.append(current) }
+        return rows
+    }
+}
+
 /// Polls a printer's chamber camera snapshot endpoint and shows the latest frame, falling back
 /// to a dim camera glyph when live mode is off or no frame has loaded yet.
 struct LiveCameraView: View {
@@ -55,13 +109,14 @@ struct AMSSlotCard: View {
                         .foregroundStyle(NCColor.textTertiary)
                 }
             }
-            .frame(height: 50)
+            .frame(width: 62, height: 50)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             Text(spool?.colorName ?? "Slot \(slotIndex + 1)")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(NCColor.textSecondary)
                 .lineLimit(1)
+                .frame(width: 62)
         }
         .padding(6)
         .background(

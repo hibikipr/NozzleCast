@@ -8,10 +8,17 @@ struct AMSAssignSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     private var printer: Printer? { store.printer(printerID) }
+    private var unit: AMSUnit? { printer?.amsUnits.first { $0.index == amsIndex } }
     private var occupantSpoolID: String? {
-        printer?.amsUnits.first { $0.index == amsIndex }?.trays.first { $0.trayIndex == trayIndex }?.spoolID
+        unit?.trays.first { $0.trayIndex == trayIndex }?.spoolID
     }
     private var occupant: Spool? { store.spool(occupantSpoolID) }
+
+    private var unitLabel: String {
+        guard let printer, printer.amsUnits.count > 1, let unit else { return "" }
+        let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
+        return unit.displayName(position: standardUnitOrder[unit.id] ?? 0) + " · "
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,7 +29,7 @@ struct AMSAssignSheet: View {
                 .padding(.bottom, 16)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(printer?.name ?? "Printer") · " + ((printer?.amsUnits.count ?? 1) > 1 ? "AMS \(amsIndex + 1) · Slot \(trayIndex + 1)" : "Slot \(trayIndex + 1)"))
+                Text("\(printer?.name ?? "Printer") · \(unitLabel)Slot \(trayIndex + 1)")
                     .font(.system(size: 17, weight: .bold))
 
                 if let occupant {

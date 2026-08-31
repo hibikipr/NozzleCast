@@ -90,12 +90,14 @@ struct AssignPickerSheet: View {
                     .padding(.horizontal, 20)
             }
 
+            let standardUnitOrder = Dictionary(uniqueKeysWithValues: (printer?.amsUnits ?? []).filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(printer?.amsUnits ?? []) { unit in
                         VStack(alignment: .leading, spacing: 8) {
                             if (printer?.amsUnits.count ?? 0) > 1 {
-                                Text("AMS \(unit.index + 1)")
+                                Text(unit.displayName(position: standardUnitOrder[unit.id] ?? 0))
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(NCColor.textTertiary)
                             }

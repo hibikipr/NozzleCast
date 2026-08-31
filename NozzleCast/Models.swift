@@ -22,8 +22,15 @@ struct AMSTray: Identifiable {
 struct AMSUnit: Identifiable {
     var index: Int
     var trays: [AMSTray]
+    var isHT: Bool = false
 
     var id: Int { index }
+
+    /// Bambu's high-temperature AMS unit carries an unrelated raw unit id (e.g. 129), so it
+    /// gets a fixed label instead of being numbered alongside the regular AMS units.
+    func displayName(position: Int) -> String {
+        isHT ? "AMS-HT" : "AMS \(position + 1)"
+    }
 }
 
 struct Printer: Identifiable {

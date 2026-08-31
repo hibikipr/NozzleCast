@@ -160,10 +160,14 @@ final class AppStore {
         let chamber: TemperatureReading? = temps?.chamber.map { TemperatureReading(current: Int($0.rounded()), target: nil) }
 
         let amsUnits: [AMSUnit] = (status?.ams ?? []).map { unit in
-            AMSUnit(index: unit.id, trays: unit.tray.map { tray in
-                let assignment = assignmentsByPrinterSlot["\(dto.id)-\(unit.id)-\(tray.id)"]
-                return AMSTray(amsIndex: unit.id, trayIndex: tray.id, spoolID: assignment.map { "bb-\($0.spoolId)" })
-            })
+            AMSUnit(
+                index: unit.id,
+                trays: unit.tray.map { tray in
+                    let assignment = assignmentsByPrinterSlot["\(dto.id)-\(unit.id)-\(tray.id)"]
+                    return AMSTray(amsIndex: unit.id, trayIndex: tray.id, spoolID: assignment.map { "bb-\($0.spoolId)" })
+                },
+                isHT: unit.isAmsHt ?? false
+            )
         }
 
         let progress = (status?.progress).map { $0 / 100 }

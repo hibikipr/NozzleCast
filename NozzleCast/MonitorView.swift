@@ -77,14 +77,12 @@ struct PrinterCard: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(NCColor.textTertiary)
                 } else if !printer.allTrays.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 7) {
-                            ForEach(printer.allTrays) { tray in
-                                let spool = store.spool(tray.spoolID)
-                                Circle()
-                                    .fill(spool.map { Color(hex: $0.colorHex) } ?? Color.white.opacity(0.08))
-                                    .frame(width: 15, height: 15)
-                            }
+                    FlowLayout(spacing: 7, rowSpacing: 7) {
+                        ForEach(printer.allTrays) { tray in
+                            let spool = store.spool(tray.spoolID)
+                            Circle()
+                                .fill(spool.map { Color(hex: $0.colorHex) } ?? Color.white.opacity(0.08))
+                                .frame(width: 15, height: 15)
                         }
                     }
                 }
