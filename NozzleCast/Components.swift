@@ -1,5 +1,37 @@
 import SwiftUI
 
+/// Polls a printer's chamber camera snapshot endpoint and shows the latest frame, falling back
+/// to a dim camera glyph when live mode is off or no frame has loaded yet.
+struct LiveCameraView: View {
+    var printerID: String
+    var pollInterval: Double = 3
+
+    @Environment(AppStore.self) private var store
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "camera.fill")
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+        }
+        .task(id: printerID) {
+            image = nil
+            while !Task.isCancelled {
+                if let frame = await store.cameraSnapshot(printerID: printerID) {
+                    image = frame
+                }
+                try? await Task.sleep(for: .seconds(pollInterval))
+            }
+        }
+    }
+}
+
 /// The 60px-swatch / caption card used for AMS slots on Detail, the AMS sheet, and the post-scan slot picker.
 struct AMSSlotCard: View {
     var spool: Spool?

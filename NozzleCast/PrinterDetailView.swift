@@ -56,9 +56,14 @@ struct PrinterDetailView: View {
     private func videoHeader(_ printer: Printer) -> some View {
         ZStack {
             LinearGradient(colors: [Color(hex: "#2a2a2a"), Color(hex: "#141414")], startPoint: .top, endPoint: .bottom)
-            Image(systemName: "camera.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(.white.opacity(0.3))
+            if printer.state == .offline {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.white.opacity(0.3))
+            } else {
+                LiveCameraView(printerID: printer.id, pollInterval: 3)
+                    .font(.system(size: 44))
+            }
         }
         .frame(height: 250)
         .overlay(alignment: .topLeading) {

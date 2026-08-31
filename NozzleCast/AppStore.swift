@@ -219,6 +219,21 @@ final class AppStore {
         return Int(localID.dropFirst(3))
     }
 
+    // MARK: - Camera
+
+    /// Fetches one live snapshot for a printer's chamber camera. Mints a fresh stream token
+    /// per call since the API gives no expiry, and snapshots are only polled every few seconds.
+    func cameraSnapshot(printerID: String) async -> UIImage? {
+        guard let client, let bbID = bambuddyID(printerID) else { return nil }
+        do {
+            let token = try await client.cameraStreamToken()
+            let data = try await client.cameraSnapshotData(printerID: bbID, token: token)
+            return UIImage(data: data)
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Printer controls
 
     func togglePause(_ printerID: String) {

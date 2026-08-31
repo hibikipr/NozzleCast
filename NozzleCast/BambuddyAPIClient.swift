@@ -207,6 +207,24 @@ struct BambuddyAPIClient {
         ))
     }
 
+    // MARK: Camera
+
+    private struct StreamTokenResponse: Decodable { var token: String }
+
+    /// Snapshots require a short-lived token (separate from the API key) minted by this endpoint.
+    func cameraStreamToken() async throws -> String {
+        let data = try await send(request("/api/v1/printers/camera/stream-token", method: "POST"))
+        do {
+            return try decoder.decode(StreamTokenResponse.self, from: data).token
+        } catch {
+            throw BambuddyAPIError.decoding(error)
+        }
+    }
+
+    func cameraSnapshotData(printerID: Int, token: String) async throws -> Data {
+        try await send(request("/api/v1/printers/\(printerID)/camera/snapshot", query: [URLQueryItem(name: "token", value: token)]))
+    }
+
     // MARK: Inventory mutations
 
     func assignSpool(spoolID: Int, printerID: Int, amsID: Int, trayID: Int) async throws {
