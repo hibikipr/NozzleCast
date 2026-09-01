@@ -143,6 +143,9 @@
     "Also matches: %@" : {
 
     },
+    "Assign Anyway" : {
+
+    },
     "Assign to a Printer" : {
 
     },
@@ -335,6 +338,9 @@
     "Material" : {
       "comment" : "Filament field label"
     },
+    "Material Mismatch" : {
+
+    },
     "Monitor" : {
 
     },
@@ -516,6 +522,17 @@
     "Temperatures" : {
 
     },
+    "The selected spool's material \"%@\" doesn't match the tray material \"%@\" for %@. This only updates NozzleCast and Bambuddy's inventory record — it doesn't change what's physically loaded in the AMS. Assign anyway?" : {
+      "comment" : "Material mismatch confirmation when assigning a spool whose material differs from what the printer reports for that AMS slot",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The selected spool's material \"%1$@\" doesn't match the tray material \"%2$@\" for %3$@. This only updates NozzleCast and Bambuddy's inventory record — it doesn't change what's physically loaded in the AMS. Assign anyway?"
+          }
+        }
+      }
+    },
     "This printer has no AMS units." : {
 
     },
@@ -533,6 +550,9 @@
     },
     "or enter code manually" : {
 
+    },
+    "this slot" : {
+      "comment" : "Fallback AMS slot reference when no better label is available"
     },
     "·" : {
 

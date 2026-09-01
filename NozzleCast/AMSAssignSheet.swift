@@ -7,6 +7,8 @@ struct AMSAssignSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    @State private var pendingSpool: Spool?
+    @State private var showMismatchWarning = false
 
     private var printer: Printer? { store.printer(printerID) }
     private var unit: AMSUnit? { printer?.amsUnits.first { $0.index == amsIndex } }
@@ -14,6 +16,30 @@ struct AMSAssignSheet: View {
         unit?.trays.first { $0.trayIndex == trayIndex }
     }
     private var occupant: Spool? { store.spool(occupantTray?.spoolID) }
+
+    /// The material the printer itself currently reports for this tray — empty string for a
+    /// physically empty slot, matching how Bambuddy phrases its own mismatch warning.
+    private var trayMaterial: String { occupantTray?.rawMaterialLabel ?? "" }
+
+    private var slotLabel: String {
+        guard let printer, let unit else { return String(localized: "this slot", comment: "Fallback AMS slot reference when no better label is available") }
+        let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
+        return unit.displayName(position: standardUnitOrder[unit.id] ?? 0)
+    }
+
+    private func attemptAssign(_ spool: Spool) {
+        if trayMaterial.caseInsensitiveCompare(spool.material.rawValue) != .orderedSame {
+            pendingSpool = spool
+            showMismatchWarning = true
+        } else {
+            performAssign(spool)
+        }
+    }
+
+    private func performAssign(_ spool: Spool) {
+        store.assign(spoolID: spool.id, toPrinter: printerID, amsIndex: amsIndex, trayIndex: trayIndex)
+        dismiss()
+    }
 
     private var filteredSpools: [Spool] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -85,8 +111,7 @@ struct AMSAssignSheet: View {
                 LazyVStack(spacing: 0) {
                     ForEach(filteredSpools) { spool in
                         Button {
-                            store.assign(spoolID: spool.id, toPrinter: printerID, amsIndex: amsIndex, trayIndex: trayIndex)
-                            dismiss()
+                            attemptAssign(spool)
                         } label: {
                             SpoolRow(spool: spool)
                         }
@@ -108,6 +133,15 @@ struct AMSAssignSheet: View {
         .presentationDetents([.medium, .large])
         .presentationCornerRadius(24)
         .presentationDragIndicator(.hidden)
+        .alert("Material Mismatch", isPresented: $showMismatchWarning, presenting: pendingSpool) { spool in
+            Button("Cancel", role: .cancel) {}
+            Button("Assign Anyway") { performAssign(spool) }
+        } message: { spool in
+            Text(
+                "The selected spool's material \"\(spool.material.rawValue)\" doesn't match the tray material \"\(trayMaterial)\" for \(slotLabel). This only updates NozzleCast and Bambuddy's inventory record — it doesn't change what's physically loaded in the AMS. Assign anyway?",
+                comment: "Material mismatch confirmation when assigning a spool whose material differs from what the printer reports for that AMS slot"
+            )
+        }
     }
 
     private var searchField: some View {
