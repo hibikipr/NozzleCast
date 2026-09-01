@@ -208,29 +208,51 @@ struct ScanView: View {
     }
 
     private var loadingBody: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(hex: "#141414"))
-                .frame(height: 360)
-                .opacity(0.5)
+        VStack(alignment: .leading, spacing: 12) {
+            cancelRow
 
-            VStack(spacing: 14) {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .tint(NCColor.accentLight)
-                    .scaleEffect(1.3)
-                Text("Looking up filament…")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
+            ZStack {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(Color(hex: "#141414"))
+                    .frame(height: 360)
+                    .opacity(0.5)
+
+                VStack(spacing: 14) {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(NCColor.accentLight)
+                        .scaleEffect(1.3)
+                    Text("Looking up filament…")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .padding(24)
+                .glassCard()
             }
-            .padding(24)
-            .glassCard()
+        }
+    }
+
+    private var cancelRow: some View {
+        HStack {
+            Button {
+                reset()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Color.white.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
+            Spacer()
         }
     }
 
     private var reviewBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                cancelRow
+
                 Text("Review Details")
                     .font(.system(size: 24, weight: .bold))
 
