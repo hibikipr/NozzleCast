@@ -29,6 +29,9 @@ enum PushSharedStore {
         var title: String
         var body: String
         var receivedAt: Date
+        var isRead: Bool?
+
+        var isUnread: Bool { isRead == false }
     }
 
     private static var historyURL: URL { containerURL.appendingPathComponent("notification-history.json") }
@@ -48,6 +51,10 @@ enum PushSharedStore {
     static func loadHistory() -> [HistoryEntry] {
         guard let data = try? Data(contentsOf: historyURL) else { return [] }
         return (try? JSONDecoder().decode([HistoryEntry].self, from: data)) ?? []
+    }
+
+    static func unreadCount() -> Int {
+        loadHistory().filter(\.isUnread).count
     }
 
     // MARK: - Notification history images (the ntfy attachment photo, kept alongside the entry)

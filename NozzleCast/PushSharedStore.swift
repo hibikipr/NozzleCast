@@ -43,6 +43,13 @@ enum PushSharedStore {
         var title: String
         var body: String
         var receivedAt: Date
+        /// Optional (not `Bool` with a default) so entries logged before this field existed
+        /// still decode — a missing key on a non-optional property throws in synthesized
+        /// `Decodable`, which would silently blank out the whole history. `nil` reads as "seen
+        /// before this feature existed," not as unread.
+        var isRead: Bool?
+
+        var isUnread: Bool { isRead == false }
     }
 
     private static var historyURL: URL { containerURL.appendingPathComponent("notification-history.json") }
@@ -67,6 +74,18 @@ enum PushSharedStore {
     static func clearHistory() {
         try? FileManager.default.removeItem(at: historyURL)
         try? FileManager.default.removeItem(at: historyImagesDir)
+    }
+
+    static func unreadCount() -> Int {
+        loadHistory().filter(\.isUnread).count
+    }
+
+    static func markAllRead() {
+        var entries = loadHistory()
+        guard entries.contains(where: \.isUnread) else { return }
+        for i in entries.indices { entries[i].isRead = true }
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        try? data.write(to: historyURL, options: .atomic)
     }
 
     // MARK: - Notification history images (the ntfy attachment photo, kept alongside the entry)

@@ -2,7 +2,9 @@ import SwiftUI
 
 struct MonitorView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showNotifications = false
+    @State private var unreadCount = 0
 
     private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
 
@@ -30,9 +32,9 @@ struct MonitorView: View {
                         Button {
                             showNotifications = true
                         } label: {
-                            Image(systemName: "bell")
+                            Image(systemName: unreadCount > 0 ? "bell.badge.fill" : "bell")
                                 .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(unreadCount > 0 ? NCColor.accentLight : .white)
                                 .frame(width: 34, height: 34)
                                 .background(Circle().fill(NCColor.cardFill))
                         }
@@ -69,12 +71,20 @@ struct MonitorView: View {
             .navigationDestination(for: String.self) { id in
                 PrinterDetailView(printerID: id)
             }
-            .sheet(isPresented: $showNotifications) {
+            .sheet(isPresented: $showNotifications, onDismiss: refreshUnreadCount) {
                 NavigationStack {
                     NotificationsView()
                 }
             }
+            .onAppear { refreshUnreadCount() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { refreshUnreadCount() }
+            }
         }
+    }
+
+    private func refreshUnreadCount() {
+        unreadCount = PushSharedStore.unreadCount()
     }
 }
 

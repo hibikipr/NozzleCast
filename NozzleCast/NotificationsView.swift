@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 /// In-app history of push notifications received via the Notification Service Extension,
 /// read from the shared App Group log so it survives even notifications the user swiped away.
@@ -45,7 +46,11 @@ struct NotificationsView: View {
                 }
             }
         }
-        .onAppear { entries = PushSharedStore.loadHistory() }
+        .onAppear {
+            entries = PushSharedStore.loadHistory()
+            PushSharedStore.markAllRead()
+            Task { try? await UNUserNotificationCenter.current().setBadgeCount(0) }
+        }
     }
 
     @ViewBuilder

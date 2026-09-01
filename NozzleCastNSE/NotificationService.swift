@@ -99,8 +99,14 @@ final class NotificationService: UNNotificationServiceExtension {
             id: message.id,
             title: content.title,
             body: content.body,
-            receivedAt: Date()
+            receivedAt: Date(),
+            isRead: false
         ))
+
+        // The app icon's badge count, so unread pushes are visible without opening the app —
+        // recomputed from the log rather than incremented, since this and the main app's own
+        // "mark all read" both write the same file and an increment could drift out of sync.
+        content.badge = NSNumber(value: PushSharedStore.unreadCount())
     }
 
     private static func downloadImage(_ url: URL) async -> Data? {
