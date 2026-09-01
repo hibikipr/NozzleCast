@@ -8,6 +8,7 @@ struct PrinterDetailView: View {
     @State private var assignTray: AMSTray?
     @State private var showWarnings = false
     @State private var showCoverFullscreen = false
+    @State private var isCameraLive = false
 
     private var printer: Printer? { store.printer(printerID) }
 
@@ -93,7 +94,7 @@ struct PrinterDetailView: View {
                     .font(.system(size: 44))
                     .foregroundStyle(.white.opacity(0.3))
             } else {
-                LiveCameraView(printerID: printer.id, pollInterval: 3, showsErrorDetail: true, coverFallbackJobIdentity: printer.jobFileName ?? printer.id)
+                LiveCameraView(printerID: printer.id, pollInterval: 3, showsErrorDetail: true, coverFallbackJobIdentity: printer.jobFileName ?? printer.id, isShowingLiveFrame: $isCameraLive)
                     .font(.system(size: 44))
             }
         }
@@ -116,11 +117,15 @@ struct PrinterDetailView: View {
             .padding(16)
         }
         .overlay(alignment: .topLeading) {
-            (printer.state == .offline
-                ? AnyView(offlinePill)
-                : AnyView(LiveBadge().scaleEffect(1.3)))
-                .padding(.top, 60)
-                .padding(.leading, 16)
+            Group {
+                if printer.state == .offline {
+                    offlinePill
+                } else if isCameraLive {
+                    LiveBadge().scaleEffect(1.3)
+                }
+            }
+            .padding(.top, 60)
+            .padding(.leading, 16)
         }
         .clipped()
     }

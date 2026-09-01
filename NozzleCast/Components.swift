@@ -68,6 +68,10 @@ struct LiveCameraView: View {
     /// there's no live frame to show — a camera integration being down (as this was built for,
     /// on a P1S) shouldn't leave the thumbnail solid black when a render is already available.
     var coverFallbackJobIdentity: String?
+    /// Reflects whether an actual live frame is currently on screen (as opposed to the cover
+    /// fallback or the plain icon) — callers use this to gate a "LIVE" badge, which shouldn't
+    /// show over a static plate render.
+    @Binding var isShowingLiveFrame: Bool
 
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
@@ -98,9 +102,13 @@ struct LiveCameraView: View {
         }
         .task(id: printerID) {
             image = nil
+            isShowingLiveFrame = false
             while !Task.isCancelled {
                 if let frame = await store.cameraSnapshot(printerID: printerID) {
                     image = frame
+                    isShowingLiveFrame = true
+                } else {
+                    isShowingLiveFrame = image != nil
                 }
                 try? await Task.sleep(for: .seconds(pollInterval))
             }

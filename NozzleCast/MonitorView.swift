@@ -62,6 +62,7 @@ struct MonitorView: View {
 struct PrinterCard: View {
     var printer: Printer
     @Environment(AppStore.self) private var store
+    @State private var isCameraLive = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -121,7 +122,7 @@ struct PrinterCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(NCColor.printerWell)
             if printer.state == .printing {
-                LiveCameraView(printerID: printer.id, pollInterval: 5, coverFallbackJobIdentity: printer.jobFileName ?? printer.id)
+                LiveCameraView(printerID: printer.id, pollInterval: 5, coverFallbackJobIdentity: printer.jobFileName ?? printer.id, isShowingLiveFrame: $isCameraLive)
                     .font(.system(size: 20))
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -137,7 +138,7 @@ struct PrinterCard: View {
                 .strokeBorder(NCColor.printerWellBorder, lineWidth: 1)
         )
         .overlay(alignment: .topLeading) {
-            if printer.state == .printing {
+            if isCameraLive {
                 LiveBadge().padding(4)
             }
         }
