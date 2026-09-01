@@ -110,14 +110,22 @@ private struct DataScannerView: UIViewControllerRepresentable {
             isHighlightingEnabled: mode == .barcode
         )
         vc.delegate = context.coordinator
-        startScanning(vc)
+        // Deliberately not starting the session here: makeUIViewController can run before the
+        // view is actually attached to a window, and starting the camera before that reliably
+        // fails on-device (Fig/RunningBoard needs the view visible). updateUIViewController
+        // runs after attachment, so the first start attempt happens there instead.
         return vc
     }
 
     func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {
-        if !uiViewController.isScanning {
-            startScanning(uiViewController)
-        }
+        // Bounded start: at most one attempt, plus one delayed retry if that attempt fails
+        // (the view can still be mid-attachment on the very first pass). Without a cap here,
+        // a failed start sets bridge.failureMessage, which re-renders this view, which
+        // re-enters here with isScanning still false, retrying the same broken start forever -
+        // a tight loop that hammers the capture session rather than surfacing one clear failure.
+        guard !uiViewController.isScanning, !context.coordinator.didAttemptStart else { return }
+        context.coordinator.didAttemptStart = true
+        attemptStart(uiViewController, retriesLeft: 1)
     }
 
     static func dismantleUIViewController(_ uiViewController: DataScannerViewController, coordinator: Coordinator) {
@@ -126,17 +134,25 @@ private struct DataScannerView: UIViewControllerRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(mode: mode, bridge: bridge) }
 
-    private func startScanning(_ vc: DataScannerViewController) {
+    private func attemptStart(_ vc: DataScannerViewController, retriesLeft: Int) {
         do {
             try vc.startScanning()
         } catch {
-            bridge.failureMessage = "Couldn't start the camera: \(error.localizedDescription)"
+            if retriesLeft > 0 {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    attemptStart(vc, retriesLeft: retriesLeft - 1)
+                }
+            } else {
+                bridge.failureMessage = "Couldn't start the camera: \(error.localizedDescription)"
+            }
         }
     }
 
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         var mode: ScannerMode
         var bridge: ScannerBridge
+        var didAttemptStart = false
 
         init(mode: ScannerMode, bridge: ScannerBridge) {
             self.mode = mode
