@@ -20,6 +20,16 @@ extension Color {
         let luminance = 0.299 * components[0] + 0.587 * components[1] + 0.114 * components[2]
         return luminance > 0.6
     }
+
+    /// "#RRGGBB" for this color, in the sRGB space used everywhere else in the app.
+    func toHexString() -> String {
+        let converted = UIColor(self).cgColor.converted(to: CGColorSpaceCreateDeviceRGB(), intent: .defaultIntent, options: nil)
+        guard let components = converted?.components, components.count >= 3 else { return "#808080" }
+        let r = Int((components[0] * 255).rounded())
+        let g = Int((components[1] * 255).rounded())
+        let b = Int((components[2] * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
 }
 
 enum NCColor {

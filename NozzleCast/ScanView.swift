@@ -3,6 +3,7 @@ import SwiftUI
 enum ScanMode: String, CaseIterable {
     case barcode = "Barcode"
     case labelPhoto = "Label Photo"
+    case manual = "Manual"
 }
 
 enum ScanStep {
@@ -53,6 +54,11 @@ struct ScanView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(NCColor.canvasBackground.ignoresSafeArea())
             .navigationBarHidden(true)
+            .onChange(of: mode) { _, newMode in
+                if newMode == .manual {
+                    result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, alsoMatches: nil)
+                }
+            }
             .sheet(isPresented: $showAssignPicker) {
                 if let addedSpool {
                     AssignPickerSheet(spool: addedSpool) {
@@ -88,7 +94,16 @@ struct ScanView: View {
         }
     }
 
+    @ViewBuilder
     private var captureBody: some View {
+        if mode == .manual {
+            manualFormBody
+        } else {
+            scannerBody
+        }
+    }
+
+    private var scannerBody: some View {
         VStack(spacing: 20) {
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -221,6 +236,95 @@ struct ScanView: View {
         }
     }
 
+    private var manualFormBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Enter Filament Details")
+                    .font(.system(size: 20, weight: .bold))
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Filament color")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(NCColor.textSecondary)
+                    HStack(spacing: 12) {
+                        ColorPicker("Filament color", selection: colorBinding, supportsOpacity: false)
+                            .labelsHidden()
+                        Text(result.colorHex.uppercased())
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white)
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+                }
+
+                VStack(spacing: 12) {
+                    labeledField("Brand", text: $result.brand)
+                    materialPickerField
+                    labeledField("Color name", text: $result.colorName)
+                    labeledField("Net weight (g)", text: Binding(
+                        get: { String(result.netWeightGrams) },
+                        set: { result.netWeightGrams = Int($0) ?? result.netWeightGrams }
+                    ))
+                }
+
+                Button {
+                    addToInventory()
+                } label: {
+                    Text("Add to Inventory")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(canSubmitManual ? NCColor.accent : NCColor.accent.opacity(0.35))
+                        )
+                }
+                .disabled(!canSubmitManual)
+                .padding(.top, 4)
+                .padding(.bottom, 100)
+            }
+        }
+    }
+
+    private var materialPickerField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Material")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(NCColor.textSecondary)
+            Menu {
+                ForEach(FilamentMaterial.allCases) { m in
+                    Button(m.rawValue) { result.material = m }
+                }
+            } label: {
+                HStack {
+                    Text(result.material.rawValue)
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(NCColor.textTertiary)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+            }
+        }
+    }
+
+    private var colorBinding: Binding<Color> {
+        Binding(
+            get: { Color(hex: result.colorHex) },
+            set: { result.colorHex = $0.toHexString() }
+        )
+    }
+
+    private var canSubmitManual: Bool {
+        !result.brand.trimmingCharacters(in: .whitespaces).isEmpty
+            && !result.colorName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     private var doneBody: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -298,6 +402,7 @@ struct ScanView: View {
 
     private func reset() {
         step = .capture
+        mode = .barcode
         addedSpool = nil
     }
 }
