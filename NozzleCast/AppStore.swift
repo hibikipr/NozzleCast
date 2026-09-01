@@ -328,7 +328,14 @@ final class AppStore {
             brand: dto.brand ?? "Unknown",
             remainingPercent: percentRemaining,
             netWeightGrams: dto.labelWeight ?? 1000,
-            location: location
+            location: location,
+            subtype: dto.subtype,
+            slicerFilamentID: dto.slicerFilament,
+            nozzleTempMin: dto.nozzleTempMin,
+            nozzleTempMax: dto.nozzleTempMax,
+            costPerKg: dto.costPerKg,
+            category: dto.category,
+            note: dto.note
         )
     }
 
@@ -540,5 +547,61 @@ final class AppStore {
         )
         spools.insert(spool, at: 0)
         return spool
+    }
+
+    /// Edits a spool's own record (material/color/brand/weight/cost/notes/etc.) — separate from
+    /// `assign`, which only links an existing spool to a printer slot. This is inventory
+    /// bookkeeping only, same as assign: it does not push anything to physical AMS hardware.
+    func updateSpool(
+        _ spoolID: String,
+        material: FilamentMaterial,
+        colorName: String,
+        colorHex: String,
+        brand: String,
+        subtype: String?,
+        netWeightGrams: Int,
+        nozzleTempMin: Int?,
+        nozzleTempMax: Int?,
+        costPerKg: Double?,
+        category: String?,
+        note: String?
+    ) {
+        guard let idx = spools.firstIndex(where: { $0.id == spoolID }) else { return }
+        spools[idx].material = material
+        spools[idx].colorName = colorName
+        spools[idx].colorHex = colorHex
+        spools[idx].brand = brand
+        spools[idx].subtype = subtype
+        spools[idx].netWeightGrams = netWeightGrams
+        spools[idx].nozzleTempMin = nozzleTempMin
+        spools[idx].nozzleTempMax = nozzleTempMax
+        spools[idx].costPerKg = costPerKg
+        spools[idx].category = category
+        spools[idx].note = note
+
+        guard isLive, let client, let bbID = bambuddyID(spoolID) else { return }
+        let rgba = colorHex.replacingOccurrences(of: "#", with: "").uppercased() + "FF"
+        let update = BambuddySpoolUpdateBody(
+            material: material.rawValue,
+            subtype: subtype,
+            colorName: colorName,
+            rgba: rgba,
+            brand: brand,
+            labelWeight: netWeightGrams,
+            slicerFilament: nil,
+            nozzleTempMin: nozzleTempMin,
+            nozzleTempMax: nozzleTempMax,
+            costPerKg: costPerKg,
+            category: category,
+            note: note
+        )
+        Task {
+            do {
+                try await client.updateSpool(spoolID: bbID, update)
+                await refresh()
+            } catch {
+                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
     }
 }

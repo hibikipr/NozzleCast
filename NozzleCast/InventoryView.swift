@@ -25,6 +25,7 @@ struct InventoryView: View {
     @State private var filter: InventoryFilter = .all
     @State private var searchText = ""
     @State private var layout: InventoryLayout = .grid
+    @State private var editingSpool: Spool?
     @Binding var selectedTab: RootTab
 
     private var filtered: [Spool] {
@@ -118,7 +119,10 @@ struct InventoryView: View {
                             } else if layout == .grid {
                                 LazyVGrid(columns: columns, spacing: 12) {
                                     ForEach(filtered) { spool in
-                                        SpoolCard(spool: spool)
+                                        Button { editingSpool = spool } label: {
+                                            SpoolCard(spool: spool)
+                                        }
+                                        .buttonStyle(.plain)
                                     }
                                 }
                                 .padding(.horizontal, 16)
@@ -126,7 +130,10 @@ struct InventoryView: View {
                             } else {
                                 LazyVStack(spacing: 8) {
                                     ForEach(filtered) { spool in
-                                        SpoolListRow(spool: spool)
+                                        Button { editingSpool = spool } label: {
+                                            SpoolListRow(spool: spool)
+                                        }
+                                        .buttonStyle(.plain)
                                     }
                                 }
                                 .padding(.horizontal, 16)
@@ -152,6 +159,9 @@ struct InventoryView: View {
                 }
                 .padding(.trailing, 20)
                 .padding(.bottom, 96)
+            }
+            .sheet(item: $editingSpool) { spool in
+                EditSpoolSheet(spool: spool)
             }
         }
     }

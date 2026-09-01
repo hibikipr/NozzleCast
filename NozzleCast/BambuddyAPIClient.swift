@@ -120,6 +120,32 @@ struct BambuddySpoolDTO: Codable {
     var weightUsed: Double?
     var locationId: Int?
     var archivedAt: String?
+    var slicerFilament: String?
+    var nozzleTempMin: Int?
+    var nozzleTempMax: Int?
+    var costPerKg: Double?
+    var category: String?
+    var note: String?
+}
+
+/// Partial update for a spool — only non-nil fields are sent, matching Bambuddy's PATCH
+/// semantics (an omitted field leaves the existing value alone). Scoped to the fields
+/// NozzleCast's edit screen actually exposes; Bambuddy's full SpoolUpdate schema has several
+/// more (extra_colors, effect_type, core_weight, weight_locked, low_stock_threshold_pct,
+/// location_id, tag/RFID fields) not editable here yet.
+struct BambuddySpoolUpdateBody: Encodable {
+    var material: String?
+    var subtype: String?
+    var colorName: String?
+    var rgba: String?
+    var brand: String?
+    var labelWeight: Int?
+    var slicerFilament: String?
+    var nozzleTempMin: Int?
+    var nozzleTempMax: Int?
+    var costPerKg: Double?
+    var category: String?
+    var note: String?
 }
 
 struct BambuddyAssignmentDTO: Codable {
@@ -335,6 +361,17 @@ struct BambuddyAPIClient {
     func createSpool(material: String, colorName: String, rgba: String, brand: String, labelWeight: Int) async throws -> BambuddySpoolDTO {
         let body = try encoder.encode(SpoolCreateBody(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: labelWeight))
         let data = try await send(request("/api/v1/inventory/spools", method: "POST", body: body))
+        do {
+            return try decoder.decode(BambuddySpoolDTO.self, from: data)
+        } catch {
+            throw BambuddyAPIError.decoding(error)
+        }
+    }
+
+    @discardableResult
+    func updateSpool(spoolID: Int, _ update: BambuddySpoolUpdateBody) async throws -> BambuddySpoolDTO {
+        let body = try encoder.encode(update)
+        let data = try await send(request("/api/v1/inventory/spools/\(spoolID)", method: "PATCH", body: body))
         do {
             return try decoder.decode(BambuddySpoolDTO.self, from: data)
         } catch {

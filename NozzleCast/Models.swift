@@ -200,6 +200,18 @@ struct Spool: Identifiable {
     var netWeightGrams: Int
     var location: SpoolLocation
 
+    /// Sub-brand/profile name, e.g. "PLA Basic", "PETG HF" — Bambu's `tray_sub_brands`.
+    var subtype: String? = nil
+    /// Bambu's short filament preset id, e.g. "GFL05" — what `configure` calls `tray_info_idx`.
+    /// Not editable via a catalog search yet (that's a large separate undertaking); shown/edited
+    /// as a raw code for now.
+    var slicerFilamentID: String? = nil
+    var nozzleTempMin: Int? = nil
+    var nozzleTempMax: Int? = nil
+    var costPerKg: Double? = nil
+    var category: String? = nil
+    var note: String? = nil
+
     func locationCaption(printerName: (String) -> String?) -> String {
         switch location {
         case .storage(let name):

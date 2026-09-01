@@ -143,6 +143,9 @@
     "Also matches: %@" : {
 
     },
+    "Any additional notes about this spool…" : {
+
+    },
     "Assign Anyway" : {
 
     },
@@ -192,6 +195,9 @@
       "comment" : "Fan speed label\nTemperature reading label"
     },
     "Choose a Printer" : {
+
+    },
+    "Color" : {
 
     },
     "Color name" : {
@@ -247,6 +253,9 @@
     },
     "Due" : {
       "comment" : "Maintenance status: something needs attention"
+    },
+    "Edit Spool" : {
+
     },
     "Empty" : {
 
@@ -374,6 +383,9 @@
     "Not connected to a Bambuddy server." : {
 
     },
+    "Notes" : {
+
+    },
     "Nozzle" : {
       "comment" : "Temperature reading label"
     },
@@ -384,6 +396,9 @@
       "comment" : "Right nozzle temperature reading label"
     },
     "Nozzle Rack" : {
+
+    },
+    "Nozzle Temperature" : {
 
     },
     "NozzleCast" : {
@@ -456,6 +471,9 @@
       "comment" : "Printer control button"
     },
     "Review Details" : {
+
+    },
+    "Save" : {
 
     },
     "Save & Test Connection" : {
@@ -542,7 +560,13 @@
     "Unknown material" : {
       "comment" : "Fallback when the printer hasn't reported what's loaded"
     },
+    "Used for future AMS slot configuration — matching this to the spool's real print temperature matters once that's wired up." : {
+
+    },
     "View on Bambu Wiki" : {
+
+    },
+    "Weight & Cost" : {
 
     },
     "bambuddy.example.com" : {
