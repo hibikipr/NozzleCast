@@ -51,10 +51,7 @@ struct InventoryView: View {
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
-    private var isConnecting: Bool {
-        if case .connecting = store.connectionStatus, store.spools.isEmpty { return true }
-        return false
-    }
+    private var isConnecting: Bool { store.isLoadingSpools }
 
     var body: some View {
         NavigationStack {

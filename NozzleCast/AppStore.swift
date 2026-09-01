@@ -37,6 +37,23 @@ final class AppStore {
         return true
     }
 
+    /// True while there's no printer data to show yet and we're still working on it - distinct
+    /// from "connected with genuinely zero printers registered," which isn't a loading state.
+    /// `connectionStatus` flips to `.connected` as soon as auth succeeds, a beat before
+    /// `refresh()` actually populates `printers`/`spools`; without also checking `isRefreshing`
+    /// here, that gap renders as "0 printing · 0 printers" instead of a loading state.
+    var isLoadingPrinters: Bool { isLoading(dataIsEmpty: printers.isEmpty) }
+    var isLoadingSpools: Bool { isLoading(dataIsEmpty: spools.isEmpty) }
+
+    private func isLoading(dataIsEmpty: Bool) -> Bool {
+        guard dataIsEmpty else { return false }
+        switch connectionStatus {
+        case .connecting: return true
+        case .connected: return isRefreshing
+        case .failed, .notConfigured: return false
+        }
+    }
+
     private var client: BambuddyAPIClient? {
         guard let url = config.serverURL, !config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return BambuddyAPIClient(baseURL: url, apiKey: config.apiKey)

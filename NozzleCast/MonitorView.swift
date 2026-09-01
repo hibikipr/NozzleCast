@@ -5,10 +5,7 @@ struct MonitorView: View {
 
     private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
 
-    private var isConnecting: Bool {
-        if case .connecting = store.connectionStatus, store.printers.isEmpty { return true }
-        return false
-    }
+    private var isConnecting: Bool { store.isLoadingPrinters }
 
     var body: some View {
         NavigationStack {
