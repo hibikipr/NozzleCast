@@ -115,6 +115,16 @@ struct PrinterCard: View {
                     }
                     .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
+                    if !printer.allTrays.isEmpty {
+                        FlowLayout(spacing: 6, rowSpacing: 6) {
+                            ForEach(printer.allTrays) { tray in
+                                let spool = store.spool(tray.spoolID)
+                                Circle()
+                                    .fill(spool.map { Color(hex: $0.colorHex) } ?? Color.white.opacity(0.08))
+                                    .frame(width: 11, height: 11)
+                            }
+                        }
+                    }
                 } else if !printer.allTrays.isEmpty {
                     FlowLayout(spacing: 7, rowSpacing: 7) {
                         ForEach(printer.allTrays) { tray in

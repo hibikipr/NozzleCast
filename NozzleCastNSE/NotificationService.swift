@@ -148,7 +148,7 @@ final class NotificationService: UNNotificationServiceExtension {
         for activity in Activity<PrintActivityAttributes>.activities {
             guard haystack.contains(normalize(activity.attributes.printerName)) else { continue }
             var state = activity.content.state
-            state.coverThumbnail = thumbnail
+            state.liveSnapshot = thumbnail
             Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
         }
     }

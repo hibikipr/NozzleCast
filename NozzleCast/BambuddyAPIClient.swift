@@ -73,6 +73,8 @@ struct BambuddyStatusDTO: Codable {
     var subtaskName: String?
     var progress: Double?
     var remainingTime: Int?
+    var layerNum: Int?
+    var totalLayers: Int?
     var temperatures: BambuddyTemperaturesDTO?
     var ams: [BambuddyAMSUnitDTO]?
     /// Spool bays fed directly rather than through an AMS (fixed ids 254/255 = left/right nozzle).

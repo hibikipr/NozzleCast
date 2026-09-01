@@ -159,7 +159,25 @@ final class AppStore {
             printers = printerList.map { dto in
                 Self.mapPrinter(dto, extras: extras[dto.id] ?? PrinterExtras(status: nil, maintenance: nil, smartPlug: nil), obico: obico, assignmentsByPrinterSlot: assignmentsByPrinterSlot)
             }
-            PrintLiveActivityManager.shared.sync(printers: printers)
+
+            // The cover render is static for the whole print, so only fetch it once per job
+            // rather than on every refresh — the Live Activity manager tells us who already has one.
+            let printersNeedingCover = printers.filter { $0.state == .printing && !PrintLiveActivityManager.shared.hasCoverImage(printerID: $0.id) }
+            var coverImages: [String: Data] = [:]
+            if !printersNeedingCover.isEmpty {
+                await withTaskGroup(of: (String, Data?).self) { group in
+                    for printer in printersNeedingCover {
+                        group.addTask {
+                            let image = await self.printerCoverImage(printerID: printer.id)
+                            return (printer.id, image.flatMap { PrintLiveActivityManager.downscaledCoverImage($0) })
+                        }
+                    }
+                    for await (id, data) in group {
+                        if let data { coverImages[id] = data }
+                    }
+                }
+            }
+            PrintLiveActivityManager.shared.sync(printers: printers, coverImages: coverImages)
 
             spools = spoolList
                 .filter { $0.archivedAt == nil }
@@ -307,6 +325,8 @@ final class AppStore {
             jobFileName: (job?.isEmpty == false) ? job : nil,
             progress: (state == .printing || state == .paused) ? progress : nil,
             etaMinutesRemaining: (state == .printing || state == .paused) ? remaining : nil,
+            currentLayer: (state == .printing || state == .paused) ? status?.layerNum : nil,
+            totalLayers: (state == .printing || state == .paused) ? status?.totalLayers : nil,
             nozzle: reading(current: temps?.nozzle, target: temps?.nozzleTarget),
             rightNozzle: rightNozzle,
             bed: reading(current: temps?.bed, target: temps?.bedTarget),

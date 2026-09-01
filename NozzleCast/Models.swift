@@ -122,6 +122,8 @@ struct Printer: Identifiable {
     var jobFileName: String?
     var progress: Double?
     var etaMinutesRemaining: Int?
+    var currentLayer: Int? = nil
+    var totalLayers: Int? = nil
     var nozzle: TemperatureReading
     /// Second nozzle's reading on a dual-nozzle printer (e.g. the H2C); nil everywhere else.
     var rightNozzle: TemperatureReading? = nil

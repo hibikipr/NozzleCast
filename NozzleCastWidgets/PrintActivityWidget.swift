@@ -5,8 +5,9 @@ import UIKit
 
 private let accent = Color(red: 0x2A / 255, green: 0x5F / 255, blue: 0xCC / 255)
 
-/// Renders the printer's latest camera snapshot (from Bambuddy's ntfy push attachment) when
-/// available, falling back to a plain printer icon before the first snapshot arrives.
+/// Renders the printer's live camera snapshot when Bambuddy has sent one, falling back to the
+/// sliced-plate cover render fetched at print start, and only as a last resort (the brief window
+/// before that fetch completes) a plain printer icon.
 @ViewBuilder
 private func thumbnailView(_ data: Data?, size: CGFloat) -> some View {
     if let data, let uiImage = UIImage(data: data) {
@@ -24,6 +25,37 @@ private func thumbnailView(_ data: Data?, size: CGFloat) -> some View {
                     .font(.system(size: size * 0.45))
                     .foregroundStyle(accent)
             }
+    }
+}
+
+private struct TelemetryChip: View {
+    var icon: String
+    var text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 9, weight: .semibold))
+            Text(text).font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(.white.opacity(0.75))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.white.opacity(0.08)))
+    }
+}
+
+@ViewBuilder
+private func telemetryChips(_ state: PrintActivityAttributes.ContentState) -> some View {
+    HStack(spacing: 6) {
+        if let current = state.currentLayer, let total = state.totalLayers {
+            TelemetryChip(icon: "square.3.layers.3d", text: "Layer \(current)/\(total)")
+        }
+        if let nozzle = state.nozzleTempC {
+            TelemetryChip(icon: "flame.fill", text: "\(nozzle)°")
+        }
+        if let bed = state.bedTempC {
+            TelemetryChip(icon: "square.stack", text: "\(bed)°")
+        }
     }
 }
 
@@ -57,7 +89,7 @@ struct PrintActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    thumbnailView(context.state.coverThumbnail, size: 36)
+                    thumbnailView(context.state.preferredThumbnail, size: 36)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     LiveProgressText(state: context.state)
@@ -69,7 +101,7 @@ struct PrintActivityWidget: Widget {
                         .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         if let job = context.state.jobName {
                             Text(job)
                                 .font(.caption)
@@ -77,17 +109,17 @@ struct PrintActivityWidget: Widget {
                                 .lineLimit(1)
                         }
                         progressView(state: context.state)
+                        telemetryChips(context.state)
                     }
                 }
             } compactLeading: {
-                thumbnailView(context.state.coverThumbnail, size: 20)
+                thumbnailView(context.state.preferredThumbnail, size: 20)
             } compactTrailing: {
                 LiveProgressText(state: context.state)
                     .font(.caption2)
                     .foregroundStyle(.white)
             } minimal: {
-                Image(systemName: "printer.fill")
-                    .foregroundStyle(accent)
+                thumbnailView(context.state.preferredThumbnail, size: 16)
             }
         }
     }
@@ -114,7 +146,20 @@ private struct LockScreenView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            thumbnailView(state.coverThumbnail, size: 56)
+            thumbnailView(state.preferredThumbnail, size: 56)
+                .overlay(alignment: .topLeading) {
+                    if state.liveSnapshot != nil {
+                        HStack(spacing: 3) {
+                            Circle().fill(Color(hex: "#22C55E")).frame(width: 4, height: 4)
+                            Text("LIVE").font(.system(size: 6, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.black.opacity(0.55)))
+                        .padding(3)
+                    }
+                }
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -143,8 +188,19 @@ private struct LockScreenView: View {
                 }
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.6))
+                telemetryChips(state)
             }
         }
         .padding()
+    }
+}
+
+private extension Color {
+    init(hex: String) {
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        s.removeAll { $0 == "#" }
+        var v: UInt64 = 0
+        Scanner(string: s).scanHexInt64(&v)
+        self.init(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
     }
 }
