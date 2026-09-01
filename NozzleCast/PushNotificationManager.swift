@@ -5,12 +5,18 @@ import FirebaseCore
 import FirebaseMessaging
 
 /// Owns the Firebase/APNs push pipeline: configuring Firebase from the user-imported config,
-/// registering for remote notifications, and subscribing to Bambuddy's ntfy topic (hashed the
-/// same way the user's ntfy app would) once Bambuddy tells us which server/topic it publishes
-/// alerts to.
+/// registering for remote notifications, and subscribing to Bambuddy's ntfy topic once Bambuddy
+/// tells us which server/topic it publishes alerts to.
 @Observable
 final class PushNotificationManager: NSObject {
     static let shared = PushNotificationManager()
+
+    /// The user's ntfy server is baked into their own ntfy iOS app as *that app's* bundled
+    /// default (`APP_BASE_URL` in `ntfy-ios/ntfy.xcodeproj`), so per ntfy's own topic-hashing
+    /// rule its Firebase relay publishes under the raw, unhashed topic name rather than a
+    /// per-server hash — confirmed by a live test push that only the hashed subscription missed.
+    /// Matching that here means comparing against this same server, not hashing unconditionally.
+    private static let knownNtfyDefaultBaseUrl = "https://ntfy.townsville.cc"
 
     private(set) var isFirebaseConfigured = false
     private(set) var subscribedTopic: String?
@@ -58,7 +64,7 @@ final class PushNotificationManager: NSObject {
     func subscribe(server: String, topic: String, authToken: String? = nil) {
         PushSharedStore.saveNtfyConfig(.init(server: server, topic: topic, authToken: authToken))
         guard isFirebaseConfigured else { return }
-        let fcmTopic = PushTopicHash.firebaseTopic(baseUrl: server, topic: topic, appDefaultBaseUrl: "")
+        let fcmTopic = PushTopicHash.firebaseTopic(baseUrl: server, topic: topic, appDefaultBaseUrl: Self.knownNtfyDefaultBaseUrl)
         Messaging.messaging().subscribe(toTopic: fcmTopic) { [weak self] error in
             guard error == nil else { return }
             Task { @MainActor in self?.subscribedTopic = topic }
@@ -67,7 +73,7 @@ final class PushNotificationManager: NSObject {
 
     func unsubscribeCurrent() {
         guard let config = PushSharedStore.loadNtfyConfig() else { return }
-        let fcmTopic = PushTopicHash.firebaseTopic(baseUrl: config.server, topic: config.topic, appDefaultBaseUrl: "")
+        let fcmTopic = PushTopicHash.firebaseTopic(baseUrl: config.server, topic: config.topic, appDefaultBaseUrl: Self.knownNtfyDefaultBaseUrl)
         Messaging.messaging().unsubscribe(fromTopic: fcmTopic)
         PushSharedStore.clearNtfyConfig()
         subscribedTopic = nil
