@@ -102,10 +102,16 @@ enum BambuddyAPIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: "Bambuddy server isn't configured."
-        case .invalidResponse: "Received an unexpected response from the server."
-        case .http(let code, let message): "Server returned \(code)\(message.isEmpty ? "" : ": \(message)")"
-        case .decoding(let error): "Couldn't parse the server response (\(error.localizedDescription))."
+        case .notConfigured:
+            String(localized: "Bambuddy server isn't configured.")
+        case .invalidResponse:
+            String(localized: "Received an unexpected response from the server.")
+        case .http(let code, let message):
+            message.isEmpty
+                ? String(localized: "Server returned \(code)")
+                : String(localized: "Server returned \(code): \(message)")
+        case .decoding(let error):
+            String(localized: "Couldn't parse the server response (\(error.localizedDescription)).")
         }
     }
 }

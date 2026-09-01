@@ -48,7 +48,7 @@ enum FilamentLookupService {
                 found: false,
                 source: "error",
                 result: blankResult(barcode: code),
-                lookupError: "Couldn't reach the Open Filament Database or SpoolmanDB-Community. Check your connection and try again."
+                lookupError: String(localized: "Couldn't reach the Open Filament Database or SpoolmanDB-Community. Check your connection and try again.")
             )
         }
 

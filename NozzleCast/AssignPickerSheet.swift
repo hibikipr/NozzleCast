@@ -78,7 +78,7 @@ struct AssignPickerSheet: View {
                     Image(systemName: "chevron.left")
                         .foregroundStyle(NCColor.textSecondary)
                 }
-                Text("\(printer?.name ?? "Printer") · Choose a Slot")
+                Text("\(printer?.name ?? String(localized: "Printer", comment: "Fallback name for a printer with no known name")) · Choose a Slot", comment: "Sheet title: printer name and 'Choose a Slot'")
                     .ncFont(size: 17, weight: .bold, relativeTo: .headline)
             }
             .padding(.horizontal, 20)

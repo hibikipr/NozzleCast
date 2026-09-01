@@ -17,9 +17,15 @@ struct MonitorView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("NozzleCast")
                             .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
-                        Text(isConnecting ? "Connecting to Bambuddy…" : "\(printingCount) printing · \(store.printers.count) printers")
-                            .ncFont(size: 15, relativeTo: .subheadline)
-                            .foregroundStyle(NCColor.textSecondary)
+                        Group {
+                            if isConnecting {
+                                Text("Connecting to Bambuddy…")
+                            } else {
+                                Text("\(printingCount) printing · \(store.printers.count) printers")
+                            }
+                        }
+                        .ncFont(size: 15, relativeTo: .subheadline)
+                        .foregroundStyle(NCColor.textSecondary)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
@@ -86,9 +92,9 @@ struct PrinterCard: View {
                         .truncationMode(.middle)
                     ProgressBar(progress: printer.progress ?? 0)
                     HStack {
-                        Text("\(Int((printer.progress ?? 0) * 100))%")
+                        Text(printer.progress ?? 0, format: .percent.precision(.fractionLength(0)))
                         Text("·")
-                        Text("\(printer.etaDescription ?? "--") left")
+                        Text("\(printer.etaDescription ?? "--") left", comment: "Remaining print time, e.g. '12m left'")
                     }
                     .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)

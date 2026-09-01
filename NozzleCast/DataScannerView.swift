@@ -40,7 +40,7 @@ struct ScannerCameraGate: View {
             if !DataScannerViewController.isSupported {
                 unavailable(
                     icon: "camera.metering.unknown",
-                    message: "Camera scanning needs a real device"
+                    message: String(localized: "Camera scanning needs a real device")
                 )
             } else {
                 switch authStatus {
@@ -48,7 +48,7 @@ struct ScannerCameraGate: View {
                     if DataScannerViewController.isAvailable {
                         DataScannerView(mode: mode, bridge: bridge)
                     } else {
-                        unavailable(icon: "camera.metering.unknown", message: "Camera unavailable right now")
+                        unavailable(icon: "camera.metering.unknown", message: String(localized: "Camera unavailable right now"))
                     }
                 case .notDetermined:
                     Color.clear
@@ -59,15 +59,15 @@ struct ScannerCameraGate: View {
                 case .denied, .restricted:
                     unavailable(
                         icon: "camera.fill",
-                        message: "Camera access is off for NozzleCast",
-                        actionTitle: "Open Settings"
+                        message: String(localized: "Camera access is off for \(Bundle.main.displayName)"),
+                        actionTitle: String(localized: "Open Settings")
                     ) {
                         if let url = URL(string: UIApplication.openSettingsURLString) {
                             UIApplication.shared.open(url)
                         }
                     }
                 @unknown default:
-                    unavailable(icon: "camera.fill", message: "Camera unavailable")
+                    unavailable(icon: "camera.fill", message: String(localized: "Camera unavailable"))
                 }
             }
         }
@@ -144,7 +144,7 @@ private struct DataScannerView: UIViewControllerRepresentable {
                     attemptStart(vc, retriesLeft: retriesLeft - 1)
                 }
             } else {
-                bridge.failureMessage = "Couldn't start the camera: \(error.localizedDescription)"
+                bridge.failureMessage = String(localized: "Couldn't start the camera: \(error.localizedDescription)")
             }
         }
     }
@@ -168,7 +168,7 @@ private struct DataScannerView: UIViewControllerRepresentable {
         }
 
         func dataScanner(_ dataScanner: DataScannerViewController, becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable) {
-            bridge.failureMessage = "Scanning stopped: \(error.localizedDescription)"
+            bridge.failureMessage = String(localized: "Scanning stopped: \(error.localizedDescription)")
         }
 
         private func apply(_ items: [RecognizedItem]) {

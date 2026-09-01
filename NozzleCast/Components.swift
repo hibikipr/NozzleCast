@@ -112,7 +112,7 @@ struct AMSSlotCard: View {
             .frame(width: 62, height: 50)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            Text(spool?.colorName ?? "Slot \(slotIndex + 1)")
+            Text(spool?.colorName ?? String(localized: "Slot \(slotIndex + 1)", comment: "Fallback label for an empty AMS slot"))
                 .ncFont(size: 9, weight: .semibold, relativeTo: .caption2)
                 .foregroundStyle(NCColor.textSecondary)
                 .lineLimit(1)

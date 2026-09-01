@@ -29,7 +29,9 @@ struct AMSUnit: Identifiable {
     /// Bambu's high-temperature AMS unit carries an unrelated raw unit id (e.g. 129), so it
     /// gets a fixed label instead of being numbered alongside the regular AMS units.
     func displayName(position: Int) -> String {
-        isHT ? "AMS-HT" : "AMS \(position + 1)"
+        isHT
+            ? String(localized: "AMS-HT", comment: "Label for Bambu's high-temperature AMS unit")
+            : String(localized: "AMS \(position + 1)", comment: "Label for a numbered AMS unit, e.g. 'AMS 1'")
     }
 }
 
@@ -52,11 +54,15 @@ struct Printer: Identifiable {
         guard let minutes = etaMinutesRemaining else { return nil }
         let h = minutes / 60
         let m = minutes % 60
-        if h > 0 { return "\(h)h \(m)m" }
-        return "\(m)m"
+        if h > 0 {
+            return String(localized: "\(h)h \(m)m", comment: "Remaining print time, hours and minutes")
+        }
+        return String(localized: "\(m)m", comment: "Remaining print time, minutes only")
     }
 
-    var statusSubtitle: String { "\(model) · \(state.label)" }
+    var statusSubtitle: String {
+        String(localized: "\(model) · \(state.label)", comment: "Printer model and status, e.g. 'X1 Carbon · Printing'")
+    }
 
     /// Flat list of every tray across every AMS unit, in display order.
     var allTrays: [AMSTray] { amsUnits.flatMap(\.trays) }
@@ -98,11 +104,14 @@ struct Spool: Identifiable {
     func locationCaption(printerName: (String) -> String?) -> String {
         switch location {
         case .storage(let name):
-            return name.map { "In storage · \($0)" } ?? "In storage"
+            if let name {
+                return String(localized: "In storage · \(name)", comment: "Spool location: a named storage location")
+            }
+            return String(localized: "In storage", comment: "Spool location: unnamed storage")
         case .ams(let printerID, let amsIndex, let trayIndex):
-            let name = printerName(printerID) ?? "Printer"
-            let slotLabel = "AMS \(amsIndex + 1) · Slot \(trayIndex + 1)"
-            return "\(name) · \(slotLabel)"
+            let name = printerName(printerID) ?? String(localized: "Printer", comment: "Fallback name for a printer with no known name")
+            let slotLabel = String(localized: "AMS \(amsIndex + 1) · Slot \(trayIndex + 1)", comment: "AMS unit and slot number, e.g. 'AMS 1 · Slot 3'")
+            return String(localized: "\(name) · \(slotLabel)", comment: "Spool location: printer name and AMS slot")
         }
     }
 }

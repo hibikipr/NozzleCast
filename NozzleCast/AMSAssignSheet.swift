@@ -17,7 +17,7 @@ struct AMSAssignSheet: View {
     private var unitLabel: String {
         guard let printer, printer.amsUnits.count > 1, let unit else { return "" }
         let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
-        return unit.displayName(position: standardUnitOrder[unit.id] ?? 0) + " · "
+        return String(localized: "\(unit.displayName(position: standardUnitOrder[unit.id] ?? 0)) · ", comment: "AMS unit label prefix, followed by a slot number")
     }
 
     var body: some View {
@@ -29,7 +29,7 @@ struct AMSAssignSheet: View {
                 .padding(.bottom, 16)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(printer?.name ?? "Printer") · \(unitLabel)Slot \(trayIndex + 1)")
+                Text("\(printer?.name ?? String(localized: "Printer", comment: "Fallback name for a printer with no known name")) · \(unitLabel)Slot \(trayIndex + 1)", comment: "Sheet title: printer name, optional AMS unit, and slot number")
                     .ncFont(size: 17, weight: .bold, relativeTo: .headline)
 
                 if let occupant {
@@ -100,7 +100,7 @@ private struct SpoolRow: View {
 
             Spacer()
 
-            Text("\(spool.remainingPercent)%")
+            Text(Double(spool.remainingPercent) / 100, format: .percent.precision(.fractionLength(0)))
                 .ncFont(size: 13, weight: .medium, relativeTo: .footnote)
                 .foregroundStyle(NCColor.textSecondary)
         }

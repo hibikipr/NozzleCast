@@ -12,15 +12,17 @@ struct SettingsView: View {
                         showConnectionSheet = true
                     } label: {
                         settingsRow(
-                            title: "Server",
-                            value: store.config.isConfigured ? store.config.serverURLString : "Not configured"
+                            title: String(localized: "Server", comment: "Settings row label"),
+                            value: store.config.isConfigured
+                                ? store.config.serverURLString
+                                : String(localized: "Not configured", comment: "Settings row value when no server is set")
                         )
                     }
                     if store.config.isConfigured {
                         Button {
                             showConnectionSheet = true
                         } label: {
-                            settingsRow(title: "API Key", value: store.config.maskedAPIKey)
+                            settingsRow(title: String(localized: "API Key", comment: "Settings row label"), value: store.config.maskedAPIKey)
                         }
                         HStack {
                             Text("Status")
@@ -37,8 +39,14 @@ struct SettingsView: View {
 
                 Section("Printers") {
                     if store.printers.isEmpty {
-                        Text(store.isRefreshing ? "Loading…" : "No printers found.")
-                            .foregroundStyle(NCColor.textTertiary)
+                        Group {
+                            if store.isRefreshing {
+                                Text("Loading…")
+                            } else {
+                                Text("No printers found.")
+                            }
+                        }
+                        .foregroundStyle(NCColor.textTertiary)
                     }
                     ForEach(store.printers) { printer in
                         NavigationLink(value: printer.id) {
@@ -121,21 +129,25 @@ struct SettingsView: View {
         case .connected:
             var granted: [String] = []
             if store.grantedPermissions.contains("inventory:update") || store.grantedPermissions.contains("inventory:create") {
-                granted.append("Manage Inventory")
+                granted.append(String(localized: "Manage Inventory", comment: "Bambuddy API permission name"))
             }
             if store.grantedPermissions.contains("printers:read") {
-                granted.append("Read Status")
+                granted.append(String(localized: "Read Status", comment: "Bambuddy API permission name"))
             }
             if store.grantedPermissions.contains("printers:control") {
-                granted.append("Printer Control")
+                granted.append(String(localized: "Printer Control", comment: "Bambuddy API permission name"))
             }
-            return granted.isEmpty ? "Connected." : "\(granted.joined(separator: ", ")) permissions granted."
+            if granted.isEmpty {
+                return String(localized: "Connected.", comment: "Settings footer: connected with no listed permissions")
+            }
+            let list = ListFormatter.localizedString(byJoining: granted)
+            return String(localized: "\(list) permissions granted.", comment: "Settings footer: list of granted API permissions")
         case .failed(let message):
-            return "Couldn't connect: \(message)"
+            return String(localized: "Couldn't connect: \(message)", comment: "Settings footer: connection error")
         case .connecting:
-            return "Connecting to your Bambuddy server…"
+            return String(localized: "Connecting to your Bambuddy server…", comment: "Settings footer: connecting")
         case .notConfigured:
-            return "Showing demo data. Tap Server to connect to your Bambuddy instance."
+            return String(localized: "Showing demo data. Tap Server to connect to your Bambuddy instance.", comment: "Settings footer: no server configured")
         }
     }
 

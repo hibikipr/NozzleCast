@@ -1,0 +1,468 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "%@ left" : {
+      "comment" : "Remaining print time, e.g. '12m left'"
+    },
+    "%@ permissions granted." : {
+      "comment" : "Settings footer: list of granted API permissions"
+    },
+    "%@ remaining" : {
+      "comment" : "Remaining print time, e.g. '12m remaining'"
+    },
+    "%@ · " : {
+      "comment" : "AMS unit label prefix, followed by a slot number"
+    },
+    "%@ · %@" : {
+      "comment" : "Printer model and status, e.g. 'X1 Carbon · Printing'\nSpool location: printer name and AMS slot",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ · %@Slot %lld" : {
+      "comment" : "Sheet title: printer name, optional AMS unit, and slot number",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@Slot %3$lld"
+          }
+        }
+      }
+    },
+    "%@ · Choose a Slot" : {
+      "comment" : "Sheet title: printer name and 'Choose a Slot'"
+    },
+    "%lld printing · %lld printers" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld printing · %2$lld printers"
+          }
+        }
+      }
+    },
+    "%lld spools · %lld g on hand" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld spools · %2$lld g on hand"
+          }
+        }
+      }
+    },
+    "%lldh %lldm" : {
+      "comment" : "Remaining print time, hours and minutes",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lldh %2$lldm"
+          }
+        }
+      }
+    },
+    "%lldm" : {
+      "comment" : "Remaining print time, minutes only"
+    },
+    "%lld°" : {
+
+    },
+    "%lld°/%lld°" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld°/%2$lld°"
+          }
+        }
+      }
+    },
+    "AMS %lld" : {
+      "comment" : "Label for a numbered AMS unit, e.g. 'AMS 1'"
+    },
+    "AMS %lld · Slot %lld" : {
+      "comment" : "AMS unit and slot number, e.g. 'AMS 1 · Slot 3'",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AMS %1$lld · Slot %2$lld"
+          }
+        }
+      }
+    },
+    "AMS Filament" : {
+
+    },
+    "AMS-HT" : {
+      "comment" : "Label for Bambu's high-temperature AMS unit"
+    },
+    "API Key" : {
+      "comment" : "Settings row label"
+    },
+    "Add to Inventory" : {
+
+    },
+    "Added to Inventory" : {
+
+    },
+    "All" : {
+      "comment" : "Inventory filter: show all spools"
+    },
+    "Also matches: %@" : {
+
+    },
+    "Assign to a Printer" : {
+
+    },
+    "Bambuddy Server" : {
+
+    },
+    "Bambuddy server isn't configured." : {
+
+    },
+    "Barcode" : {
+      "comment" : "Filament field label\nScan mode: live barcode scanning"
+    },
+    "Barcode or SKU" : {
+
+    },
+    "Bed" : {
+      "comment" : "Temperature reading label"
+    },
+    "Brand" : {
+      "comment" : "Filament field label"
+    },
+    "Camera Issue" : {
+
+    },
+    "Camera access is off for %@" : {
+
+    },
+    "Camera scanning needs a real device" : {
+
+    },
+    "Camera unavailable" : {
+
+    },
+    "Camera unavailable right now" : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Chamber" : {
+      "comment" : "Temperature reading label"
+    },
+    "Choose a Printer" : {
+
+    },
+    "Color name" : {
+      "comment" : "Filament field label"
+    },
+    "Connect Bambuddy" : {
+
+    },
+    "Connected" : {
+
+    },
+    "Connected as %@" : {
+
+    },
+    "Connected." : {
+      "comment" : "Settings footer: connected with no listed permissions"
+    },
+    "Connecting to Bambuddy…" : {
+
+    },
+    "Connecting to your Bambuddy server…" : {
+      "comment" : "Settings footer: connecting"
+    },
+    "Connecting…" : {
+
+    },
+    "Connection failed" : {
+
+    },
+    "Couldn't connect: %@" : {
+      "comment" : "Settings footer: connection error"
+    },
+    "Couldn't parse the server response (%@)." : {
+
+    },
+    "Couldn't reach the Open Filament Database or SpoolmanDB-Community. Check your connection and try again." : {
+
+    },
+    "Couldn't start the camera: %@" : {
+
+    },
+    "Disconnect" : {
+
+    },
+    "Done" : {
+
+    },
+    "Empty" : {
+
+    },
+    "Empty slot — assign a spool from inventory" : {
+
+    },
+    "Enter Code Manually" : {
+
+    },
+    "Enter Filament Details" : {
+
+    },
+    "Error" : {
+      "comment" : "Printer status"
+    },
+    "Filament" : {
+
+    },
+    "Filament color" : {
+
+    },
+    "Find your API key in Bambuddy under Settings → API Keys. It needs Read Status and Manage Inventory permissions." : {
+
+    },
+    "Home Axes" : {
+
+    },
+    "Idle" : {
+      "comment" : "Printer status"
+    },
+    "In AMS" : {
+      "comment" : "Inventory filter: spools currently loaded in an AMS"
+    },
+    "In Storage" : {
+      "comment" : "Inventory filter: spools not loaded in an AMS"
+    },
+    "In storage" : {
+      "comment" : "Spool location: unnamed storage"
+    },
+    "In storage · %@" : {
+      "comment" : "Spool location: a named storage location"
+    },
+    "Inventory" : {
+
+    },
+    "LIVE" : {
+
+    },
+    "Label Photo" : {
+      "comment" : "Scan mode: photograph the printed label"
+    },
+    "Light" : {
+      "comment" : "Printer control button"
+    },
+    "Loading your inventory…" : {
+
+    },
+    "Loading your printers…" : {
+
+    },
+    "Loading…" : {
+
+    },
+    "Local-first control for your farm." : {
+
+    },
+    "Look Up" : {
+
+    },
+    "Looking up filament…" : {
+
+    },
+    "Lookup Failed" : {
+
+    },
+    "Manage Inventory" : {
+      "comment" : "Bambuddy API permission name"
+    },
+    "Manual" : {
+      "comment" : "Scan mode: enter filament details by hand"
+    },
+    "Material" : {
+      "comment" : "Filament field label"
+    },
+    "Monitor" : {
+
+    },
+    "More" : {
+
+    },
+    "Net weight (g)" : {
+      "comment" : "Filament field label"
+    },
+    "No match in the Open Filament Database or SpoolmanDB-Community. Fill in the details below and it'll be added as entered." : {
+
+    },
+    "No printers found." : {
+
+    },
+    "No spools match \"%@\"." : {
+
+    },
+    "No spools match this filter." : {
+
+    },
+    "Not Found" : {
+
+    },
+    "Not configured" : {
+      "comment" : "Settings row value when no server is set"
+    },
+    "Not connected" : {
+
+    },
+    "Nozzle" : {
+      "comment" : "Temperature reading label"
+    },
+    "NozzleCast" : {
+
+    },
+    "NozzleCast 1.0.0" : {
+
+    },
+    "OFFLINE" : {
+
+    },
+    "OK" : {
+
+    },
+    "Offline" : {
+      "comment" : "Printer status"
+    },
+    "Open Camera in Browser" : {
+
+    },
+    "Open Settings" : {
+
+    },
+    "Pause" : {
+      "comment" : "Printer control button"
+    },
+    "Paused" : {
+      "comment" : "Printer status"
+    },
+    "Photograph the filament label" : {
+
+    },
+    "Point at the box barcode" : {
+
+    },
+    "Printer" : {
+      "comment" : "Fallback name for a printer with no known name"
+    },
+    "Printer Control" : {
+      "comment" : "Bambuddy API permission name"
+    },
+    "Printer not found" : {
+
+    },
+    "Printers" : {
+
+    },
+    "Printing" : {
+      "comment" : "Printer status"
+    },
+    "Read Status" : {
+      "comment" : "Bambuddy API permission name"
+    },
+    "Received an unexpected response from the server." : {
+
+    },
+    "Refresh Status" : {
+
+    },
+    "Remove" : {
+
+    },
+    "Resume" : {
+      "comment" : "Printer control button"
+    },
+    "Review Details" : {
+
+    },
+    "Save & Test Connection" : {
+
+    },
+    "Scan" : {
+
+    },
+    "Scan Filament" : {
+
+    },
+    "Scanning automatically…" : {
+
+    },
+    "Scanning stopped: %@" : {
+
+    },
+    "Search filament" : {
+
+    },
+    "Server" : {
+      "comment" : "Settings row label"
+    },
+    "Server returned %lld" : {
+
+    },
+    "Server returned %lld: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Server returned %1$lld: %2$@"
+          }
+        }
+      }
+    },
+    "Settings" : {
+
+    },
+    "Showing demo data. Tap Server to connect to your Bambuddy instance." : {
+      "comment" : "Settings footer: no server configured"
+    },
+    "Slot %lld" : {
+      "comment" : "Fallback label for an empty AMS slot"
+    },
+    "Start" : {
+      "comment" : "Printer control button"
+    },
+    "Status" : {
+
+    },
+    "Stop" : {
+      "comment" : "Printer control button"
+    },
+    "Temperatures" : {
+
+    },
+    "This printer has no AMS units." : {
+
+    },
+    "bambuddy.example.com" : {
+
+    },
+    "or enter code manually" : {
+
+    },
+    "·" : {
+
+    }
+  },
+  "version" : "1.1"
+}

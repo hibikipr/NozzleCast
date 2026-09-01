@@ -1,6 +1,16 @@
 import SwiftUI
 import UIKit
 
+extension Bundle {
+    /// The app's localized display name (falls back to the target name if unset), for
+    /// building sentences that reference the app without hardcoding its name inline.
+    var displayName: String {
+        (object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? "NozzleCast"
+    }
+}
+
 extension Color {
     init(hex: String) {
         var s = hex.trimmingCharacters(in: .alphanumerics.inverted)
@@ -112,11 +122,11 @@ extension PrinterState {
 
     var label: String {
         switch self {
-        case .printing: "Printing"
-        case .paused: "Paused"
-        case .idle: "Idle"
-        case .error: "Error"
-        case .offline: "Offline"
+        case .printing: String(localized: "Printing", comment: "Printer status")
+        case .paused: String(localized: "Paused", comment: "Printer status")
+        case .idle: String(localized: "Idle", comment: "Printer status")
+        case .error: String(localized: "Error", comment: "Printer status")
+        case .offline: String(localized: "Offline", comment: "Printer status")
         }
     }
 

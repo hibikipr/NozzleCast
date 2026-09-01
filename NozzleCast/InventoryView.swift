@@ -5,13 +5,13 @@ enum InventoryFilter: Hashable, CaseIterable {
 
     var title: String {
         switch self {
-        case .all: "All"
-        case .inAMS: "In AMS"
-        case .inStorage: "In Storage"
-        case .pla: "PLA"
-        case .petg: "PETG"
-        case .abs: "ABS"
-        case .tpu: "TPU"
+        case .all: String(localized: "All", comment: "Inventory filter: show all spools")
+        case .inAMS: String(localized: "In AMS", comment: "Inventory filter: spools currently loaded in an AMS")
+        case .inStorage: String(localized: "In Storage", comment: "Inventory filter: spools not loaded in an AMS")
+        case .pla: FilamentMaterial.pla.rawValue
+        case .petg: FilamentMaterial.petg.rawValue
+        case .abs: FilamentMaterial.abs.rawValue
+        case .tpu: FilamentMaterial.tpu.rawValue
         }
     }
 }
@@ -64,9 +64,15 @@ struct InventoryView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Filament")
                                 .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
-                            Text(isConnecting ? "Connecting to Bambuddy…" : "\(store.spools.count) spools · \(totalGrams) g on hand")
-                                .ncFont(size: 15, relativeTo: .subheadline)
-                                .foregroundStyle(NCColor.textSecondary)
+                            Group {
+                                if isConnecting {
+                                    Text("Connecting to Bambuddy…")
+                                } else {
+                                    Text("\(store.spools.count) spools · \(totalGrams) g on hand")
+                                }
+                            }
+                            .ncFont(size: 15, relativeTo: .subheadline)
+                            .foregroundStyle(NCColor.textSecondary)
                         }
                         .padding(.horizontal, 16)
 
@@ -93,11 +99,17 @@ struct InventoryView: View {
                             }
 
                             if filtered.isEmpty {
-                                Text(searchText.isEmpty ? "No spools match this filter." : "No spools match \"\(searchText)\".")
-                                    .ncFont(size: 13, relativeTo: .footnote)
-                                    .foregroundStyle(NCColor.textTertiary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.top, 40)
+                                Group {
+                                    if searchText.isEmpty {
+                                        Text("No spools match this filter.")
+                                    } else {
+                                        Text("No spools match \"\(searchText)\".")
+                                    }
+                                }
+                                .ncFont(size: 13, relativeTo: .footnote)
+                                .foregroundStyle(NCColor.textTertiary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 40)
                             } else {
                                 LazyVGrid(columns: columns, spacing: 12) {
                                     ForEach(filtered) { spool in

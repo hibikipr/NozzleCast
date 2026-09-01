@@ -49,7 +49,7 @@ struct PrinterDetailView: View {
                 AMSAssignSheet(printerID: printerID, amsIndex: tray.amsIndex, trayIndex: tray.trayIndex)
             }
         } else {
-            ContentUnavailableView("Printer not found", systemImage: "printer.fill")
+            ContentUnavailableView(String(localized: "Printer not found"), systemImage: "printer.fill")
         }
     }
 
@@ -111,11 +111,11 @@ struct PrinterDetailView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
-                Text("\(Int((printer.progress ?? 0) * 100))%")
+                Text(printer.progress ?? 0, format: .percent.precision(.fractionLength(0)))
                     .ncFont(size: 15, weight: .bold, relativeTo: .subheadline)
             }
             ProgressBar(progress: printer.progress ?? 0)
-            Text("\(printer.etaDescription ?? "--") remaining")
+            Text("\(printer.etaDescription ?? "--") remaining", comment: "Remaining print time, e.g. '12m remaining'")
                 .ncFont(size: 12.5, relativeTo: .caption)
                 .foregroundStyle(NCColor.textSecondary)
         }
@@ -127,14 +127,18 @@ struct PrinterDetailView: View {
         HStack(spacing: 16) {
             ControlButton(
                 systemName: printer.state == .printing ? "pause.fill" : "play.fill",
-                label: printer.state == .printing ? "Pause" : (printer.state == .paused ? "Resume" : "Start")
+                label: printer.state == .printing
+                    ? String(localized: "Pause", comment: "Printer control button")
+                    : (printer.state == .paused
+                        ? String(localized: "Resume", comment: "Printer control button")
+                        : String(localized: "Start", comment: "Printer control button"))
             ) {
                 store.togglePause(printer.id)
             }
-            ControlButton(systemName: "stop.fill", label: "Stop") {
+            ControlButton(systemName: "stop.fill", label: String(localized: "Stop", comment: "Printer control button")) {
                 store.stop(printer.id)
             }
-            ControlButton(systemName: "lightbulb.fill", label: "Light", isActive: printer.lightOn) {
+            ControlButton(systemName: "lightbulb.fill", label: String(localized: "Light", comment: "Printer control button"), isActive: printer.lightOn) {
                 store.toggleLight(printer.id)
             }
             Menu {
@@ -185,10 +189,10 @@ struct PrinterDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Temperatures").sectionEyebrow()
             HStack(spacing: 10) {
-                tempChip(icon: "flame.fill", caption: "Nozzle", reading: printer.nozzle, showTarget: true)
-                tempChip(icon: "square.stack.3d.up.fill", caption: "Bed", reading: printer.bed, showTarget: true)
+                tempChip(icon: "flame.fill", caption: String(localized: "Nozzle", comment: "Temperature reading label"), reading: printer.nozzle, showTarget: true)
+                tempChip(icon: "square.stack.3d.up.fill", caption: String(localized: "Bed", comment: "Temperature reading label"), reading: printer.bed, showTarget: true)
                 if let chamber = printer.chamber {
-                    tempChip(icon: "cube.fill", caption: "Chamber", reading: chamber, showTarget: false)
+                    tempChip(icon: "cube.fill", caption: String(localized: "Chamber", comment: "Temperature reading label"), reading: chamber, showTarget: false)
                 }
             }
         }

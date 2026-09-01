@@ -1,9 +1,15 @@
 import SwiftUI
 
-enum ScanMode: String, CaseIterable {
-    case barcode = "Barcode"
-    case labelPhoto = "Label Photo"
-    case manual = "Manual"
+enum ScanMode: CaseIterable, Hashable {
+    case barcode, labelPhoto, manual
+
+    var label: String {
+        switch self {
+        case .barcode: String(localized: "Barcode", comment: "Scan mode: live barcode scanning")
+        case .labelPhoto: String(localized: "Label Photo", comment: "Scan mode: photograph the printed label")
+        case .manual: String(localized: "Manual", comment: "Scan mode: enter filament details by hand")
+        }
+    }
 }
 
 enum ScanStep {
@@ -120,7 +126,7 @@ struct ScanView: View {
 
             HStack(spacing: 2) {
                 ForEach(ScanMode.allCases, id: \.self) { m in
-                    Text(m.rawValue)
+                    Text(m.label)
                         .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
                         .foregroundStyle(mode == m ? .white : NCColor.textSecondary)
                         .frame(maxWidth: .infinity)
@@ -178,9 +184,15 @@ struct ScanView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 360)
 
-            Text(mode == .barcode ? "Point at the box barcode" : "Photograph the filament label")
-                .ncFont(size: 13, relativeTo: .footnote)
-                .foregroundStyle(NCColor.textSecondary)
+            Group {
+                if mode == .barcode {
+                    Text("Point at the box barcode")
+                } else {
+                    Text("Photograph the filament label")
+                }
+            }
+            .ncFont(size: 13, relativeTo: .footnote)
+            .foregroundStyle(NCColor.textSecondary)
 
             Spacer()
 
@@ -273,20 +285,20 @@ struct ScanView: View {
                 }
 
                 VStack(spacing: 12) {
-                    labeledField("Brand", text: $result.brand)
-                    labeledField("Material", text: Binding(
+                    labeledField(String(localized: "Brand", comment: "Filament field label"), text: $result.brand)
+                    labeledField(String(localized: "Material", comment: "Filament field label"), text: Binding(
                         get: { result.material.rawValue },
                         set: { newValue in
                             if let m = FilamentMaterial(rawValue: newValue) { result.material = m }
                         }
                     ))
-                    labeledField("Color name", text: $result.colorName)
-                    labeledField("Net weight (g)", text: Binding(
+                    labeledField(String(localized: "Color name", comment: "Filament field label"), text: $result.colorName)
+                    labeledField(String(localized: "Net weight (g)", comment: "Filament field label"), text: Binding(
                         get: { String(result.netWeightGrams) },
                         set: { result.netWeightGrams = Int($0) ?? result.netWeightGrams }
                     ))
                     if result.barcode != nil {
-                        labeledField("Barcode", text: Binding(
+                        labeledField(String(localized: "Barcode", comment: "Filament field label"), text: Binding(
                             get: { result.barcode ?? "" },
                             set: { result.barcode = $0.isEmpty ? nil : $0 }
                         ))
@@ -345,10 +357,10 @@ struct ScanView: View {
                 }
 
                 VStack(spacing: 12) {
-                    labeledField("Brand", text: $result.brand)
+                    labeledField(String(localized: "Brand", comment: "Filament field label"), text: $result.brand)
                     materialPickerField
-                    labeledField("Color name", text: $result.colorName)
-                    labeledField("Net weight (g)", text: Binding(
+                    labeledField(String(localized: "Color name", comment: "Filament field label"), text: $result.colorName)
+                    labeledField(String(localized: "Net weight (g)", comment: "Filament field label"), text: Binding(
                         get: { String(result.netWeightGrams) },
                         set: { result.netWeightGrams = Int($0) ?? result.netWeightGrams }
                     ))
