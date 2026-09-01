@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MonitorView: View {
     @Environment(AppStore.self) private var store
+    @State private var showNotifications = false
 
     private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
 
@@ -11,18 +12,31 @@ struct MonitorView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("NozzleCast")
-                            .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
-                        Group {
-                            if isConnecting {
-                                Text("Connecting to Bambuddy…")
-                            } else {
-                                Text("\(printingCount) printing · \(store.printers.count) printers")
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("NozzleCast")
+                                .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
+                            Group {
+                                if isConnecting {
+                                    Text("Connecting to Bambuddy…")
+                                } else {
+                                    Text("\(printingCount) printing · \(store.printers.count) printers")
+                                }
                             }
+                            .ncFont(size: 15, relativeTo: .subheadline)
+                            .foregroundStyle(NCColor.textSecondary)
                         }
-                        .ncFont(size: 15, relativeTo: .subheadline)
-                        .foregroundStyle(NCColor.textSecondary)
+                        Spacer()
+                        Button {
+                            showNotifications = true
+                        } label: {
+                            Image(systemName: "bell")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 34, height: 34)
+                                .background(Circle().fill(NCColor.cardFill))
+                        }
+                        .padding(.top, 10)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
@@ -54,6 +68,11 @@ struct MonitorView: View {
             .refreshable { await store.refresh() }
             .navigationDestination(for: String.self) { id in
                 PrinterDetailView(printerID: id)
+            }
+            .sheet(isPresented: $showNotifications) {
+                NavigationStack {
+                    NotificationsView()
+                }
             }
         }
     }
