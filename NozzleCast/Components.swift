@@ -217,6 +217,76 @@ struct LiveBadge: View {
     }
 }
 
+/// Small rounded status badge — wifi strength, firmware version, warning count, etc.
+struct InfoPill: View {
+    var icon: String
+    var text: String
+    var tint: Color = NCColor.textSecondary
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(text)
+                .ncFont(size: 11.5, weight: .medium, relativeTo: .caption)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.white.opacity(0.08)))
+    }
+}
+
+/// One fan's icon + speed percentage, used in the printer detail fan-speed row.
+struct FanSpeedChip: View {
+    var icon: String
+    var caption: String
+    var percent: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(NCColor.accentLight)
+            Text(Double(percent ?? 0) / 100, format: .percent.precision(.fractionLength(0)))
+                .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
+                .foregroundStyle(percent == nil ? NCColor.textTertiary : NCColor.textPrimary)
+            Text(caption)
+                .ncFont(size: 11.5, relativeTo: .caption)
+                .foregroundStyle(NCColor.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.wellAlt))
+    }
+}
+
+/// One physical bay in a dual-nozzle printer's automatic nozzle-changer rack.
+struct NozzleRackChip: View {
+    var slot: NozzleRackSlot
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(slot.filamentColorHex.map { Color(hex: $0) } ?? NCColor.well)
+                if slot.isEmpty {
+                    Text("—")
+                        .ncFont(size: 12, weight: .semibold, relativeTo: .footnote)
+                        .foregroundStyle(NCColor.textTertiary)
+                } else {
+                    Text(slot.diameter)
+                        .ncFont(size: 11, weight: .bold, relativeTo: .caption2)
+                        .foregroundStyle(
+                            (slot.filamentColorHex.map { Color(hex: $0).isLight } ?? false) ? .black.opacity(0.7) : .white
+                        )
+                }
+            }
+            .frame(width: 40, height: 40)
+        }
+    }
+}
+
 struct FilterChip: View {
     var title: String
     var isActive: Bool

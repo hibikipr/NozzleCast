@@ -24,6 +24,14 @@ struct PrinterDetailView: View {
                     }
                     .padding(.horizontal, 16)
 
+                    infoPillRow(printer)
+                        .padding(.horizontal, 16)
+
+                    if !printer.hmsErrors.isEmpty {
+                        warningsSection(printer)
+                            .padding(.horizontal, 16)
+                    }
+
                     if printer.state == .printing || printer.state == .paused, let job = printer.jobFileName {
                         jobCard(printer: printer, job: job)
                             .padding(.horizontal, 16)
@@ -35,10 +43,30 @@ struct PrinterDetailView: View {
                     temperaturesSection(printer)
                         .padding(.horizontal, 16)
 
+                    fansSection(printer)
+                        .padding(.horizontal, 16)
+
                     if !printer.amsUnits.isEmpty {
                         amsSection(printer)
                             .padding(.horizontal, 16)
+                    }
+
+                    if !printer.externalTrays.isEmpty {
+                        externalSection(printer)
+                            .padding(.horizontal, 16)
+                    }
+
+                    if !printer.nozzleRack.isEmpty {
+                        nozzleRackSection(printer)
+                            .padding(.horizontal, 16)
+                    }
+
+                    if printer.smartPlug != nil {
+                        powerSection(printer)
+                            .padding(.horizontal, 16)
                             .padding(.bottom, 32)
+                    } else {
+                        Color.clear.frame(height: 12)
                     }
                 }
             }
@@ -103,21 +131,79 @@ struct PrinterDetailView: View {
             .background(Capsule().fill(Color.black.opacity(0.55)))
     }
 
-    private func jobCard(printer: Printer, job: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(job)
-                    .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                Text(printer.progress ?? 0, format: .percent.precision(.fractionLength(0)))
-                    .ncFont(size: 15, weight: .bold, relativeTo: .subheadline)
+    @ViewBuilder
+    private func infoPillRow(_ printer: Printer) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                if let dbm = printer.wifiSignalDBm {
+                    InfoPill(icon: "wifi", text: "\(dbm)dBm")
+                }
+                if !printer.hmsErrors.isEmpty {
+                    InfoPill(icon: "exclamationmark.triangle.fill", text: "\(printer.hmsErrors.count)", tint: NCColor.statusWarning)
+                }
+                if let fw = printer.firmwareVersion, !fw.isEmpty {
+                    InfoPill(icon: "cpu", text: fw)
+                }
+                if let hours = printer.totalPrintHours {
+                    InfoPill(icon: "clock", text: "\(Int(hours))h")
+                }
+                if let ok = printer.maintenanceOK {
+                    InfoPill(
+                        icon: "wrench.and.screwdriver.fill",
+                        text: ok ? String(localized: "OK", comment: "Maintenance status: nothing due") : String(localized: "Due", comment: "Maintenance status: something needs attention"),
+                        tint: ok ? NCColor.statusPrinting : NCColor.statusWarning
+                    )
+                }
+                if printer.doorOpen {
+                    InfoPill(icon: "door.left.hand.open", text: String(localized: "Door Open"), tint: NCColor.statusWarning)
+                }
             }
-            ProgressBar(progress: printer.progress ?? 0)
-            Text("\(printer.etaDescription ?? "--") remaining", comment: "Remaining print time, e.g. '12m remaining'")
-                .ncFont(size: 12.5, relativeTo: .caption)
-                .foregroundStyle(NCColor.textSecondary)
+        }
+    }
+
+    private func warningsSection(_ printer: Printer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(printer.hmsErrors) { hms in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(NCColor.statusWarning)
+                    Text(hms.description?.isEmpty == false ? hms.description! : hms.fullCode)
+                        .ncFont(size: 12.5, relativeTo: .caption)
+                        .foregroundStyle(NCColor.textSecondary)
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.statusWarning.opacity(0.12)))
+    }
+
+    private func jobCard(printer: Printer, job: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let coverURL = printer.coverURL {
+                AsyncImage(url: coverURL) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NCColor.well)
+                }
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(job)
+                        .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Text(printer.progress ?? 0, format: .percent.precision(.fractionLength(0)))
+                        .ncFont(size: 15, weight: .bold, relativeTo: .subheadline)
+                }
+                ProgressBar(progress: printer.progress ?? 0)
+                Text("\(printer.etaDescription ?? "--") remaining", comment: "Remaining print time, e.g. '12m remaining'")
+                    .ncFont(size: 12.5, relativeTo: .caption)
+                    .foregroundStyle(NCColor.textSecondary)
+            }
         }
         .padding(14)
         .glassCard()
@@ -189,10 +275,30 @@ struct PrinterDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Temperatures").sectionEyebrow()
             HStack(spacing: 10) {
-                tempChip(icon: "flame.fill", caption: String(localized: "Nozzle", comment: "Temperature reading label"), reading: printer.nozzle, showTarget: true)
+                if let right = printer.rightNozzle {
+                    tempChip(icon: "flame.fill", caption: String(localized: "Nozzle L", comment: "Left nozzle temperature reading label"), reading: printer.nozzle, showTarget: true)
+                    tempChip(icon: "flame.fill", caption: String(localized: "Nozzle R", comment: "Right nozzle temperature reading label"), reading: right, showTarget: true)
+                } else {
+                    tempChip(icon: "flame.fill", caption: String(localized: "Nozzle", comment: "Temperature reading label"), reading: printer.nozzle, showTarget: true)
+                }
                 tempChip(icon: "square.stack.3d.up.fill", caption: String(localized: "Bed", comment: "Temperature reading label"), reading: printer.bed, showTarget: true)
                 if let chamber = printer.chamber {
                     tempChip(icon: "cube.fill", caption: String(localized: "Chamber", comment: "Temperature reading label"), reading: chamber, showTarget: false)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func fansSection(_ printer: Printer) -> some View {
+        let speeds = printer.fanSpeeds
+        if speeds.partCooling != nil || speeds.auxiliary != nil || speeds.chamber != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Fans").sectionEyebrow()
+                HStack(spacing: 10) {
+                    FanSpeedChip(icon: "wind", caption: String(localized: "Part Cooling", comment: "Fan speed label"), percent: speeds.partCooling)
+                    FanSpeedChip(icon: "arrow.up.and.down.and.arrow.left.and.right", caption: String(localized: "Auxiliary", comment: "Fan speed label"), percent: speeds.auxiliary)
+                    FanSpeedChip(icon: "fan.fill", caption: String(localized: "Chamber", comment: "Fan speed label"), percent: speeds.chamber)
                 }
             }
         }
@@ -225,10 +331,21 @@ struct PrinterDetailView: View {
             Text("AMS Filament").sectionEyebrow()
             ForEach(printer.amsUnits) { unit in
                 VStack(alignment: .leading, spacing: 8) {
-                    if printer.amsUnits.count > 1 {
-                        Text(unit.displayName(position: standardUnitOrder[unit.id] ?? 0))
-                            .ncFont(size: 11, weight: .semibold, relativeTo: .caption2)
-                            .foregroundStyle(NCColor.textTertiary)
+                    if printer.amsUnits.count > 1 || unit.humidity != nil || unit.feedsRightNozzle != nil {
+                        HStack(spacing: 6) {
+                            Text(unit.displayName(position: standardUnitOrder[unit.id] ?? 0))
+                                .ncFont(size: 11, weight: .semibold, relativeTo: .caption2)
+                                .foregroundStyle(NCColor.textTertiary)
+                            if printer.isDualNozzle, let feedsRight = unit.feedsRightNozzle {
+                                InfoPill(icon: feedsRight ? "arrow.right" : "arrow.left", text: feedsRight ? "R" : "L")
+                            }
+                            Spacer()
+                            if let humidity = unit.humidity, let temp = unit.temperature {
+                                Text("\(humidity)% · \(Int(temp.rounded()))°C", comment: "AMS unit humidity and temperature, e.g. '27% · 30°C'")
+                                    .ncFont(size: 10.5, relativeTo: .caption2)
+                                    .foregroundStyle(NCColor.textTertiary)
+                            }
+                        }
                     }
                     HStack(spacing: 8) {
                         ForEach(unit.trays) { tray in
@@ -247,5 +364,65 @@ struct PrinterDetailView: View {
                 }
             }
         }
+    }
+
+    private func externalSection(_ printer: Printer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("External").sectionEyebrow()
+            HStack(spacing: 8) {
+                ForEach(printer.externalTrays) { tray in
+                    AMSSlotCard(spool: nil, slotIndex: tray.trayIndex)
+                }
+            }
+        }
+    }
+
+    private func nozzleRackSection(_ printer: Printer) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Nozzle Rack").sectionEyebrow()
+            FlowLayout(spacing: 8, rowSpacing: 8) {
+                ForEach(printer.nozzleRack) { slot in
+                    NozzleRackChip(slot: slot)
+                }
+            }
+        }
+    }
+
+    private func powerSection(_ printer: Printer) -> some View {
+        Group {
+            if let plug = printer.smartPlug {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Power").sectionEyebrow()
+                    powerRow(plug: plug, printer: printer)
+                }
+            }
+        }
+    }
+
+    private func powerRow(plug: SmartPlugInfo, printer: Printer) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 16))
+                .foregroundStyle(plug.isOn ? NCColor.statusPrinting : NCColor.textTertiary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(plug.name)
+                    .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                if let watts = plug.watts {
+                    Text("\(watts.formatted(.number.precision(.fractionLength(0))))W")
+                        .ncFont(size: 12, relativeTo: .caption)
+                        .foregroundStyle(NCColor.textTertiary)
+                }
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { plug.isOn },
+                set: { _ in store.toggleSmartPlug(printer.id) }
+            ))
+            .labelsHidden()
+            .tint(NCColor.accent)
+        }
+        .padding(14)
+        .glassCard()
     }
 }

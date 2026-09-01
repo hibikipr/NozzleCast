@@ -18,6 +18,9 @@ struct BambuddyTemperaturesDTO: Codable {
     var bedTarget: Double?
     var nozzle: Double?
     var nozzleTarget: Double?
+    /// Right nozzle's reading on a dual-nozzle printer (Bambuddy's `nozzle_2`/`nozzle_2_target`).
+    var nozzle2: Double?
+    var nozzle2Target: Double?
     var chamber: Double?
     var chamberTarget: Double?
 }
@@ -35,6 +38,27 @@ struct BambuddyAMSUnitDTO: Codable {
     var id: Int
     var tray: [BambuddyTrayDTO]
     var isAmsHt: Bool?
+    var humidity: Int?
+    var temp: Double?
+}
+
+struct BambuddyHMSErrorDTO: Codable {
+    var severity: Int
+    var fullCode: String
+    var description: String?
+}
+
+struct BambuddyNozzleDTO: Codable {
+    var nozzleType: String
+    var nozzleDiameter: String
+}
+
+struct BambuddyNozzleRackSlotDTO: Codable {
+    var id: Int
+    var nozzleDiameter: String
+    var maxTemp: Int
+    var serialNumber: String
+    var filamentColor: String
 }
 
 struct BambuddyStatusDTO: Codable {
@@ -47,6 +71,43 @@ struct BambuddyStatusDTO: Codable {
     var remainingTime: Int?
     var temperatures: BambuddyTemperaturesDTO?
     var ams: [BambuddyAMSUnitDTO]?
+    /// Spool bays fed directly rather than through an AMS (fixed ids 254/255 = left/right nozzle).
+    var vtTray: [BambuddyTrayDTO]?
+    var wifiSignal: Int?
+    var doorOpen: Bool?
+    var firmwareVersion: String?
+    var hmsErrors: [BambuddyHMSErrorDTO]?
+    var coverUrl: String?
+    var nozzles: [BambuddyNozzleDTO]?
+    var nozzleRack: [BambuddyNozzleRackSlotDTO]?
+    /// AMS/HT unit id (as a string key) -> "A" (left nozzle) or "B" (right nozzle).
+    var amsSwitchInlet: [String: String]?
+    var coolingFanSpeed: Int?
+    var bigFan1Speed: Int?
+    var bigFan2Speed: Int?
+    var chamberLight: Bool?
+    var awaitingPlateClear: Bool?
+}
+
+struct BambuddyMaintenanceSummaryDTO: Codable {
+    var totalPrintHours: Double
+    var dueCount: Int
+    var warningCount: Int
+}
+
+struct BambuddySmartPlugSummaryDTO: Codable {
+    var id: Int
+    var name: String
+}
+
+struct BambuddySmartPlugEnergyDTO: Codable {
+    var power: Double?
+}
+
+struct BambuddySmartPlugStatusDTO: Codable {
+    var state: String?
+    var reachable: Bool
+    var energy: BambuddySmartPlugEnergyDTO?
 }
 
 struct BambuddySpoolDTO: Codable {
@@ -180,6 +241,19 @@ struct BambuddyAPIClient {
         try await get("/api/v1/printers/\(printerID)/status")
     }
 
+    func maintenanceSummary(printerID: Int) async throws -> BambuddyMaintenanceSummaryDTO {
+        try await get("/api/v1/maintenance/printers/\(printerID)")
+    }
+
+    /// Nil when the printer has no smart plug configured (the endpoint returns a bare `null`).
+    func smartPlug(printerID: Int) async throws -> BambuddySmartPlugSummaryDTO? {
+        try await get("/api/v1/smart-plugs/by-printer/\(printerID)")
+    }
+
+    func smartPlugStatus(plugID: Int) async throws -> BambuddySmartPlugStatusDTO {
+        try await get("/api/v1/smart-plugs/\(plugID)/status")
+    }
+
     func spools() async throws -> [BambuddySpoolDTO] {
         try await get("/api/v1/inventory/spools")
     }
@@ -216,6 +290,11 @@ struct BambuddyAPIClient {
 
     func homeAxes(printerID: Int) async throws {
         _ = try await send(request("/api/v1/printers/\(printerID)/home-axes", method: "POST"))
+    }
+
+    func setSmartPlug(plugID: Int, on: Bool) async throws {
+        let body = try encoder.encode(["action": on ? "on" : "off"])
+        _ = try await send(request("/api/v1/smart-plugs/\(plugID)/control", method: "POST", body: body))
     }
 
     // MARK: Camera

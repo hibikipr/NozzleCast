@@ -41,6 +41,9 @@
     "%@ · Choose a Slot" : {
       "comment" : "Sheet title: printer name and 'Choose a Slot'"
     },
+    "%@W" : {
+
+    },
     "%lld printing · %lld printers" : {
       "localizations" : {
         "en" : {
@@ -57,6 +60,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$lld spools · %2$lld g on hand"
+          }
+        }
+      }
+    },
+    "%lld%% · %lld°C" : {
+      "comment" : "AMS unit humidity and temperature, e.g. '27% · 30°C'",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld%% · %2$lld°C"
           }
         }
       }
@@ -126,6 +140,9 @@
     "Assign to a Printer" : {
 
     },
+    "Auxiliary" : {
+      "comment" : "Fan speed label"
+    },
     "Bambuddy Server" : {
 
     },
@@ -163,7 +180,7 @@
 
     },
     "Chamber" : {
-      "comment" : "Temperature reading label"
+      "comment" : "Fan speed label\nTemperature reading label"
     },
     "Choose a Printer" : {
 
@@ -213,6 +230,12 @@
     "Done" : {
 
     },
+    "Door Open" : {
+
+    },
+    "Due" : {
+      "comment" : "Maintenance status: something needs attention"
+    },
     "Empty" : {
 
     },
@@ -227,6 +250,12 @@
     },
     "Error" : {
       "comment" : "Printer status"
+    },
+    "External" : {
+
+    },
+    "Fans" : {
+
     },
     "Filament" : {
 
@@ -333,6 +362,15 @@
     "Nozzle" : {
       "comment" : "Temperature reading label"
     },
+    "Nozzle L" : {
+      "comment" : "Left nozzle temperature reading label"
+    },
+    "Nozzle R" : {
+      "comment" : "Right nozzle temperature reading label"
+    },
+    "Nozzle Rack" : {
+
+    },
     "NozzleCast" : {
 
     },
@@ -343,7 +381,7 @@
 
     },
     "OK" : {
-
+      "comment" : "Maintenance status: nothing due"
     },
     "Offline" : {
       "comment" : "Printer status"
@@ -353,6 +391,9 @@
     },
     "Open Settings" : {
 
+    },
+    "Part Cooling" : {
+      "comment" : "Fan speed label"
     },
     "Pause" : {
       "comment" : "Printer control button"
@@ -364,6 +405,9 @@
 
     },
     "Point at the box barcode" : {
+
+    },
+    "Power" : {
 
     },
     "Printer" : {
@@ -467,6 +511,9 @@
 
     },
     "·" : {
+
+    },
+    "—" : {
 
     }
   },

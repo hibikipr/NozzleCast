@@ -91,12 +91,25 @@ final class AppStore {
 
             locationNames = Dictionary(uniqueKeysWithValues: locationList.map { ($0.id, $0.name) })
 
-            let statuses: [Int: BambuddyStatusDTO] = try await withThrowingTaskGroup(of: (Int, BambuddyStatusDTO).self) { group in
+            let extras: [Int: PrinterExtras] = try await withThrowingTaskGroup(of: (Int, PrinterExtras).self) { group in
                 for p in printerList {
-                    group.addTask { (p.id, try await client.status(printerID: p.id)) }
+                    group.addTask {
+                        async let statusTask: BambuddyStatusDTO? = try? client.status(printerID: p.id)
+                        async let maintenanceTask: BambuddyMaintenanceSummaryDTO? = try? client.maintenanceSummary(printerID: p.id)
+
+                        var smartPlug: (BambuddySmartPlugSummaryDTO, BambuddySmartPlugStatusDTO)?
+                        if let plugInfo: BambuddySmartPlugSummaryDTO = try? await client.smartPlug(printerID: p.id) {
+                            if let plugStatus: BambuddySmartPlugStatusDTO = try? await client.smartPlugStatus(plugID: plugInfo.id) {
+                                smartPlug = (plugInfo, plugStatus)
+                            }
+                        }
+
+                        let extras = PrinterExtras(status: await statusTask, maintenance: await maintenanceTask, smartPlug: smartPlug)
+                        return (p.id, extras)
+                    }
                 }
-                var result: [Int: BambuddyStatusDTO] = [:]
-                for try await (id, status) in group { result[id] = status }
+                var result: [Int: PrinterExtras] = [:]
+                for try await (id, extras) in group { result[id] = extras }
                 return result
             }
 
@@ -108,7 +121,7 @@ final class AppStore {
             }
 
             printers = printerList.map { dto in
-                Self.mapPrinter(dto, status: statuses[dto.id], assignmentsByPrinterSlot: assignmentsByPrinterSlot)
+                Self.mapPrinter(dto, extras: extras[dto.id] ?? PrinterExtras(status: nil, maintenance: nil, smartPlug: nil), assignmentsByPrinterSlot: assignmentsByPrinterSlot)
             }
 
             spools = spoolList
@@ -137,6 +150,14 @@ final class AppStore {
         return nil
     }
 
+    /// Everything fetched alongside the core status call for one printer, each independently
+    /// optional so a maintenance/smart-plug hiccup for one printer never blanks its status too.
+    private struct PrinterExtras {
+        var status: BambuddyStatusDTO?
+        var maintenance: BambuddyMaintenanceSummaryDTO?
+        var smartPlug: (info: BambuddySmartPlugSummaryDTO, status: BambuddySmartPlugStatusDTO)?
+    }
+
     private static func mapState(_ dto: BambuddyStatusDTO?) -> PrinterState {
         guard let dto else { return .offline }
         if !dto.connected { return .offline }
@@ -148,8 +169,9 @@ final class AppStore {
         }
     }
 
-    private static func mapPrinter(_ dto: BambuddyPrinterDTO, status: BambuddyStatusDTO?, assignmentsByPrinterSlot: [String: BambuddyAssignmentDTO]) -> Printer {
+    private static func mapPrinter(_ dto: BambuddyPrinterDTO, extras: PrinterExtras, assignmentsByPrinterSlot: [String: BambuddyAssignmentDTO]) -> Printer {
         let id = "bb-\(dto.id)"
+        let status = extras.status
         let state = mapState(status)
         let temps = status?.temperatures
 
@@ -158,6 +180,19 @@ final class AppStore {
         }
 
         let chamber: TemperatureReading? = temps?.chamber.map { TemperatureReading(current: Int($0.rounded()), target: nil) }
+        // A printer only reports a right-nozzle reading once it actually has one, so its presence
+        // is what tells us this is a dual-nozzle printer (rather than trusting `nozzles.count`,
+        // which some firmware versions report inconsistently while idle).
+        let rightNozzle: TemperatureReading? = temps?.nozzle2.map { reading(current: $0, target: temps?.nozzle2Target) }
+
+        let amsSwitchInlet = status?.amsSwitchInlet ?? [:]
+        func feedsRightNozzle(unitID: Int) -> Bool? {
+            switch amsSwitchInlet[String(unitID)] {
+            case "A": return false
+            case "B": return true
+            default: return nil
+            }
+        }
 
         let amsUnits: [AMSUnit] = (status?.ams ?? []).map { unit in
             AMSUnit(
@@ -166,7 +201,42 @@ final class AppStore {
                     let assignment = assignmentsByPrinterSlot["\(dto.id)-\(unit.id)-\(tray.id)"]
                     return AMSTray(amsIndex: unit.id, trayIndex: tray.id, spoolID: assignment.map { "bb-\($0.spoolId)" })
                 },
-                isHT: unit.isAmsHt ?? false
+                isHT: unit.isAmsHt ?? false,
+                humidity: unit.humidity,
+                temperature: unit.temp,
+                feedsRightNozzle: feedsRightNozzle(unitID: unit.id)
+            )
+        }
+
+        let externalTrays: [AMSTray] = (status?.vtTray ?? []).enumerated().map { index, _ in
+            AMSTray(amsIndex: -1, trayIndex: index, spoolID: nil)
+        }
+
+        let hmsErrors: [HMSError] = (status?.hmsErrors ?? []).map { hms in
+            HMSError(fullCode: hms.fullCode, severity: hms.severity, description: hms.description)
+        }
+
+        let nozzles: [NozzleInfo] = (status?.nozzles ?? []).enumerated().map { index, n in
+            NozzleInfo(index: index, type: n.nozzleType, diameter: n.nozzleDiameter)
+        }
+
+        let nozzleRack: [NozzleRackSlot] = (status?.nozzleRack ?? []).map { slot in
+            NozzleRackSlot(
+                id: slot.id,
+                diameter: slot.nozzleDiameter,
+                maxTemp: slot.maxTemp,
+                isEmpty: slot.serialNumber.isEmpty || slot.serialNumber == "N/A",
+                filamentColorHex: slot.filamentColor.isEmpty ? nil : "#" + slot.filamentColor.prefix(6).uppercased()
+            )
+        }
+
+        var smartPlug: SmartPlugInfo?
+        if let plug = extras.smartPlug {
+            smartPlug = SmartPlugInfo(
+                id: plug.info.id,
+                name: plug.info.name,
+                isOn: plug.status.state?.uppercased() == "ON",
+                watts: plug.status.energy?.power
             )
         }
 
@@ -184,10 +254,24 @@ final class AppStore {
             progress: (state == .printing || state == .paused) ? progress : nil,
             etaMinutesRemaining: (state == .printing || state == .paused) ? remaining : nil,
             nozzle: reading(current: temps?.nozzle, target: temps?.nozzleTarget),
+            rightNozzle: rightNozzle,
             bed: reading(current: temps?.bed, target: temps?.bedTarget),
             chamber: chamber,
-            lightOn: false,
-            amsUnits: amsUnits
+            lightOn: status?.chamberLight ?? false,
+            amsUnits: amsUnits,
+            externalTrays: externalTrays,
+            wifiSignalDBm: status?.wifiSignal,
+            firmwareVersion: status?.firmwareVersion,
+            hmsErrors: hmsErrors,
+            doorOpen: status?.doorOpen ?? false,
+            fanSpeeds: FanSpeeds(partCooling: status?.coolingFanSpeed, auxiliary: status?.bigFan1Speed, chamber: status?.bigFan2Speed),
+            coverURL: (status?.coverUrl).flatMap(URL.init(string:)),
+            awaitingPlateClear: status?.awaitingPlateClear ?? false,
+            nozzles: nozzles,
+            nozzleRack: nozzleRack,
+            totalPrintHours: extras.maintenance?.totalPrintHours,
+            maintenanceOK: extras.maintenance.map { $0.dueCount == 0 && $0.warningCount == 0 },
+            smartPlug: smartPlug
         )
     }
 
@@ -296,6 +380,21 @@ final class AppStore {
         Task {
             do {
                 try await client.setChamberLight(printerID: bbID, on: newValue)
+            } catch {
+                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+    }
+
+    func toggleSmartPlug(_ printerID: String) {
+        guard let idx = printers.firstIndex(where: { $0.id == printerID }), let plug = printers[idx].smartPlug else { return }
+        let newValue = !plug.isOn
+        printers[idx].smartPlug?.isOn = newValue
+
+        guard isLive, let client else { return }
+        Task {
+            do {
+                try await client.setSmartPlug(plugID: plug.id, on: newValue)
             } catch {
                 connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             }
