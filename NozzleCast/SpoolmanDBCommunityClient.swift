@@ -48,13 +48,19 @@ final class SpoolmanDBCommunityClient {
         (try? await ensureLoaded())?.brands ?? []
     }
 
-    func lookup(gtin: String) async -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
-        guard let cache = try? await ensureLoaded(), let entry = cache.gtinIndex[FilamentCode.canon(gtin)] else { return nil }
+    /// Throws only when the index itself couldn't be loaded (network/decode failure) - a
+    /// non-throwing nil means the index loaded fine and the code just isn't in it. Callers
+    /// must not collapse these two cases, or a failed download reads identically to "not
+    /// found" with no way to tell the user which actually happened.
+    func lookup(gtin: String) async throws -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
+        let cache = try await ensureLoaded()
+        guard let entry = cache.gtinIndex[FilamentCode.canon(gtin)] else { return nil }
         return (entry.fields, entry.allCodes)
     }
 
-    func lookupSKU(_ code: String) async -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
-        guard let cache = try? await ensureLoaded(), let entry = cache.skuIndex[code.trimmingCharacters(in: .whitespaces).uppercased()] else { return nil }
+    func lookupSKU(_ code: String) async throws -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
+        let cache = try await ensureLoaded()
+        guard let entry = cache.skuIndex[code.trimmingCharacters(in: .whitespaces).uppercased()] else { return nil }
         return (entry.fields, entry.allCodes)
     }
 

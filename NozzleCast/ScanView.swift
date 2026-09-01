@@ -16,6 +16,7 @@ struct ScannedResult {
     var colorHex: String
     var brand: String
     var netWeightGrams: Int
+    var barcode: String?
     var alsoMatches: String?
 }
 
@@ -25,13 +26,14 @@ struct ScanView: View {
 
     @State private var mode: ScanMode = .barcode
     @State private var step: ScanStep = .capture
-    @State private var result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, alsoMatches: nil)
+    @State private var result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
     @State private var addedSpool: Spool?
     @State private var showAssignPicker = false
     @State private var scannerBridge = ScannerBridge()
     @State private var showManualCodeEntry = false
     @State private var manualCodeText = ""
     @State private var notFoundNotice = false
+    @State private var lookupErrorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -61,7 +63,7 @@ struct ScanView: View {
             .onChange(of: mode) { _, newMode in
                 scannerBridge.reset()
                 if newMode == .manual {
-                    result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, alsoMatches: nil)
+                    result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
                 }
             }
             .onChange(of: scannerBridge.lastBarcode) { _, newBarcode in
@@ -82,6 +84,14 @@ struct ScanView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("No match in the Open Filament Database or SpoolmanDB-Community. Fill in the details below and it'll be added as entered.")
+            }
+            .alert("Lookup Failed", isPresented: Binding(
+                get: { lookupErrorMessage != nil },
+                set: { if !$0 { lookupErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(lookupErrorMessage ?? "")
             }
             .alert("Camera Issue", isPresented: Binding(
                 get: { scannerBridge.failureMessage != nil },
@@ -275,6 +285,12 @@ struct ScanView: View {
                         get: { String(result.netWeightGrams) },
                         set: { result.netWeightGrams = Int($0) ?? result.netWeightGrams }
                     ))
+                    if result.barcode != nil {
+                        labeledField("Barcode", text: Binding(
+                            get: { result.barcode ?? "" },
+                            set: { result.barcode = $0.isEmpty ? nil : $0 }
+                        ))
+                    }
                 }
 
                 Button {
@@ -454,7 +470,11 @@ struct ScanView: View {
             let outcome = await FilamentLookupService.lookup(barcode: barcode)
             result = outcome.result
             step = .review
-            if !outcome.found, notifyIfMissing { notFoundNotice = true }
+            if let lookupError = outcome.lookupError {
+                lookupErrorMessage = lookupError
+            } else if !outcome.found, notifyIfMissing {
+                notFoundNotice = true
+            }
         }
     }
 

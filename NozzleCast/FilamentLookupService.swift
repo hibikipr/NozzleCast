@@ -8,19 +8,52 @@ enum FilamentLookupService {
         var found: Bool
         var source: String
         var result: ScannedResult
+        /// Set when the databases couldn't even be checked (e.g. the first-time index
+        /// download failed) - distinct from `found == false`, which means they were checked
+        /// and genuinely had no match. Collapsing these together is what makes "couldn't
+        /// reach the database" look identical to "not in the database" to the user.
+        var lookupError: String?
+    }
+
+    private typealias LookupHit = (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])
+
+    /// (hit, failed) rather than a plain `LookupHit?` on purpose: `try?` on an
+    /// already-Optional-returning throwing function flattens away the outer optional (SE-0230),
+    /// so "the lookup threw" and "the lookup ran fine and found nothing" both collapse to the
+    /// exact same `nil` - indistinguishable with `try?` alone. An explicit do/catch with a
+    /// separate flag is the only way to actually tell those two cases apart.
+    private static func attempt(_ body: () async throws -> LookupHit?) async -> (hit: LookupHit?, failed: Bool) {
+        do {
+            return (try await body(), false)
+        } catch {
+            return (nil, true)
+        }
     }
 
     static func lookup(barcode: String) async -> Outcome {
         let (code, kind) = FilamentCode.classify(barcode)
 
-        async let ofdHit = kind == .gtin ? OFDClient.shared.lookup(gtin: code) : OFDClient.shared.lookupArticle(code)
-        async let smdbHit = kind == .gtin ? SpoolmanDBCommunityClient.shared.lookup(gtin: code) : SpoolmanDBCommunityClient.shared.lookupSKU(code)
+        async let ofdAttempt = attempt {
+            kind == .gtin ? try await OFDClient.shared.lookup(gtin: code) : try await OFDClient.shared.lookupArticle(code)
+        }
+        async let smdbAttempt = attempt {
+            kind == .gtin ? try await SpoolmanDBCommunityClient.shared.lookup(gtin: code) : try await SpoolmanDBCommunityClient.shared.lookupSKU(code)
+        }
 
-        let ofd = await ofdHit
-        let smdb = await smdbHit
+        let (ofd, ofdFailed) = await ofdAttempt
+        let (smdb, smdbFailed) = await smdbAttempt
+
+        if ofdFailed, smdbFailed {
+            return Outcome(
+                found: false,
+                source: "error",
+                result: blankResult(barcode: code),
+                lookupError: "Couldn't reach the Open Filament Database or SpoolmanDB-Community. Check your connection and try again."
+            )
+        }
 
         guard ofd != nil || smdb != nil else {
-            return Outcome(found: false, source: "none", result: blankResult())
+            return Outcome(found: false, source: "none", result: blankResult(barcode: code), lookupError: nil)
         }
 
         var merged = FilamentDBFields()
@@ -52,9 +85,10 @@ enum FilamentLookupService {
             colorHex: merged.rgba.map { "#" + $0.prefix(6) } ?? "#808080",
             brand: merged.brand ?? "",
             netWeightGrams: merged.labelWeight ?? 1000,
+            barcode: code,
             alsoMatches: (otherTitle?.isEmpty == false) ? otherTitle : nil
         )
-        return Outcome(found: true, source: source, result: result)
+        return Outcome(found: true, source: source, result: result, lookupError: nil)
     }
 
     /// Parses free text (OCR'd label or a pasted title) into best-effort fields, and — if a
@@ -70,10 +104,12 @@ enum FilamentLookupService {
             colorHex: parsed.rgba.map { "#" + $0.prefix(6) } ?? "#808080",
             brand: parsed.brand ?? "",
             netWeightGrams: parsed.labelWeightGrams ?? 1000,
+            barcode: nil,
             alsoMatches: nil
         )
         var found = parsed.material != nil || parsed.brand != nil || parsed.colorName != nil
         var source = "parsed"
+        var lookupError: String?
 
         if let barcode = FilamentCode.extractBarcode(from: text) {
             let barcodeOutcome = await lookup(barcode: barcode)
@@ -81,13 +117,16 @@ enum FilamentLookupService {
                 result = barcodeOutcome.result
                 source = barcodeOutcome.source
                 found = true
+            } else {
+                result.barcode = barcodeOutcome.result.barcode
+                lookupError = barcodeOutcome.lookupError
             }
         }
 
-        return Outcome(found: found, source: source, result: result)
+        return Outcome(found: found, source: source, result: result, lookupError: lookupError)
     }
 
-    private static func blankResult() -> ScannedResult {
-        ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, alsoMatches: nil)
+    private static func blankResult(barcode: String? = nil) -> ScannedResult {
+        ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: barcode, alsoMatches: nil)
     }
 }
