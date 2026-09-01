@@ -131,6 +131,74 @@ struct PrinterCoverImage: View {
     }
 }
 
+/// Full-screen, pinch-to-zoom presentation of a printer's plate render, opened by tapping the
+/// thumbnail in the job card.
+struct CoverImageViewer: View {
+    var printerID: String
+    var jobIdentity: String
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(AppStore.self) private var store
+    @State private var image: UIImage?
+    @State private var scale: CGFloat = 1
+    @State private var lastScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .scaleEffect(scale)
+                    .offset(offset)
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                scale = max(1, min(5, lastScale * value))
+                            }
+                            .onEnded { _ in
+                                lastScale = scale
+                                if scale == 1 {
+                                    offset = .zero
+                                    lastOffset = .zero
+                                }
+                            }
+                    )
+                    .simultaneousGesture(
+                        DragGesture()
+                            .onChanged { value in
+                                guard scale > 1 else { return }
+                                offset = CGSize(width: lastOffset.width + value.translation.width, height: lastOffset.height + value.translation.height)
+                            }
+                            .onEnded { _ in lastOffset = offset }
+                    )
+                    .onTapGesture(count: 2) {
+                        withAnimation(.spring(duration: 0.25)) {
+                            scale = 1
+                            lastScale = 1
+                            offset = .zero
+                            lastOffset = .zero
+                        }
+                    }
+            } else {
+                ProgressView().tint(.white)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            GlassIconButton(systemName: "xmark") { dismiss() }
+                .padding(16)
+                .padding(.top, 8)
+        }
+        .task(id: "\(printerID)-\(jobIdentity)") {
+            image = await store.printerCoverImage(printerID: printerID)
+        }
+    }
+}
+
 /// The 60px-swatch / caption card used for AMS slots on Detail, the AMS sheet, and the post-scan slot picker.
 struct AMSSlotCard: View {
     var spool: Spool?

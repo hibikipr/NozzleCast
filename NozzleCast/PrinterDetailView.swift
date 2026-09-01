@@ -7,6 +7,7 @@ struct PrinterDetailView: View {
     @Environment(\.openURL) private var openURL
     @State private var assignTray: AMSTray?
     @State private var showWarnings = false
+    @State private var showCoverFullscreen = false
 
     private var printer: Printer? { store.printer(printerID) }
 
@@ -74,6 +75,9 @@ struct PrinterDetailView: View {
             }
             .sheet(isPresented: $showWarnings) {
                 HMSWarningsSheet(printerName: printer.name, errors: printer.hmsErrors)
+            }
+            .fullScreenCover(isPresented: $showCoverFullscreen) {
+                CoverImageViewer(printerID: printer.id, jobIdentity: printer.jobFileName ?? printer.id)
             }
         } else {
             ContentUnavailableView(String(localized: "Printer not found"), systemImage: "printer.fill")
@@ -167,10 +171,15 @@ struct PrinterDetailView: View {
 
     private func jobCard(printer: Printer, job: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            PrinterCoverImage(printerID: printer.id, jobIdentity: job)
-                .frame(width: 52, height: 52)
-                .background(NCColor.well)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Button {
+                showCoverFullscreen = true
+            } label: {
+                PrinterCoverImage(printerID: printer.id, jobIdentity: job)
+                    .frame(width: 52, height: 52)
+                    .background(NCColor.well)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(job)
