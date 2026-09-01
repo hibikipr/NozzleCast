@@ -99,13 +99,13 @@ struct AMSSlotCard: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Color(hex: spool.colorHex))
                     Text(spool.material.rawValue)
-                        .font(.system(size: 10, weight: .bold))
+                        .ncFont(size: 10, weight: .bold, relativeTo: .caption2)
                         .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black : .white)
                         .padding(.horizontal, 4)
                 } else {
                     StripePattern()
                     Text("Empty")
-                        .font(.system(size: 10, weight: .semibold))
+                        .ncFont(size: 10, weight: .semibold, relativeTo: .caption2)
                         .foregroundStyle(NCColor.textTertiary)
                 }
             }
@@ -113,7 +113,7 @@ struct AMSSlotCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             Text(spool?.colorName ?? "Slot \(slotIndex + 1)")
-                .font(.system(size: 9, weight: .semibold))
+                .ncFont(size: 9, weight: .semibold, relativeTo: .caption2)
                 .foregroundStyle(NCColor.textSecondary)
                 .lineLimit(1)
                 .frame(width: 62)
@@ -193,7 +193,7 @@ struct LiveBadge: View {
                 .frame(width: 5, height: 5)
                 .modifier(PulseEffect(active: true))
             Text("LIVE")
-                .font(.system(size: 7, weight: .bold))
+                .ncFont(size: 7, weight: .bold, relativeTo: .caption2)
                 .foregroundStyle(.white)
         }
         .padding(.horizontal, 6)
@@ -210,7 +210,7 @@ struct FilterChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
                 .foregroundStyle(isActive ? .white : NCColor.textSecondary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -261,7 +261,7 @@ struct ControlButton: View {
                         Circle().strokeBorder(isActive ? NCColor.accent : Color.white.opacity(0.1), lineWidth: 1)
                     )
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
+                    .ncFont(size: 11, weight: .medium, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textSecondary)
             }
         }

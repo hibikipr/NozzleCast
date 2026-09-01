@@ -81,13 +81,13 @@ struct ScannerCameraGate: View {
                 .font(.system(size: 32))
                 .foregroundStyle(.white.opacity(0.3))
             Text(message)
-                .font(.system(size: 12.5))
+                .ncFont(size: 12.5, relativeTo: .caption)
                 .foregroundStyle(NCColor.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 30)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .ncFont(size: 12.5, weight: .semibold, relativeTo: .caption)
                     .foregroundStyle(NCColor.accentLight)
             }
         }

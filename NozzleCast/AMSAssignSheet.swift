@@ -30,25 +30,25 @@ struct AMSAssignSheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(printer?.name ?? "Printer") · \(unitLabel)Slot \(trayIndex + 1)")
-                    .font(.system(size: 17, weight: .bold))
+                    .ncFont(size: 17, weight: .bold, relativeTo: .headline)
 
                 if let occupant {
                     HStack(spacing: 8) {
                         Circle().fill(Color(hex: occupant.colorHex)).frame(width: 22, height: 22)
                         Text("\(occupant.material.rawValue) · \(occupant.colorName)")
-                            .font(.system(size: 14))
+                            .ncFont(size: 14, relativeTo: .subheadline)
                             .foregroundStyle(NCColor.textSecondary)
                         Spacer()
                         Button("Remove") {
                             store.unassign(printerID: printerID, amsIndex: amsIndex, trayIndex: trayIndex)
                             dismiss()
                         }
-                        .font(.system(size: 14, weight: .semibold))
+                        .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(NCColor.destructive)
                     }
                 } else {
                     Text("Empty slot — assign a spool from inventory")
-                        .font(.system(size: 13))
+                        .ncFont(size: 13, relativeTo: .footnote)
                         .foregroundStyle(NCColor.textTertiary)
                 }
             }
@@ -91,17 +91,17 @@ private struct SpoolRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(spool.material.rawValue) · \(spool.colorName)")
-                    .font(.system(size: 14, weight: .semibold))
+                    .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                 Text("\(spool.brand) · \(spool.locationCaption(printerName: store.printerName))")
-                    .font(.system(size: 11.5))
+                    .ncFont(size: 11.5, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
             }
 
             Spacer()
 
             Text("\(spool.remainingPercent)%")
-                .font(.system(size: 13, weight: .medium))
+                .ncFont(size: 13, weight: .medium, relativeTo: .footnote)
                 .foregroundStyle(NCColor.textSecondary)
         }
         .padding(.horizontal, 20)

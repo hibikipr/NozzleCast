@@ -16,9 +16,9 @@ struct MonitorView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("NoozleCast")
-                            .font(.system(size: 34, weight: .bold))
+                            .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
                         Text(isConnecting ? "Connecting to Bambuddy…" : "\(printingCount) printing · \(store.printers.count) printers")
-                            .font(.system(size: 15))
+                            .ncFont(size: 15, relativeTo: .subheadline)
                             .foregroundStyle(NCColor.textSecondary)
                     }
                     .padding(.horizontal, 16)
@@ -29,7 +29,7 @@ struct MonitorView: View {
                         VStack(spacing: 14) {
                             ProgressView().tint(NCColor.accentLight)
                             Text("Loading your printers…")
-                                .font(.system(size: 13))
+                                .ncFont(size: 13, relativeTo: .footnote)
                                 .foregroundStyle(NCColor.textTertiary)
                         }
                         .frame(maxWidth: .infinity)
@@ -67,20 +67,20 @@ struct PrinterCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(printer.name)
-                        .font(.system(size: 16, weight: .semibold))
+                        .ncFont(size: 16, weight: .semibold, relativeTo: .headline)
                         .foregroundStyle(.white)
                     Spacer()
                     HStack(spacing: 5) {
                         StatusDot(state: printer.state)
                         Text(printer.state.label)
-                            .font(.system(size: 13, weight: .medium))
+                            .ncFont(size: 13, weight: .medium, relativeTo: .footnote)
                             .foregroundStyle(NCColor.textSecondary)
                     }
                 }
 
                 if printer.state == .printing || printer.state == .paused, let job = printer.jobFileName {
                     Text(job)
-                        .font(.system(size: 12.5))
+                        .ncFont(size: 12.5, relativeTo: .caption)
                         .foregroundStyle(NCColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -90,7 +90,7 @@ struct PrinterCard: View {
                         Text("·")
                         Text("\(printer.etaDescription ?? "--") left")
                     }
-                    .font(.system(size: 12, weight: .medium))
+                    .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
                 } else if !printer.allTrays.isEmpty {
                     FlowLayout(spacing: 7, rowSpacing: 7) {

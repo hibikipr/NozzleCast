@@ -63,9 +63,9 @@ struct InventoryView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Filament")
-                                .font(.system(size: 34, weight: .bold))
+                                .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
                             Text(isConnecting ? "Connecting to Bambuddy…" : "\(store.spools.count) spools · \(totalGrams) g on hand")
-                                .font(.system(size: 15))
+                                .ncFont(size: 15, relativeTo: .subheadline)
                                 .foregroundStyle(NCColor.textSecondary)
                         }
                         .padding(.horizontal, 16)
@@ -74,7 +74,7 @@ struct InventoryView: View {
                             VStack(spacing: 14) {
                                 ProgressView().tint(NCColor.accentLight)
                                 Text("Loading your inventory…")
-                                    .font(.system(size: 13))
+                                    .ncFont(size: 13, relativeTo: .footnote)
                                     .foregroundStyle(NCColor.textTertiary)
                             }
                             .frame(maxWidth: .infinity)
@@ -94,7 +94,7 @@ struct InventoryView: View {
 
                             if filtered.isEmpty {
                                 Text(searchText.isEmpty ? "No spools match this filter." : "No spools match \"\(searchText)\".")
-                                    .font(.system(size: 13))
+                                    .ncFont(size: 13, relativeTo: .footnote)
                                     .foregroundStyle(NCColor.textTertiary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.top, 40)
@@ -137,7 +137,7 @@ struct InventoryView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(NCColor.textTertiary)
             TextField("Search filament", text: $searchText)
-                .font(.system(size: 15))
+                .ncFont(size: 15, relativeTo: .subheadline)
                 .foregroundStyle(.white)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
@@ -167,7 +167,7 @@ struct SpoolCard: View {
             ZStack(alignment: .bottomLeading) {
                 Color(hex: spool.colorHex)
                 Text(spool.material.rawValue)
-                    .font(.system(size: 11, weight: .bold))
+                    .ncFont(size: 11, weight: .bold, relativeTo: .caption2)
                     .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black.opacity(0.7) : .white)
                     .padding(8)
             }
@@ -176,10 +176,10 @@ struct SpoolCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(spool.colorName)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .ncFont(size: 12.5, weight: .semibold, relativeTo: .caption)
                     .foregroundStyle(.white)
                 Text(spool.brand)
-                    .font(.system(size: 10.5))
+                    .ncFont(size: 10.5, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textTertiary)
 
                 Capsule()
@@ -195,7 +195,7 @@ struct SpoolCard: View {
                     .padding(.top, 2)
 
                 Text(spool.locationCaption(printerName: store.printerName))
-                    .font(.system(size: 10.5))
+                    .ncFont(size: 10.5, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textTertiary)
                     .padding(.top, 2)
             }

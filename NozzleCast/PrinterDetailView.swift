@@ -17,9 +17,9 @@ struct PrinterDetailView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(printer.name)
-                            .font(.system(size: 24, weight: .bold))
+                            .ncFont(size: 24, weight: .bold, relativeTo: .title)
                         Text(printer.statusSubtitle)
-                            .font(.system(size: 15))
+                            .ncFont(size: 15, relativeTo: .subheadline)
                             .foregroundStyle(NCColor.textSecondary)
                     }
                     .padding(.horizontal, 16)
@@ -96,7 +96,7 @@ struct PrinterDetailView: View {
 
     private var offlinePill: some View {
         Text("OFFLINE")
-            .font(.system(size: 9, weight: .bold))
+            .ncFont(size: 9, weight: .bold, relativeTo: .caption2)
             .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -107,16 +107,16 @@ struct PrinterDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(job)
-                    .font(.system(size: 15, weight: .semibold))
+                    .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
                 Text("\(Int((printer.progress ?? 0) * 100))%")
-                    .font(.system(size: 15, weight: .bold))
+                    .ncFont(size: 15, weight: .bold, relativeTo: .subheadline)
             }
             ProgressBar(progress: printer.progress ?? 0)
             Text("\(printer.etaDescription ?? "--") remaining")
-                .font(.system(size: 12.5))
+                .ncFont(size: 12.5, relativeTo: .caption)
                 .foregroundStyle(NCColor.textSecondary)
         }
         .padding(14)
@@ -148,7 +148,7 @@ struct PrinterDetailView: View {
                         .background(Circle().fill(Color.white.opacity(0.08)))
                         .overlay(Circle().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
                     Text("More")
-                        .font(.system(size: 11, weight: .medium))
+                        .ncFont(size: 11, weight: .medium, relativeTo: .caption2)
                         .foregroundStyle(NCColor.textSecondary)
                 }
             }
@@ -201,13 +201,13 @@ struct PrinterDetailView: View {
                 .foregroundStyle(NCColor.accentLight)
             if showTarget, let target = reading.target {
                 Text("\(reading.current)°/\(target)°")
-                    .font(.system(size: 15, weight: .semibold))
+                    .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
             } else {
                 Text("\(reading.current)°")
-                    .font(.system(size: 15, weight: .semibold))
+                    .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
             }
             Text(caption)
-                .font(.system(size: 11.5))
+                .ncFont(size: 11.5, relativeTo: .caption)
                 .foregroundStyle(NCColor.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -223,7 +223,7 @@ struct PrinterDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if printer.amsUnits.count > 1 {
                         Text(unit.displayName(position: standardUnitOrder[unit.id] ?? 0))
-                            .font(.system(size: 11, weight: .semibold))
+                            .ncFont(size: 11, weight: .semibold, relativeTo: .caption2)
                             .foregroundStyle(NCColor.textTertiary)
                     }
                     HStack(spacing: 8) {

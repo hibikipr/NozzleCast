@@ -30,7 +30,7 @@ struct AssignPickerSheet: View {
     private var printerStep: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Choose a Printer")
-                .font(.system(size: 17, weight: .bold))
+                .ncFont(size: 17, weight: .bold, relativeTo: .headline)
                 .padding(.horizontal, 20)
 
             ScrollView {
@@ -46,10 +46,10 @@ struct AssignPickerSheet: View {
                                     .background(RoundedRectangle(cornerRadius: 8).fill(NCColor.well))
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(printer.name)
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
                                         .foregroundStyle(.white)
                                     Text(printer.model)
-                                        .font(.system(size: 12))
+                                        .ncFont(size: 12, relativeTo: .caption)
                                         .foregroundStyle(NCColor.textTertiary)
                                 }
                                 Spacer()
@@ -79,13 +79,13 @@ struct AssignPickerSheet: View {
                         .foregroundStyle(NCColor.textSecondary)
                 }
                 Text("\(printer?.name ?? "Printer") · Choose a Slot")
-                    .font(.system(size: 17, weight: .bold))
+                    .ncFont(size: 17, weight: .bold, relativeTo: .headline)
             }
             .padding(.horizontal, 20)
 
             if let printer, printer.amsUnits.isEmpty {
                 Text("This printer has no AMS units.")
-                    .font(.system(size: 13))
+                    .ncFont(size: 13, relativeTo: .footnote)
                     .foregroundStyle(NCColor.textTertiary)
                     .padding(.horizontal, 20)
             }
@@ -98,7 +98,7 @@ struct AssignPickerSheet: View {
                         VStack(alignment: .leading, spacing: 8) {
                             if (printer?.amsUnits.count ?? 0) > 1 {
                                 Text(unit.displayName(position: standardUnitOrder[unit.id] ?? 0))
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .ncFont(size: 11, weight: .semibold, relativeTo: .caption2)
                                     .foregroundStyle(NCColor.textTertiary)
                             }
                             HStack(spacing: 8) {

@@ -65,10 +65,10 @@ struct SettingsView: View {
                             .frame(width: 64, height: 64)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         Text("NoozleCast 1.0.0")
-                            .font(.system(size: 13, weight: .semibold))
+                            .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
                             .foregroundStyle(.white)
                         Text("Local-first control for your farm.")
-                            .font(.system(size: 12))
+                            .ncFont(size: 12, relativeTo: .caption)
                             .foregroundStyle(NCColor.textTertiary)
                     }
                     .frame(maxWidth: .infinity)

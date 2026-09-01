@@ -116,12 +116,12 @@ struct ScanView: View {
     private var captureHeader: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Scan Filament")
-                .font(.system(size: 24, weight: .bold))
+                .ncFont(size: 24, weight: .bold, relativeTo: .title)
 
             HStack(spacing: 2) {
                 ForEach(ScanMode.allCases, id: \.self) { m in
                     Text(m.rawValue)
-                        .font(.system(size: 13, weight: .semibold))
+                        .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
                         .foregroundStyle(mode == m ? .white : NCColor.textSecondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)
@@ -179,7 +179,7 @@ struct ScanView: View {
             .frame(height: 360)
 
             Text(mode == .barcode ? "Point at the box barcode" : "Photograph the filament label")
-                .font(.system(size: 13))
+                .ncFont(size: 13, relativeTo: .footnote)
                 .foregroundStyle(NCColor.textSecondary)
 
             Spacer()
@@ -199,13 +199,13 @@ struct ScanView: View {
                     .opacity(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
                 } else {
                     Text("Scanning automatically…")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .ncFont(size: 12.5, weight: .medium, relativeTo: .caption)
                         .foregroundStyle(NCColor.textTertiary)
                         .frame(height: 72)
                 }
 
                 Button("or enter code manually") { showManualCodeEntry = true }
-                    .font(.system(size: 12.5))
+                    .ncFont(size: 12.5, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
             }
             .padding(.bottom, 100)
@@ -228,7 +228,7 @@ struct ScanView: View {
                         .tint(NCColor.accentLight)
                         .scaleEffect(1.3)
                     Text("Looking up filament…")
-                        .font(.system(size: 13, weight: .medium))
+                        .ncFont(size: 13, weight: .medium, relativeTo: .footnote)
                         .foregroundStyle(.white)
                 }
                 .padding(24)
@@ -259,7 +259,7 @@ struct ScanView: View {
                 cancelRow
 
                 Text("Review Details")
-                    .font(.system(size: 24, weight: .bold))
+                    .ncFont(size: 24, weight: .bold, relativeTo: .title)
 
                 VStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -267,7 +267,7 @@ struct ScanView: View {
                         .frame(height: 90)
                     if let also = result.alsoMatches {
                         Text("Also matches: \(also)")
-                            .font(.system(size: 11.5))
+                            .ncFont(size: 11.5, relativeTo: .caption)
                             .foregroundStyle(NCColor.textTertiary)
                     }
                 }
@@ -297,7 +297,7 @@ struct ScanView: View {
                     addToInventory()
                 } label: {
                     Text("Add to Inventory")
-                        .font(.system(size: 16, weight: .semibold))
+                        .ncFont(size: 16, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -312,10 +312,10 @@ struct ScanView: View {
     private func labeledField(_ title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                 .foregroundStyle(NCColor.textSecondary)
             TextField("", text: text)
-                .font(.system(size: 15))
+                .ncFont(size: 15, relativeTo: .subheadline)
                 .foregroundStyle(.white)
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
@@ -326,17 +326,17 @@ struct ScanView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Enter Filament Details")
-                    .font(.system(size: 20, weight: .bold))
+                    .ncFont(size: 20, weight: .bold, relativeTo: .title3)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Filament color")
-                        .font(.system(size: 12, weight: .medium))
+                        .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                         .foregroundStyle(NCColor.textSecondary)
                     HStack(spacing: 12) {
                         ColorPicker("Filament color", selection: colorBinding, supportsOpacity: false)
                             .labelsHidden()
                         Text(result.colorHex.uppercased())
-                            .font(.system(size: 14))
+                            .ncFont(size: 14, relativeTo: .subheadline)
                             .foregroundStyle(.white)
                         Spacer()
                     }
@@ -358,7 +358,7 @@ struct ScanView: View {
                     addToInventory()
                 } label: {
                     Text("Add to Inventory")
-                        .font(.system(size: 16, weight: .semibold))
+                        .ncFont(size: 16, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -377,7 +377,7 @@ struct ScanView: View {
     private var materialPickerField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Material")
-                .font(.system(size: 12, weight: .medium))
+                .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                 .foregroundStyle(NCColor.textSecondary)
             Menu {
                 ForEach(FilamentMaterial.allCases) { m in
@@ -386,7 +386,7 @@ struct ScanView: View {
             } label: {
                 HStack {
                     Text(result.material.rawValue)
-                        .font(.system(size: 15))
+                        .ncFont(size: 15, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
@@ -422,13 +422,13 @@ struct ScanView: View {
             }
 
             Text("Added to Inventory")
-                .font(.system(size: 20, weight: .bold))
+                .ncFont(size: 20, weight: .bold, relativeTo: .title3)
 
             if let addedSpool {
                 HStack(spacing: 10) {
                     Circle().fill(Color(hex: addedSpool.colorHex)).frame(width: 24, height: 24)
                     Text("\(addedSpool.material.rawValue) · \(addedSpool.colorName)")
-                        .font(.system(size: 15, weight: .medium))
+                        .ncFont(size: 15, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                 }
                 .padding(12)
@@ -442,7 +442,7 @@ struct ScanView: View {
                     showAssignPicker = true
                 } label: {
                     Text("Assign to a Printer")
-                        .font(.system(size: 16, weight: .semibold))
+                        .ncFont(size: 16, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -453,7 +453,7 @@ struct ScanView: View {
                     selectedTab = .inventory
                 } label: {
                     Text("Done")
-                        .font(.system(size: 16, weight: .semibold))
+                        .ncFont(size: 16, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)

@@ -92,7 +92,7 @@ extension View {
 
     func sectionEyebrow() -> some View {
         self
-            .font(.system(size: 13, weight: .semibold))
+            .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
             .tracking(0.6)
             .foregroundStyle(NCColor.textSecondary)
             .textCase(.uppercase)
