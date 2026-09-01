@@ -89,6 +89,10 @@ final class NotificationService: UNNotificationServiceExtension {
             if let thumbnail = Self.downscaledThumbnail(imageData) {
                 Self.updateLiveActivity(matching: message, thumbnail: thumbnail)
             }
+            // Same full-size download used for the banner attachment, kept alongside the history
+            // entry so the in-app Notifications list can show it too (that list reads the shared
+            // history log directly, not the system's notification center).
+            PushSharedStore.saveHistoryImage(imageData, id: message.id)
         }
 
         PushSharedStore.appendHistory(.init(

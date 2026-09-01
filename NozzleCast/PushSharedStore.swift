@@ -52,9 +52,11 @@ enum PushSharedStore {
         var entries = loadHistory()
         entries.removeAll { $0.id == entry.id }
         entries.insert(entry, at: 0)
-        if entries.count > historyLimit { entries.removeLast(entries.count - historyLimit) }
+        let dropped = entries.count > historyLimit ? entries.suffix(entries.count - historyLimit) : []
+        if !dropped.isEmpty { entries.removeLast(dropped.count) }
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: historyURL, options: .atomic)
+        for old in dropped { deleteHistoryImage(id: old.id) }
     }
 
     static func loadHistory() -> [HistoryEntry] {
@@ -64,5 +66,30 @@ enum PushSharedStore {
 
     static func clearHistory() {
         try? FileManager.default.removeItem(at: historyURL)
+        try? FileManager.default.removeItem(at: historyImagesDir)
+    }
+
+    // MARK: - Notification history images (the ntfy attachment photo, kept alongside the entry)
+
+    private static var historyImagesDir: URL {
+        let dir = containerURL.appendingPathComponent("notification-images", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private static func historyImageURL(id: String) -> URL {
+        historyImagesDir.appendingPathComponent("\(id).jpg")
+    }
+
+    static func saveHistoryImage(_ data: Data, id: String) {
+        try? data.write(to: historyImageURL(id: id), options: .atomic)
+    }
+
+    static func loadHistoryImage(id: String) -> Data? {
+        try? Data(contentsOf: historyImageURL(id: id))
+    }
+
+    static func deleteHistoryImage(id: String) {
+        try? FileManager.default.removeItem(at: historyImageURL(id: id))
     }
 }
