@@ -156,8 +156,7 @@ struct PrinterDetailView: View {
 
     @ViewBuilder
     private func infoPillRow(_ printer: Printer) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+        FlowLayout(spacing: 6, rowSpacing: 6) {
                 if let dbm = printer.wifiSignalDBm {
                     InfoPill(icon: "wifi", text: "\(dbm)dBm")
                 }
@@ -201,7 +200,6 @@ struct PrinterDetailView: View {
                         tint: printer.doorOpen ? NCColor.statusWarning : NCColor.textSecondary
                     )
                 }
-            }
         }
     }
 
