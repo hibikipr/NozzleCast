@@ -372,6 +372,10 @@ struct BambuddyAPIClient {
         _ = try await send(request("/api/v1/printers/\(printerID)/clear-plate", method: "POST"))
     }
 
+    func rereadRFID(printerID: Int, amsID: Int, trayID: Int) async throws {
+        _ = try await send(request("/api/v1/printers/\(printerID)/ams/\(amsID)/slot/\(trayID)/refresh", method: "POST"))
+    }
+
     func setSmartPlug(plugID: Int, on: Bool) async throws {
         let body = try encoder.encode(["action": on ? "on" : "off"])
         _ = try await send(request("/api/v1/smart-plugs/\(plugID)/control", method: "POST", body: body))

@@ -577,6 +577,18 @@ final class AppStore {
         }
     }
 
+    func rereadRFID(printerID: String, amsIndex: Int, trayIndex: Int) {
+        guard isLive, let client, let bbPrinterID = bambuddyID(printerID) else { return }
+        Task {
+            do {
+                try await client.rereadRFID(printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)
+                await refresh()
+            } catch {
+                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+    }
+
     // MARK: - Inventory
 
     @discardableResult

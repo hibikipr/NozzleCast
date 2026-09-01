@@ -458,6 +458,13 @@ struct PrinterDetailView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button {
+                                    store.rereadRFID(printerID: printer.id, amsIndex: tray.amsIndex, trayIndex: tray.trayIndex)
+                                } label: {
+                                    Label("Re-read RFID", systemImage: "wave.3.right")
+                                }
+                            }
                         }
                     }
                 }
