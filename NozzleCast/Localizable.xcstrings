@@ -507,6 +507,12 @@
     "Stop" : {
       "comment" : "Printer control button"
     },
+    "Switch to grid view" : {
+
+    },
+    "Switch to list view" : {
+
+    },
     "Temperatures" : {
 
     },

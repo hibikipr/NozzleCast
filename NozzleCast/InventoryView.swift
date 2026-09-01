@@ -16,10 +16,15 @@ enum InventoryFilter: Hashable, CaseIterable {
     }
 }
 
+enum InventoryLayout {
+    case grid, list
+}
+
 struct InventoryView: View {
     @Environment(AppStore.self) private var store
     @State private var filter: InventoryFilter = .all
     @State private var searchText = ""
+    @State private var layout: InventoryLayout = .grid
     @Binding var selectedTab: RootTab
 
     private var filtered: [Spool] {
@@ -86,14 +91,17 @@ struct InventoryView: View {
                             searchField
                                 .padding(.horizontal, 16)
 
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(InventoryFilter.allCases, id: \.self) { f in
-                                        FilterChip(title: f.title, isActive: filter == f) { filter = f }
+                            HStack(spacing: 8) {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(InventoryFilter.allCases, id: \.self) { f in
+                                            FilterChip(title: f.title, isActive: filter == f) { filter = f }
+                                        }
                                     }
                                 }
-                                .padding(.horizontal, 16)
+                                layoutToggle
                             }
+                            .padding(.horizontal, 16)
 
                             if filtered.isEmpty {
                                 Group {
@@ -107,10 +115,18 @@ struct InventoryView: View {
                                 .foregroundStyle(NCColor.textTertiary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 40)
-                            } else {
+                            } else if layout == .grid {
                                 LazyVGrid(columns: columns, spacing: 12) {
                                     ForEach(filtered) { spool in
                                         SpoolCard(spool: spool)
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 100)
+                            } else {
+                                LazyVStack(spacing: 8) {
+                                    ForEach(filtered) { spool in
+                                        SpoolListRow(spool: spool)
                                     }
                                 }
                                 .padding(.horizontal, 16)
@@ -138,6 +154,20 @@ struct InventoryView: View {
                 .padding(.bottom, 96)
             }
         }
+    }
+
+    private var layoutToggle: some View {
+        Button {
+            layout = layout == .grid ? .list : .grid
+        } label: {
+            Image(systemName: layout == .grid ? "list.bullet" : "square.grid.2x2")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(NCColor.textSecondary)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(Color.white.opacity(0.07)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(layout == .grid ? Text("Switch to list view") : Text("Switch to grid view"))
     }
 
     private var searchField: some View {
@@ -191,17 +221,23 @@ struct SpoolCard: View {
                     .ncFont(size: 10.5, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textTertiary)
 
-                Capsule()
-                    .fill(Color.white.opacity(0.12))
-                    .frame(height: 3)
-                    .overlay(alignment: .leading) {
-                        GeometryReader { geo in
-                            Capsule()
-                                .fill(Color(hex: spool.colorHex))
-                                .frame(width: geo.size.width * Double(spool.remainingPercent) / 100)
+                HStack(spacing: 6) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 3)
+                        .overlay(alignment: .leading) {
+                            GeometryReader { geo in
+                                Capsule()
+                                    .fill(Color(hex: spool.colorHex))
+                                    .frame(width: geo.size.width * Double(spool.remainingPercent) / 100)
+                            }
                         }
-                    }
-                    .padding(.top, 2)
+                    Text(Double(spool.remainingPercent) / 100, format: .percent.precision(.fractionLength(0)))
+                        .ncFont(size: 9.5, weight: .semibold, relativeTo: .caption2)
+                        .foregroundStyle(NCColor.textSecondary)
+                        .fixedSize()
+                }
+                .padding(.top, 2)
 
                 Text(spool.locationCaption(printerName: store.printerName))
                     .ncFont(size: 10.5, relativeTo: .caption2)
@@ -211,5 +247,55 @@ struct SpoolCard: View {
         }
         .padding(10)
         .glassCard(cornerRadius: 16)
+    }
+}
+
+struct SpoolListRow: View {
+    var spool: Spool
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(hex: spool.colorHex))
+                .frame(width: 44, height: 44)
+                .overlay {
+                    Text(spool.material.rawValue)
+                        .ncFont(size: 9, weight: .bold, relativeTo: .caption2)
+                        .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black.opacity(0.7) : .white)
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(spool.colorName)
+                    .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                Text("\(spool.brand) · \(spool.locationCaption(printerName: store.printerName))")
+                    .ncFont(size: 11.5, relativeTo: .caption)
+                    .foregroundStyle(NCColor.textTertiary)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 3)
+                        .overlay(alignment: .leading) {
+                            GeometryReader { geo in
+                                Capsule()
+                                    .fill(Color(hex: spool.colorHex))
+                                    .frame(width: geo.size.width * Double(spool.remainingPercent) / 100)
+                            }
+                        }
+                    Text(Double(spool.remainingPercent) / 100, format: .percent.precision(.fractionLength(0)))
+                        .ncFont(size: 10.5, weight: .semibold, relativeTo: .caption2)
+                        .foregroundStyle(NCColor.textSecondary)
+                        .fixedSize()
+                }
+                .padding(.top, 2)
+            }
+
+            Spacer()
+        }
+        .padding(10)
+        .glassCard(cornerRadius: 14)
     }
 }
