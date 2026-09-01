@@ -159,6 +159,7 @@ final class AppStore {
             printers = printerList.map { dto in
                 Self.mapPrinter(dto, extras: extras[dto.id] ?? PrinterExtras(status: nil, maintenance: nil, smartPlug: nil), obico: obico, assignmentsByPrinterSlot: assignmentsByPrinterSlot)
             }
+            PrintLiveActivityManager.shared.sync(printers: printers)
 
             spools = spoolList
                 .filter { $0.archivedAt == nil }

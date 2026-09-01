@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		000000000000000000000122 /* NozzleCastNSE.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 000000000000000000000121 /* NozzleCastNSE.appex */; settings = {ATTRIBUTES = (RemoveHeaderOnCopy, ); }; };
+		000000000000000000000124 /* NozzleCastWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 000000000000000000000123 /* NozzleCastWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeaderOnCopy, ); }; };
 		000000000000000000000131 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000310000000 /* FirebaseCore */; };
 		000000000000000000000132 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000320000000 /* FirebaseMessaging */; };
 /* End PBXBuildFile section */
@@ -20,26 +21,50 @@
 			remoteGlobalIDString = 000000000000000200000000;
 			remoteInfo = NozzleCastNSE;
 		};
+		000000000000000450000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000400000000;
+			remoteInfo = NozzleCastWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		000000000000000150000000 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 13;
+			dstSubfolder = PlugIns;
 			files = (
 				000000000000000000000122 /* NozzleCastNSE.appex in Embed Foundation Extensions */,
+				000000000000000000000124 /* NozzleCastWidgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* NozzleCast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NozzleCast.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000121 /* NozzleCastNSE.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NozzleCastNSE.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000123 /* NozzleCastWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NozzleCastWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		000000000000000000000012 /* Exceptions for "NozzleCastNSE" folder in "NozzleCastNSE" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 000000000000000200000000 /* NozzleCastNSE */;
+		};
+		000000000000000000000014 /* Exceptions for "NozzleCastWidgets" folder in "NozzleCastWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 000000000000000400000000 /* NozzleCastWidgets */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		000000000000000000000010 /* NozzleCast */ = {
@@ -50,22 +75,20 @@
 		000000000000000000000011 /* NozzleCastNSE */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				000000000000000000000012 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				000000000000000000000012 /* Exceptions for "NozzleCastNSE" folder in "NozzleCastNSE" target */,
 			);
 			path = NozzleCastNSE;
 			sourceTree = "<group>";
 		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		000000000000000000000012 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
+		000000000000000000000013 /* NozzleCastWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				000000000000000000000014 /* Exceptions for "NozzleCastWidgets" folder in "NozzleCastWidgets" target */,
 			);
-			target = 000000000000000200000000 /* NozzleCastNSE */;
+			path = NozzleCastWidgets;
+			sourceTree = "<group>";
 		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		000000000000000130000000 /* Frameworks */ = {
@@ -80,6 +103,11 @@
 			files = (
 			);
 		};
+		000000000000000430000000 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -88,6 +116,7 @@
 			children = (
 				000000000000000000000010 /* NozzleCast */,
 				000000000000000000000011 /* NozzleCastNSE */,
+				000000000000000000000013 /* NozzleCastWidgets */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -97,6 +126,7 @@
 			children = (
 				000000000000000000000120 /* NozzleCast.app */,
 				000000000000000000000121 /* NozzleCastNSE.appex */,
+				000000000000000000000123 /* NozzleCastWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,6 +147,7 @@
 			);
 			dependencies = (
 				000000000000000260000000 /* PBXTargetDependency */,
+				000000000000000460000000 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* NozzleCast */,
@@ -140,14 +171,30 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000011 /* NozzleCastNSE */,
 			);
 			name = NozzleCastNSE;
 			productName = NozzleCastNSE;
 			productReference = 000000000000000000000121 /* NozzleCastNSE.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		000000000000000400000000 /* NozzleCastWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000410000000 /* Build configuration list for PBXNativeTarget "NozzleCastWidgets" */;
+			buildPhases = (
+				000000000000000420000000 /* Sources */,
+				000000000000000430000000 /* Frameworks */,
+				000000000000000440000000 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				000000000000000000000013 /* NozzleCastWidgets */,
+			);
+			name = NozzleCastWidgets;
+			productName = NozzleCastWidgets;
+			productReference = 000000000000000000000123 /* NozzleCastWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -164,6 +211,9 @@
 						CreatedOnToolsVersion = 26.3;
 					};
 					000000000000000200000000 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					000000000000000400000000 = {
 						CreatedOnToolsVersion = 26.3;
 					};
 				};
@@ -187,17 +237,10 @@
 			targets = (
 				000000000000000100000000 /* NozzleCast */,
 				000000000000000200000000 /* NozzleCastNSE */,
+				000000000000000400000000 /* NozzleCastWidgets */,
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXTargetDependency section */
-		000000000000000260000000 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 000000000000000200000000 /* NozzleCastNSE */;
-			targetProxy = 000000000000000250000000 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin PBXResourcesBuildPhase section */
 		000000000000000140000000 /* Resources */ = {
@@ -206,6 +249,11 @@
 			);
 		};
 		000000000000000240000000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		000000000000000440000000 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
 			);
@@ -223,31 +271,25 @@
 			files = (
 			);
 		};
+		000000000000000420000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/hibikipr/firebase-ios-sdk";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
+/* Begin PBXTargetDependency section */
+		000000000000000260000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000200000000 /* NozzleCastNSE */;
+			targetProxy = 000000000000000250000000 /* PBXContainerItemProxy */;
 		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		000000000000000310000000 /* FirebaseCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseCore;
+		000000000000000460000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000400000000 /* NozzleCastWidgets */;
+			targetProxy = 000000000000000450000000 /* PBXContainerItemProxy */;
 		};
-		000000000000000320000000 /* FirebaseMessaging */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseMessaging;
-		};
-/* End XCSwiftPackageProductDependency section */
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		000000000000000011000000 /* Debug configuration for PBXProject "NozzleCast" */ = {
@@ -398,6 +440,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = NozzleCast;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSCameraUsageDescription = "NozzleCast uses the camera to scan filament barcodes and labels.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -444,6 +487,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = NozzleCast;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSCameraUsageDescription = "NozzleCast uses the camera to scan filament barcodes and labels.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -534,6 +578,62 @@
 			};
 			name = Release;
 		};
+		000000000000000411000000 /* Debug configuration for PBXNativeTarget "NozzleCastWidgets" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 89863526TH;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NozzleCastWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.victormanuel.NozzleCast.NozzleCastWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		000000000000000412000000 /* Release configuration for PBXNativeTarget "NozzleCastWidgets" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 89863526TH;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NozzleCastWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.victormanuel.NozzleCast.NozzleCastWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -561,7 +661,39 @@
 			);
 			defaultConfigurationName = Release;
 		};
+		000000000000000410000000 /* Build configuration list for PBXNativeTarget "NozzleCastWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000411000000 /* Debug configuration for PBXNativeTarget "NozzleCastWidgets" */,
+				000000000000000412000000 /* Release configuration for PBXNativeTarget "NozzleCastWidgets" */,
+			);
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/hibikipr/firebase-ios-sdk";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		000000000000000310000000 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		000000000000000320000000 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 000000000000000000000000 /* Project object */;
 }
