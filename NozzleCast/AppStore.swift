@@ -225,15 +225,28 @@ final class AppStore {
 
     // MARK: - Camera
 
+    /// Last camera-snapshot failure per printer (keyed by local ID), so the UI can show *why*
+    /// a live feed isn't loading instead of silently falling back to a placeholder icon.
+    private(set) var cameraErrors: [String: String] = [:]
+
     /// Fetches one live snapshot for a printer's chamber camera. Mints a fresh stream token
     /// per call since the API gives no expiry, and snapshots are only polled every few seconds.
     func cameraSnapshot(printerID: String) async -> UIImage? {
-        guard let client, let bbID = bambuddyID(printerID) else { return nil }
+        guard let client, let bbID = bambuddyID(printerID) else {
+            cameraErrors[printerID] = String(localized: "Not connected to a Bambuddy server.")
+            return nil
+        }
         do {
             let token = try await client.cameraStreamToken()
             let data = try await client.cameraSnapshotData(printerID: bbID, token: token)
-            return UIImage(data: data)
+            guard let image = UIImage(data: data) else {
+                cameraErrors[printerID] = String(localized: "Server sent \(data.count) bytes that aren't a decodable image.")
+                return nil
+            }
+            cameraErrors[printerID] = nil
+            return image
         } catch {
+            cameraErrors[printerID] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             return nil
         }
     }

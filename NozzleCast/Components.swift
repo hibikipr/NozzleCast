@@ -59,9 +59,15 @@ struct FlowLayout: Layout {
 struct LiveCameraView: View {
     var printerID: String
     var pollInterval: Double = 3
+    /// Shows the underlying failure reason under the placeholder icon instead of just the
+    /// icon alone — only worth doing where there's room to read it (the detail view header),
+    /// not the small Monitor-list thumbnail.
+    var showsErrorDetail: Bool = false
 
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
+
+    private var error: String? { store.cameraErrors[printerID] }
 
     var body: some View {
         ZStack {
@@ -70,8 +76,17 @@ struct LiveCameraView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
-                Image(systemName: "camera.fill")
-                    .foregroundStyle(.white.opacity(0.3))
+                VStack(spacing: 6) {
+                    Image(systemName: "camera.fill")
+                        .foregroundStyle(.white.opacity(0.3))
+                    if showsErrorDetail, let error {
+                        Text(error)
+                            .ncFont(size: 11, relativeTo: .caption)
+                            .foregroundStyle(.white.opacity(0.4))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
+                }
             }
         }
         .task(id: printerID) {

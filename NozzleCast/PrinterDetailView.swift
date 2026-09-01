@@ -62,7 +62,7 @@ struct PrinterDetailView: View {
                     .font(.system(size: 44))
                     .foregroundStyle(.white.opacity(0.3))
             } else {
-                LiveCameraView(printerID: printer.id, pollInterval: 3)
+                LiveCameraView(printerID: printer.id, pollInterval: 3, showsErrorDetail: true)
                     .font(.system(size: 44))
             }
         }

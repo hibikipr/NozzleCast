@@ -327,6 +327,9 @@
     "Not connected" : {
 
     },
+    "Not connected to a Bambuddy server." : {
+
+    },
     "Nozzle" : {
       "comment" : "Temperature reading label"
     },
@@ -429,6 +432,9 @@
           }
         }
       }
+    },
+    "Server sent %lld bytes that aren't a decodable image." : {
+
     },
     "Settings" : {
 
