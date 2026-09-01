@@ -83,6 +83,14 @@ struct ScanView: View {
             } message: {
                 Text("No match in the Open Filament Database or SpoolmanDB-Community. Fill in the details below and it'll be added as entered.")
             }
+            .alert("Camera Issue", isPresented: Binding(
+                get: { scannerBridge.failureMessage != nil },
+                set: { if !$0 { scannerBridge.failureMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(scannerBridge.failureMessage ?? "")
+            }
             .sheet(isPresented: $showAssignPicker) {
                 if let addedSpool {
                     AssignPickerSheet(spool: addedSpool) {
@@ -133,22 +141,9 @@ struct ScanView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(Color(hex: "#141414"))
 
-                if ScannerAvailability.isSupported {
-                    DataScannerView(mode: mode == .barcode ? .barcode : .text, bridge: scannerBridge)
-                        .id(mode)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                } else {
-                    VStack(spacing: 10) {
-                        Image(systemName: "camera.metering.unknown")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.white.opacity(0.3))
-                        Text("Camera scanning needs a real device")
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(NCColor.textTertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 30)
-                    }
-                }
+                ScannerCameraGate(mode: mode == .barcode ? .barcode : .text, bridge: scannerBridge)
+                    .id(mode)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
 
                 VStack {
                     HStack {
@@ -157,7 +152,7 @@ struct ScanView: View {
                         CornerBracket().rotationEffect(.degrees(90)).frame(width: 28, height: 28)
                     }
                     Spacer()
-                    if ScannerAvailability.isSupported == false {
+                    if !ScannerAvailability.isSupported {
                         ScanLine()
                     }
                     Spacer()
