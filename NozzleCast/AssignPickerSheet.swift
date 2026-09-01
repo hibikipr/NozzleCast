@@ -107,7 +107,7 @@ struct AssignPickerSheet: View {
                                         store.assign(spoolID: spool.id, toPrinter: printerID, amsIndex: unit.index, trayIndex: tray.trayIndex)
                                         onFinished()
                                     } label: {
-                                        AMSSlotCard(spool: store.spool(tray.spoolID), slotIndex: tray.trayIndex)
+                                        AMSSlotCard(spool: store.spool(tray.spoolID), slotIndex: tray.trayIndex, tray: tray)
                                     }
                                     .buttonStyle(.plain)
                                 }

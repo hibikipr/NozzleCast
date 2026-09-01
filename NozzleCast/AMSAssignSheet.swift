@@ -6,13 +6,24 @@ struct AMSAssignSheet: View {
     var trayIndex: Int
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
 
     private var printer: Printer? { store.printer(printerID) }
     private var unit: AMSUnit? { printer?.amsUnits.first { $0.index == amsIndex } }
-    private var occupantSpoolID: String? {
-        unit?.trays.first { $0.trayIndex == trayIndex }?.spoolID
+    private var occupantTray: AMSTray? {
+        unit?.trays.first { $0.trayIndex == trayIndex }
     }
-    private var occupant: Spool? { store.spool(occupantSpoolID) }
+    private var occupant: Spool? { store.spool(occupantTray?.spoolID) }
+
+    private var filteredSpools: [Spool] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return store.spools }
+        return store.spools.filter {
+            $0.colorName.localizedCaseInsensitiveContains(query)
+                || $0.brand.localizedCaseInsensitiveContains(query)
+                || $0.material.rawValue.localizedCaseInsensitiveContains(query)
+        }
+    }
 
     private var unitLabel: String {
         guard let printer, printer.amsUnits.count > 1, let unit else { return "" }
@@ -46,6 +57,15 @@ struct AMSAssignSheet: View {
                         .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(NCColor.destructive)
                     }
+                } else if occupantTray?.needsAssignment == true {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(occupantTray?.rawColorHex.map { Color(hex: $0) } ?? NCColor.well)
+                            .frame(width: 22, height: 22)
+                        Text("\(occupantTray?.rawMaterialLabel ?? String(localized: "Unknown material", comment: "Fallback when the printer hasn't reported what's loaded")) · the printer reports this loaded, but it isn't matched to inventory yet", comment: "AMS slot: raw material label, then explanation that it needs to be matched to an inventory spool")
+                            .ncFont(size: 12.5, relativeTo: .footnote)
+                            .foregroundStyle(NCColor.statusWarning)
+                    }
                 } else {
                     Text("Empty slot — assign a spool from inventory")
                         .ncFont(size: 13, relativeTo: .footnote)
@@ -55,11 +75,15 @@ struct AMSAssignSheet: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
 
+            searchField
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+
             Divider().overlay(Color.white.opacity(0.08))
 
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(store.spools) { spool in
+                    ForEach(filteredSpools) { spool in
                         Button {
                             store.assign(spoolID: spool.id, toPrinter: printerID, amsIndex: amsIndex, trayIndex: trayIndex)
                             dismiss()
@@ -69,6 +93,14 @@ struct AMSAssignSheet: View {
                         .buttonStyle(.plain)
                         Divider().overlay(Color.white.opacity(0.06)).padding(.leading, 20)
                     }
+
+                    if filteredSpools.isEmpty {
+                        Text("No spools match \"\(searchText)\".")
+                            .ncFont(size: 13, relativeTo: .footnote)
+                            .foregroundStyle(NCColor.textTertiary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 24)
+                    }
                 }
             }
         }
@@ -76,6 +108,32 @@ struct AMSAssignSheet: View {
         .presentationDetents([.medium, .large])
         .presentationCornerRadius(24)
         .presentationDragIndicator(.hidden)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(NCColor.textTertiary)
+            TextField("Search filament", text: $searchText)
+                .ncFont(size: 15, relativeTo: .subheadline)
+                .foregroundStyle(.white)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(NCColor.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
     }
 }
 

@@ -106,6 +106,12 @@ struct AMSSlotCard: View {
     var spool: Spool?
     var slotIndex: Int
     var isActive: Bool = false
+    /// The tray's raw hardware-reported state — when it says a spool is loaded but `spool`
+    /// is nil, the printer read a color/type off the RFID (or it was set manually) that
+    /// hasn't been matched to anything in inventory yet, distinct from a genuinely empty bay.
+    var tray: AMSTray? = nil
+
+    private var needsAssignment: Bool { spool == nil && (tray?.needsAssignment ?? false) }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -117,6 +123,18 @@ struct AMSSlotCard: View {
                         .ncFont(size: 10, weight: .bold, relativeTo: .caption2)
                         .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black : .white)
                         .padding(.horizontal, 4)
+                } else if needsAssignment {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(tray?.rawColorHex.map { Color(hex: $0) } ?? NCColor.well)
+                    VStack(spacing: 2) {
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        if let material = tray?.rawMaterialLabel {
+                            Text(material)
+                                .ncFont(size: 9, weight: .bold, relativeTo: .caption2)
+                        }
+                    }
+                    .foregroundStyle((tray?.rawColorHex.map { Color(hex: $0).isLight } ?? false) ? .black : .white)
                 } else {
                     StripePattern()
                     Text("Empty")
@@ -127,11 +145,16 @@ struct AMSSlotCard: View {
             .frame(width: 62, height: 50)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            Text(spool?.colorName ?? String(localized: "Slot \(slotIndex + 1)", comment: "Fallback label for an empty AMS slot"))
-                .ncFont(size: 9, weight: .semibold, relativeTo: .caption2)
-                .foregroundStyle(NCColor.textSecondary)
-                .lineLimit(1)
-                .frame(width: 62)
+            Text(
+                spool?.colorName
+                    ?? (needsAssignment
+                        ? String(localized: "Unassigned", comment: "AMS slot: printer reports a spool loaded but it isn't matched to inventory")
+                        : String(localized: "Slot \(slotIndex + 1)", comment: "Fallback label for an empty AMS slot"))
+            )
+            .ncFont(size: 9, weight: .semibold, relativeTo: .caption2)
+            .foregroundStyle(needsAssignment ? NCColor.statusWarning : NCColor.textSecondary)
+            .lineLimit(1)
+            .frame(width: 62)
         }
         .padding(6)
         .background(
@@ -140,7 +163,10 @@ struct AMSSlotCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(isActive ? NCColor.accent : Color.white.opacity(0.1), lineWidth: isActive ? 2 : 1)
+                .strokeBorder(
+                    isActive ? NCColor.accent : (needsAssignment ? NCColor.statusWarning : Color.white.opacity(0.1)),
+                    lineWidth: isActive || needsAssignment ? 2 : 1
+                )
         )
     }
 }

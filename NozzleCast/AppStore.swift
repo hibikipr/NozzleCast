@@ -199,7 +199,14 @@ final class AppStore {
                 index: unit.id,
                 trays: unit.tray.map { tray in
                     let assignment = assignmentsByPrinterSlot["\(dto.id)-\(unit.id)-\(tray.id)"]
-                    return AMSTray(amsIndex: unit.id, trayIndex: tray.id, spoolID: assignment.map { "bb-\($0.spoolId)" })
+                    return AMSTray(
+                        amsIndex: unit.id,
+                        trayIndex: tray.id,
+                        spoolID: assignment.map { "bb-\($0.spoolId)" },
+                        isLoaded: tray.exists ?? false,
+                        rawColorHex: tray.trayColor.flatMap { $0.isEmpty ? nil : "#" + $0.prefix(6).uppercased() },
+                        rawMaterialLabel: tray.trayType?.isEmpty == false ? tray.trayType : nil
+                    )
                 },
                 isHT: unit.isAmsHt ?? false,
                 humidity: unit.humidity,
@@ -208,8 +215,15 @@ final class AppStore {
             )
         }
 
-        let externalTrays: [AMSTray] = (status?.vtTray ?? []).enumerated().map { index, _ in
-            AMSTray(amsIndex: -1, trayIndex: index, spoolID: nil)
+        let externalTrays: [AMSTray] = (status?.vtTray ?? []).enumerated().map { index, tray in
+            AMSTray(
+                amsIndex: -1,
+                trayIndex: index,
+                spoolID: nil,
+                isLoaded: tray.exists ?? false,
+                rawColorHex: tray.trayColor.flatMap { $0.isEmpty ? nil : "#" + $0.prefix(6).uppercased() },
+                rawMaterialLabel: tray.trayType?.isEmpty == false ? tray.trayType : nil
+            )
         }
 
         let hmsErrors: [HMSError] = (status?.hmsErrors ?? []).map { hms in

@@ -16,6 +16,17 @@ struct AMSTray: Identifiable {
     var trayIndex: Int
     var spoolID: String?
 
+    /// The printer itself reports a spool is physically loaded (color/type read off the RFID
+    /// tag or entered manually) even when nothing in Bambuddy's inventory has been linked to
+    /// it yet — that's a distinct state from a slot that's genuinely empty.
+    var isLoaded: Bool = false
+    var rawColorHex: String?
+    var rawMaterialLabel: String?
+
+    /// True when the printer reports a spool physically loaded but it hasn't been matched to
+    /// an inventory spool — Bambuddy's own "Assign Spool" case.
+    var needsAssignment: Bool { isLoaded && spoolID == nil }
+
     var id: String { "\(amsIndex)-\(trayIndex)" }
 }
 
@@ -63,6 +74,21 @@ struct HMSError: Identifiable {
     var fullCode: String
     var severity: Int
     var description: String?
+
+    /// Bambu groups an HMS code into four 4-hex-digit fields (module/type/subtype/code) and
+    /// always displays it that way — `fullCode` arrives as one 16-digit run with no separators,
+    /// which reads as a meaningless giant number. Reformat it into that grouping instead of
+    /// showing the raw string when there's no human-readable description.
+    var displayCode: String {
+        let digits = fullCode
+        guard digits.count == 16, digits.allSatisfy(\.isHexDigit) else { return fullCode }
+        let groups = stride(from: 0, to: 16, by: 4).map { offset -> Substring in
+            let start = digits.index(digits.startIndex, offsetBy: offset)
+            let end = digits.index(start, offsetBy: 4)
+            return digits[start..<end]
+        }
+        return "HMS " + groups.joined(separator: "-")
+    }
 }
 
 struct FanSpeeds {

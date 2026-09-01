@@ -168,7 +168,7 @@ struct PrinterDetailView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(NCColor.statusWarning)
-                    Text(hms.description?.isEmpty == false ? hms.description! : hms.fullCode)
+                    Text(hms.description?.isEmpty == false ? hms.description! : hms.displayCode)
                         .ncFont(size: 12.5, relativeTo: .caption)
                         .foregroundStyle(NCColor.textSecondary)
                 }
@@ -355,7 +355,8 @@ struct PrinterDetailView: View {
                                 AMSSlotCard(
                                     spool: store.spool(tray.spoolID),
                                     slotIndex: tray.trayIndex,
-                                    isActive: tray.spoolID != nil && printer.state == .printing
+                                    isActive: tray.spoolID != nil && printer.state == .printing,
+                                    tray: tray
                                 )
                             }
                             .buttonStyle(.plain)
@@ -371,7 +372,7 @@ struct PrinterDetailView: View {
             Text("External").sectionEyebrow()
             HStack(spacing: 8) {
                 ForEach(printer.externalTrays) { tray in
-                    AMSSlotCard(spool: nil, slotIndex: tray.trayIndex)
+                    AMSSlotCard(spool: store.spool(tray.spoolID), slotIndex: tray.trayIndex, tray: tray)
                 }
             }
         }
