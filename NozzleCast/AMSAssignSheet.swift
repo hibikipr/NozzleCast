@@ -28,7 +28,7 @@ struct AMSAssignSheet: View {
     }
 
     private func attemptAssign(_ spool: Spool) {
-        if trayMaterial.caseInsensitiveCompare(spool.material.rawValue) != .orderedSame {
+        if trayMaterial.caseInsensitiveCompare(spool.material) != .orderedSame {
             pendingSpool = spool
             showMismatchWarning = true
         } else {
@@ -47,7 +47,7 @@ struct AMSAssignSheet: View {
         return store.spools.filter {
             $0.colorName.localizedCaseInsensitiveContains(query)
                 || $0.brand.localizedCaseInsensitiveContains(query)
-                || $0.material.rawValue.localizedCaseInsensitiveContains(query)
+                || $0.material.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -72,7 +72,7 @@ struct AMSAssignSheet: View {
                 if let occupant {
                     HStack(spacing: 8) {
                         Circle().fill(Color(hex: occupant.colorHex)).frame(width: 22, height: 22)
-                        Text("\(occupant.material.rawValue) · \(occupant.colorName)")
+                        Text("\(occupant.material) · \(occupant.colorName)")
                             .ncFont(size: 14, relativeTo: .subheadline)
                             .foregroundStyle(NCColor.textSecondary)
                         Spacer()
@@ -138,7 +138,7 @@ struct AMSAssignSheet: View {
             Button("Assign Anyway") { performAssign(spool) }
         } message: { spool in
             Text(
-                "The selected spool's material \"\(spool.material.rawValue)\" doesn't match the tray material \"\(trayMaterial)\" for \(slotLabel). This only updates NozzleCast and Bambuddy's inventory record — it doesn't change what's physically loaded in the AMS. Assign anyway?",
+                "The selected spool's material \"\(spool.material)\" doesn't match the tray material \"\(trayMaterial)\" for \(slotLabel). This only updates NozzleCast and Bambuddy's inventory record — it doesn't change what's physically loaded in the AMS. Assign anyway?",
                 comment: "Material mismatch confirmation when assigning a spool whose material differs from what the printer reports for that AMS slot"
             )
         }
@@ -178,11 +178,11 @@ private struct SpoolRow: View {
     var body: some View {
         HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(hex: spool.colorHex))
+                .fill(spool.swatchFill)
                 .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(spool.material.rawValue) · \(spool.colorName)")
+                Text("\(spool.material) · \(spool.colorName)")
                     .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                 Text("\(spool.brand) · \(spool.locationCaption(printerName: store.printerName))")

@@ -192,9 +192,15 @@ enum SpoolLocation: Equatable {
 
 struct Spool: Identifiable {
     let id: String
-    var material: FilamentMaterial
+    /// The raw material string, e.g. "PLA", "PETG-HF", "PC" — Bambuddy accepts any value here,
+    /// not a fixed set, so this isn't `FilamentMaterial` (that enum is a coarse bucketing
+    /// helper for filtering/matching, not the source of truth for what a spool actually is).
+    var material: String
     var colorName: String
     var colorHex: String
+    /// Additional hex color stops beyond `colorHex` — a dual/multi-color or gradient-effect
+    /// spool (Bambuddy's "Extra colors" field). Empty for a plain single-color spool.
+    var extraColorHexes: [String] = []
     var brand: String
     var remainingPercent: Int
     var netWeightGrams: Int

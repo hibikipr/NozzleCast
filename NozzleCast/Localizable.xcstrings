@@ -203,6 +203,9 @@
     "Color name" : {
       "comment" : "Filament field label"
     },
+    "Comma-separated hex stops, e.g. EC984C,6CD4BC" : {
+
+    },
     "Connect Bambuddy" : {
 
     },
@@ -275,6 +278,9 @@
     "External" : {
 
     },
+    "Extra colors" : {
+
+    },
     "Fans" : {
 
     },
@@ -285,6 +291,9 @@
 
     },
     "Find your API key in Bambuddy under Settings → API Keys. It needs Read Status and Manage Inventory permissions." : {
+
+    },
+    "For a dual/multi-color or gradient-effect spool. Leave blank for a plain single color." : {
 
     },
     "Home Axes" : {

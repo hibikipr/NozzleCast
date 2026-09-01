@@ -11,6 +11,16 @@ extension Bundle {
     }
 }
 
+extension Spool {
+    /// The fill for this spool's color swatch — a left-to-right gradient across `colorHex` plus
+    /// `extraColorHexes` when set (a dual/multi-color spool), otherwise just the plain color.
+    var swatchFill: AnyShapeStyle {
+        guard !extraColorHexes.isEmpty else { return AnyShapeStyle(Color(hex: colorHex)) }
+        let colors = ([colorHex] + extraColorHexes).map { Color(hex: $0) }
+        return AnyShapeStyle(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
+    }
+}
+
 extension Color {
     init(hex: String) {
         var s = hex.trimmingCharacters(in: .alphanumerics.inverted)

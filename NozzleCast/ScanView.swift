@@ -438,8 +438,8 @@ struct ScanView: View {
 
             if let addedSpool {
                 HStack(spacing: 10) {
-                    Circle().fill(Color(hex: addedSpool.colorHex)).frame(width: 24, height: 24)
-                    Text("\(addedSpool.material.rawValue) · \(addedSpool.colorName)")
+                    Circle().fill(addedSpool.swatchFill).frame(width: 24, height: 24)
+                    Text("\(addedSpool.material) · \(addedSpool.colorName)")
                         .ncFont(size: 15, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                 }
@@ -503,7 +503,7 @@ struct ScanView: View {
 
     private func addToInventory() {
         let spool = store.addSpool(
-            material: result.material,
+            material: result.material.rawValue,
             colorName: result.colorName,
             colorHex: result.colorHex,
             brand: result.brand,

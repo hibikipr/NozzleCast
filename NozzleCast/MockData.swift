@@ -16,14 +16,14 @@ enum MockData {
 
     static func makeSpools() -> [Spool] {
         [
-            Spool(id: sunsetOrange, material: .pla, colorName: "Sunset Orange", colorHex: "#E8622C", brand: "Bambu Lab", remainingPercent: 72, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 0)),
-            Spool(id: onyxBlack, material: .pla, colorName: "Onyx Black", colorHex: "#1A1A1A", brand: "Bambu Lab", remainingPercent: 45, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 1)),
-            Spool(id: cobaltBlue, material: .petg, colorName: "Cobalt Blue", colorHex: "#2A5FCC", brand: "Polymaker", remainingPercent: 88, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 2)),
-            Spool(id: amberGold, material: .pla, colorName: "Amber Gold", colorHex: "#D9A426", brand: "eSun", remainingPercent: 30, netWeightGrams: 1000, location: .ams(printerID: garageA1, amsIndex: 0, trayIndex: 0)),
-            Spool(id: forestGreen, material: .pla, colorName: "Forest Green", colorHex: "#2F6B3A", brand: "Bambu Lab", remainingPercent: 100, netWeightGrams: 1000, location: .storage(name: nil)),
-            Spool(id: pureWhite, material: .abs, colorName: "Pure White", colorHex: "#F2F2F2", brand: "Bambu Lab", remainingPercent: 60, netWeightGrams: 1000, location: .ams(printerID: officeP1S, amsIndex: 0, trayIndex: 2)),
-            Spool(id: magentaPink, material: .tpu, colorName: "Magenta Pink", colorHex: "#C22A7A", brand: "Overture", remainingPercent: 55, netWeightGrams: 500, location: .storage(name: nil)),
-            Spool(id: charcoalGrey, material: .petg, colorName: "Charcoal Grey", colorHex: "#4A4A4A", brand: "Polymaker", remainingPercent: 20, netWeightGrams: 1000, location: .storage(name: nil)),
+            Spool(id: sunsetOrange, material: "PLA", colorName: "Sunset Orange", colorHex: "#E8622C", brand: "Bambu Lab", remainingPercent: 72, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 0)),
+            Spool(id: onyxBlack, material: "PLA", colorName: "Onyx Black", colorHex: "#1A1A1A", brand: "Bambu Lab", remainingPercent: 45, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 1)),
+            Spool(id: cobaltBlue, material: "PETG", colorName: "Cobalt Blue", colorHex: "#2A5FCC", brand: "Polymaker", remainingPercent: 88, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 2)),
+            Spool(id: amberGold, material: "PLA", colorName: "Amber Gold", colorHex: "#D9A426", brand: "eSun", remainingPercent: 30, netWeightGrams: 1000, location: .ams(printerID: garageA1, amsIndex: 0, trayIndex: 0)),
+            Spool(id: forestGreen, material: "PLA", colorName: "Forest Green", colorHex: "#2F6B3A", brand: "Bambu Lab", remainingPercent: 100, netWeightGrams: 1000, location: .storage(name: nil)),
+            Spool(id: pureWhite, material: "ABS", colorName: "Pure White", colorHex: "#F2F2F2", brand: "Bambu Lab", remainingPercent: 60, netWeightGrams: 1000, location: .ams(printerID: officeP1S, amsIndex: 0, trayIndex: 2)),
+            Spool(id: magentaPink, material: "TPU", colorName: "Magenta Pink", colorHex: "#C22A7A", brand: "Overture", remainingPercent: 55, netWeightGrams: 500, location: .storage(name: nil)),
+            Spool(id: charcoalGrey, material: "PETG", colorName: "Charcoal Grey", colorHex: "#4A4A4A", brand: "Polymaker", remainingPercent: 20, netWeightGrams: 1000, location: .storage(name: nil)),
         ]
     }
 

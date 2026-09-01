@@ -305,6 +305,22 @@ final class AppStore {
         )
     }
 
+    /// "EC984C,#6CD4BC, a66eb9" -> ["#EC984C", "#6CD4BC", "#A66EB9"] — tolerant of the leading
+    /// "#" being present or not and stray whitespace, since that's user-typed input.
+    private static func parseExtraColors(_ raw: String?) -> [String] {
+        guard let raw, !raw.isEmpty else { return [] }
+        return raw.split(separator: ",").compactMap { part in
+            let hex = part.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+            guard !hex.isEmpty else { return nil }
+            return "#" + hex.uppercased()
+        }
+    }
+
+    private static func formatExtraColors(_ hexes: [String]) -> String? {
+        let cleaned = hexes.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#")).uppercased() }.filter { !$0.isEmpty }
+        return cleaned.isEmpty ? nil : cleaned.joined(separator: ",")
+    }
+
     private static func mapSpool(_ dto: BambuddySpoolDTO, assignment: BambuddyAssignmentDTO?, locationNames: [Int: String]) -> Spool {
         let percentRemaining: Int
         if let used = dto.weightUsed, let label = dto.labelWeight, label > 0 {
@@ -322,9 +338,10 @@ final class AppStore {
 
         return Spool(
             id: "bb-\(dto.id)",
-            material: .from(bambuddyMaterial: dto.material),
+            material: dto.material,
             colorName: dto.colorName ?? dto.material,
             colorHex: "#" + (dto.rgba?.prefix(6).uppercased() ?? "808080"),
+            extraColorHexes: parseExtraColors(dto.extraColors),
             brand: dto.brand ?? "Unknown",
             remainingPercent: percentRemaining,
             netWeightGrams: dto.labelWeight ?? 1000,
@@ -522,12 +539,12 @@ final class AppStore {
     // MARK: - Inventory
 
     @discardableResult
-    func addSpool(material: FilamentMaterial, colorName: String, colorHex: String, brand: String, netWeightGrams: Int) -> Spool {
+    func addSpool(material: String, colorName: String, colorHex: String, brand: String, netWeightGrams: Int) -> Spool {
         if isLive, let client {
             let rgba = colorHex.replacingOccurrences(of: "#", with: "").uppercased() + "FF"
             Task {
                 do {
-                    _ = try await client.createSpool(material: material.rawValue, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams)
+                    _ = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams)
                     await refresh()
                 } catch {
                     connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
@@ -554,9 +571,10 @@ final class AppStore {
     /// bookkeeping only, same as assign: it does not push anything to physical AMS hardware.
     func updateSpool(
         _ spoolID: String,
-        material: FilamentMaterial,
+        material: String,
         colorName: String,
         colorHex: String,
+        extraColorHexes: [String],
         brand: String,
         subtype: String?,
         netWeightGrams: Int,
@@ -570,6 +588,7 @@ final class AppStore {
         spools[idx].material = material
         spools[idx].colorName = colorName
         spools[idx].colorHex = colorHex
+        spools[idx].extraColorHexes = extraColorHexes
         spools[idx].brand = brand
         spools[idx].subtype = subtype
         spools[idx].netWeightGrams = netWeightGrams
@@ -582,10 +601,11 @@ final class AppStore {
         guard isLive, let client, let bbID = bambuddyID(spoolID) else { return }
         let rgba = colorHex.replacingOccurrences(of: "#", with: "").uppercased() + "FF"
         let update = BambuddySpoolUpdateBody(
-            material: material.rawValue,
+            material: material,
             subtype: subtype,
             colorName: colorName,
             rgba: rgba,
+            extraColors: Self.formatExtraColors(extraColorHexes),
             brand: brand,
             labelWeight: netWeightGrams,
             slicerFilament: nil,

@@ -35,17 +35,17 @@ struct InventoryView: View {
             case .all: matchesFilter = true
             case .inAMS: if case .ams = spool.location { matchesFilter = true } else { matchesFilter = false }
             case .inStorage: if case .storage = spool.location { matchesFilter = true } else { matchesFilter = false }
-            case .pla: matchesFilter = spool.material == .pla
-            case .petg: matchesFilter = spool.material == .petg
-            case .abs: matchesFilter = spool.material == .abs
-            case .tpu: matchesFilter = spool.material == .tpu
+            case .pla: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.pla.rawValue) == .orderedSame
+            case .petg: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.petg.rawValue) == .orderedSame
+            case .abs: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.abs.rawValue) == .orderedSame
+            case .tpu: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.tpu.rawValue) == .orderedSame
             }
 
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
             let matchesSearch = query.isEmpty
                 || spool.colorName.localizedCaseInsensitiveContains(query)
                 || spool.brand.localizedCaseInsensitiveContains(query)
-                || spool.material.rawValue.localizedCaseInsensitiveContains(query)
+                || spool.material.localizedCaseInsensitiveContains(query)
 
             return matchesFilter && matchesSearch
         }
@@ -214,8 +214,8 @@ struct SpoolCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
-                Color(hex: spool.colorHex)
-                Text(spool.material.rawValue)
+                Rectangle().fill(spool.swatchFill)
+                Text(spool.material)
                     .ncFont(size: 11, weight: .bold, relativeTo: .caption2)
                     .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black.opacity(0.7) : .white)
                     .padding(8)
@@ -267,10 +267,10 @@ struct SpoolListRow: View {
     var body: some View {
         HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(hex: spool.colorHex))
+                .fill(spool.swatchFill)
                 .frame(width: 44, height: 44)
                 .overlay {
-                    Text(spool.material.rawValue)
+                    Text(spool.material)
                         .ncFont(size: 9, weight: .bold, relativeTo: .caption2)
                         .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black.opacity(0.7) : .white)
                 }
