@@ -188,6 +188,24 @@ struct BambuddyLocationDTO: Codable {
     var name: String
 }
 
+struct BambuddyNotificationProviderConfigDTO: Codable {
+    var server: String?
+    var topic: String?
+    var authToken: String?
+}
+
+/// One configured notification destination (ntfy, Pushover, Discord, …) from Bambuddy's
+/// `/api/v1/notifications/` endpoint. Only the fields NozzleCast needs are modeled — the
+/// endpoint also returns ~35 `on_*` event-type flags and quiet-hours/digest settings we don't
+/// use here (Bambuddy's server does its own event filtering before publishing to ntfy).
+struct BambuddyNotificationProviderDTO: Codable {
+    var id: Int
+    var name: String
+    var providerType: String
+    var enabled: Bool
+    var config: BambuddyNotificationProviderConfigDTO
+}
+
 private struct AssignmentCreateBody: Codable {
     var spoolId: Int
     var printerId: Int
@@ -318,6 +336,10 @@ struct BambuddyAPIClient {
 
     func locations() async throws -> [BambuddyLocationDTO] {
         try await get("/api/v1/inventory/locations")
+    }
+
+    func notificationProviders() async throws -> [BambuddyNotificationProviderDTO] {
+        try await get("/api/v1/notifications/")
     }
 
     // MARK: Controls

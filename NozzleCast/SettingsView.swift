@@ -1,12 +1,56 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
     @State private var showConnectionSheet = false
+    @State private var showFileImporter = false
+    @State private var importError: String?
+    @State private var pushManager = PushNotificationManager.shared
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Button {
+                        showFileImporter = true
+                    } label: {
+                        settingsRow(
+                            title: String(localized: "Firebase Config", comment: "Settings row label"),
+                            value: FirebaseConfigStore.isConfigured
+                                ? (FirebaseConfigStore.projectID ?? String(localized: "Imported", comment: "Settings row value when Firebase config is set but has no project id"))
+                                : String(localized: "Not imported", comment: "Settings row value when no Firebase config is set")
+                        )
+                    }
+                    if FirebaseConfigStore.isConfigured {
+                        Button {
+                            Task {
+                                try? await pushManager.requestAuthorization()
+                                await store.discoverAndSubscribeNtfy()
+                            }
+                        } label: {
+                            settingsRow(
+                                title: String(localized: "Push Notifications", comment: "Settings row label"),
+                                value: pushManager.authorizationStatus == .authorized
+                                    ? (pushManager.subscribedTopic != nil
+                                        ? String(localized: "Enabled", comment: "Settings row value: push notifications on")
+                                        : String(localized: "Tap to subscribe", comment: "Settings row value: needs subscription"))
+                                    : String(localized: "Tap to enable", comment: "Settings row value: needs permission")
+                            )
+                        }
+                        NavigationLink {
+                            NotificationsView()
+                        } label: {
+                            Text("Notification History")
+                                .foregroundStyle(.white)
+                        }
+                    }
+                } header: {
+                    Text("Push Notifications")
+                } footer: {
+                    Text("Import the GoogleService-Info.plist from the Firebase project your ntfy server publishes through. NozzleCast will subscribe to the same alert topic Bambuddy already sends to.")
+                }
+
                 Section {
                     Button {
                         showConnectionSheet = true
@@ -95,6 +139,29 @@ struct SettingsView: View {
             .refreshable { await store.refresh() }
             .sheet(isPresented: $showConnectionSheet) {
                 BambuddyConnectionSheet()
+            }
+            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.propertyList, .xml, .item]) { result in
+                switch result {
+                case .success(let url):
+                    let accessed = url.startAccessingSecurityScopedResource()
+                    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                    do {
+                        try FirebaseConfigStore.importConfig(from: url)
+                        pushManager.configureFirebaseIfNeeded()
+                    } catch {
+                        importError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    }
+                case .failure(let error):
+                    importError = error.localizedDescription
+                }
+            }
+            .alert("Couldn't Import Config", isPresented: .init(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
+                Button("OK", role: .cancel) { importError = nil }
+            } message: {
+                Text(importError ?? "")
+            }
+            .task {
+                await pushManager.refreshAuthorizationStatus()
             }
         }
     }

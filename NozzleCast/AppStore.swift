@@ -94,6 +94,21 @@ final class AppStore {
         }
     }
 
+    /// Looks up the ntfy notification provider Bambuddy is already configured to publish
+    /// printer alerts to, and subscribes NozzleCast's push manager to that same topic. Silently
+    /// no-ops if Bambuddy has no enabled ntfy provider — this only pairs with a server the user
+    /// has already set up to relay through Firebase, it doesn't create one.
+    @discardableResult
+    func discoverAndSubscribeNtfy() async -> Bool {
+        guard let client else { return false }
+        guard let providers = try? await client.notificationProviders(),
+              let ntfy = providers.first(where: { $0.providerType == "ntfy" && $0.enabled }),
+              let server = ntfy.config.server, let topic = ntfy.config.topic
+        else { return false }
+        PushNotificationManager.shared.subscribe(server: server, topic: topic, authToken: ntfy.config.authToken)
+        return true
+    }
+
     func refresh() async {
         guard let client else { return }
         isRefreshing = true
