@@ -61,8 +61,13 @@ struct LiveCameraView: View {
     var pollInterval: Double = 3
     /// Shows the underlying failure reason under the placeholder icon instead of just the
     /// icon alone — only worth doing where there's room to read it (the detail view header),
-    /// not the small Monitor-list thumbnail.
+    /// not the small Monitor-list thumbnail. Only used when there's no cover fallback to show
+    /// instead (see below).
     var showsErrorDetail: Bool = false
+    /// When set, falls back to the printer's plate render instead of a plain camera glyph once
+    /// there's no live frame to show — a camera integration being down (as this was built for,
+    /// on a P1S) shouldn't leave the thumbnail solid black when a render is already available.
+    var coverFallbackJobIdentity: String?
 
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
@@ -75,6 +80,8 @@ struct LiveCameraView: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
+            } else if let jobIdentity = coverFallbackJobIdentity {
+                PrinterCoverImage(printerID: printerID, jobIdentity: jobIdentity)
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: "camera.fill")

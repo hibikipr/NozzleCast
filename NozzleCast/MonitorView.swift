@@ -121,7 +121,7 @@ struct PrinterCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(NCColor.well)
             if printer.state == .printing {
-                LiveCameraView(printerID: printer.id, pollInterval: 5)
+                LiveCameraView(printerID: printer.id, pollInterval: 5, coverFallbackJobIdentity: printer.jobFileName ?? printer.id)
                     .font(.system(size: 20))
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

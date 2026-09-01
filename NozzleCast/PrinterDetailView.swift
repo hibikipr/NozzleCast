@@ -93,7 +93,7 @@ struct PrinterDetailView: View {
                     .font(.system(size: 44))
                     .foregroundStyle(.white.opacity(0.3))
             } else {
-                LiveCameraView(printerID: printer.id, pollInterval: 3, showsErrorDetail: true)
+                LiveCameraView(printerID: printer.id, pollInterval: 3, showsErrorDetail: true, coverFallbackJobIdentity: printer.jobFileName ?? printer.id)
                     .font(.system(size: 44))
             }
         }
