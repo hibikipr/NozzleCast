@@ -101,6 +101,36 @@ struct LiveCameraView: View {
     }
 }
 
+/// The rendered plate preview for a printer's current or most recently finished job — refetched
+/// whenever the job identity changes (a new job means a new render; the same job's render never
+/// changes, so there's no need to poll). Falls back to a package glyph when nothing's loaded yet,
+/// the fetch fails, or the printer has no completed job to show a render for.
+struct PrinterCoverImage: View {
+    var printerID: String
+    /// Identifies the current job so the view knows when to refetch — pass something that
+    /// changes when the job does, e.g. the job filename (or printer id alone if idle).
+    var jobIdentity: String
+
+    @Environment(AppStore.self) private var store
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "shippingbox.fill")
+                    .foregroundStyle(NCColor.textTertiary)
+            }
+        }
+        .task(id: "\(printerID)-\(jobIdentity)") {
+            image = await store.printerCoverImage(printerID: printerID)
+        }
+    }
+}
+
 /// The 60px-swatch / caption card used for AMS slots on Detail, the AMS sheet, and the post-scan slot picker.
 struct AMSSlotCard: View {
     var spool: Spool?

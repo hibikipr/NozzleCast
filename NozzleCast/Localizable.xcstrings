@@ -41,6 +41,9 @@
     "%@ · Choose a Slot" : {
       "comment" : "Sheet title: printer name and 'Choose a Slot'"
     },
+    "%@ · Warnings" : {
+      "comment" : "Sheet title: printer name and its active HMS warnings"
+    },
     "%@ · the printer reports this loaded, but it isn't matched to inventory yet" : {
       "comment" : "AMS slot: raw material label, then explanation that it needs to be matched to an inventory spool"
     },
@@ -512,6 +515,9 @@
     },
     "Unknown material" : {
       "comment" : "Fallback when the printer hasn't reported what's loaded"
+    },
+    "View on Bambu Wiki" : {
+
     },
     "bambuddy.example.com" : {
 

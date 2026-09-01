@@ -77,7 +77,6 @@ struct BambuddyStatusDTO: Codable {
     var doorOpen: Bool?
     var firmwareVersion: String?
     var hmsErrors: [BambuddyHMSErrorDTO]?
-    var coverUrl: String?
     var nozzles: [BambuddyNozzleDTO]?
     var nozzleRack: [BambuddyNozzleRackSlotDTO]?
     /// AMS/HT unit id (as a string key) -> "A" (left nozzle) or "B" (right nozzle).
@@ -313,6 +312,12 @@ struct BambuddyAPIClient {
 
     func cameraSnapshotData(printerID: Int, token: String) async throws -> Data {
         try await send(request("/api/v1/printers/\(printerID)/camera/snapshot", query: [URLQueryItem(name: "token", value: token)]))
+    }
+
+    /// The rendered plate preview for the current (or most recently finished) print job —
+    /// the angled 3D perspective view by default. Shares the camera stream-token auth flow.
+    func coverImageData(printerID: Int, token: String) async throws -> Data {
+        try await send(request("/api/v1/printers/\(printerID)/cover", query: [URLQueryItem(name: "token", value: token)]))
     }
 
     // MARK: Inventory mutations

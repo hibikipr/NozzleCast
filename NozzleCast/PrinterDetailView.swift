@@ -6,6 +6,7 @@ struct PrinterDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var assignTray: AMSTray?
+    @State private var showWarnings = false
 
     private var printer: Printer? { store.printer(printerID) }
 
@@ -26,11 +27,6 @@ struct PrinterDetailView: View {
 
                     infoPillRow(printer)
                         .padding(.horizontal, 16)
-
-                    if !printer.hmsErrors.isEmpty {
-                        warningsSection(printer)
-                            .padding(.horizontal, 16)
-                    }
 
                     if printer.state == .printing || printer.state == .paused, let job = printer.jobFileName {
                         jobCard(printer: printer, job: job)
@@ -75,6 +71,9 @@ struct PrinterDetailView: View {
             .toolbar(.hidden, for: .tabBar)
             .sheet(item: $assignTray) { tray in
                 AMSAssignSheet(printerID: printerID, amsIndex: tray.amsIndex, trayIndex: tray.trayIndex)
+            }
+            .sheet(isPresented: $showWarnings) {
+                HMSWarningsSheet(printerName: printer.name, errors: printer.hmsErrors)
             }
         } else {
             ContentUnavailableView(String(localized: "Printer not found"), systemImage: "printer.fill")
@@ -139,7 +138,12 @@ struct PrinterDetailView: View {
                     InfoPill(icon: "wifi", text: "\(dbm)dBm")
                 }
                 if !printer.hmsErrors.isEmpty {
-                    InfoPill(icon: "exclamationmark.triangle.fill", text: "\(printer.hmsErrors.count)", tint: NCColor.statusWarning)
+                    Button {
+                        showWarnings = true
+                    } label: {
+                        InfoPill(icon: "exclamationmark.triangle.fill", text: "\(printer.hmsErrors.count)", tint: NCColor.statusWarning)
+                    }
+                    .buttonStyle(.plain)
                 }
                 if let fw = printer.firmwareVersion, !fw.isEmpty {
                     InfoPill(icon: "cpu", text: fw)
@@ -161,34 +165,12 @@ struct PrinterDetailView: View {
         }
     }
 
-    private func warningsSection(_ printer: Printer) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(printer.hmsErrors) { hms in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(NCColor.statusWarning)
-                    Text(hms.description?.isEmpty == false ? hms.description! : hms.displayCode)
-                        .ncFont(size: 12.5, relativeTo: .caption)
-                        .foregroundStyle(NCColor.textSecondary)
-                }
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.statusWarning.opacity(0.12)))
-    }
-
     private func jobCard(printer: Printer, job: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            if let coverURL = printer.coverURL {
-                AsyncImage(url: coverURL) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NCColor.well)
-                }
+            PrinterCoverImage(printerID: printer.id, jobIdentity: job)
                 .frame(width: 52, height: 52)
+                .background(NCColor.well)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(job)

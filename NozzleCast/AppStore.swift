@@ -279,7 +279,6 @@ final class AppStore {
             hmsErrors: hmsErrors,
             doorOpen: status?.doorOpen ?? false,
             fanSpeeds: FanSpeeds(partCooling: status?.coolingFanSpeed, auxiliary: status?.bigFan1Speed, chamber: status?.bigFan2Speed),
-            coverURL: (status?.coverUrl).flatMap(URL.init(string:)),
             awaitingPlateClear: status?.awaitingPlateClear ?? false,
             nozzles: nozzles,
             nozzleRack: nozzleRack,
@@ -345,6 +344,19 @@ final class AppStore {
             return image
         } catch {
             cameraErrors[printerID] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Fetches the rendered plate preview (angled 3D view) for a printer's current or most
+    /// recently finished job — same stream-token auth as `cameraSnapshot`.
+    func printerCoverImage(printerID: String) async -> UIImage? {
+        guard let client, let bbID = bambuddyID(printerID) else { return nil }
+        do {
+            let token = try await client.cameraStreamToken()
+            let data = try await client.coverImageData(printerID: bbID, token: token)
+            return UIImage(data: data)
+        } catch {
             return nil
         }
     }

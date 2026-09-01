@@ -75,19 +75,24 @@ struct HMSError: Identifiable {
     var severity: Int
     var description: String?
 
-    /// Bambu groups an HMS code into four 4-hex-digit fields (module/type/subtype/code) and
-    /// always displays it that way — `fullCode` arrives as one 16-digit run with no separators,
-    /// which reads as a meaningless giant number. Reformat it into that grouping instead of
-    /// showing the raw string when there's no human-readable description.
-    var displayCode: String {
-        let digits = fullCode
-        guard digits.count == 16, digits.allSatisfy(\.isHexDigit) else { return fullCode }
+    /// The code grouped into Bambu's standard four 4-hex-digit fields (module/type/subtype/code),
+    /// e.g. "0500-0500-0001-0007" — this is also the form the Bambu wiki keys its HMS lookup
+    /// pages on. Nil if `fullCode` isn't the expected 16 hex digits.
+    var dashedCode: String? {
+        guard fullCode.count == 16, fullCode.allSatisfy(\.isHexDigit) else { return nil }
         let groups = stride(from: 0, to: 16, by: 4).map { offset -> Substring in
-            let start = digits.index(digits.startIndex, offsetBy: offset)
-            let end = digits.index(start, offsetBy: 4)
-            return digits[start..<end]
+            let start = fullCode.index(fullCode.startIndex, offsetBy: offset)
+            let end = fullCode.index(start, offsetBy: 4)
+            return fullCode[start..<end]
         }
-        return "HMS " + groups.joined(separator: "-")
+        return groups.joined(separator: "-")
+    }
+
+    /// Bambu's own HMS codes always display grouped this way — `fullCode` arrives as one
+    /// 16-digit run with no separators, which reads as a meaningless giant number when shown
+    /// as-is (e.g. with no human-readable description available).
+    var displayCode: String {
+        dashedCode.map { "HMS " + $0 } ?? fullCode
     }
 }
 
@@ -129,7 +134,6 @@ struct Printer: Identifiable {
     var hmsErrors: [HMSError] = []
     var doorOpen: Bool = false
     var fanSpeeds: FanSpeeds = FanSpeeds()
-    var coverURL: URL? = nil
     var awaitingPlateClear: Bool = false
 
     /// Nozzle type/diameter per installed nozzle, ordered left-to-right on dual-nozzle printers.
