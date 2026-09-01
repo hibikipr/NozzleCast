@@ -15,7 +15,7 @@ struct MonitorView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("NoozleCast")
+                        Text("NozzleCast")
                             .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
                         Text(isConnecting ? "Connecting to Bambuddy…" : "\(printingCount) printing · \(store.printers.count) printers")
                             .ncFont(size: 15, relativeTo: .subheadline)

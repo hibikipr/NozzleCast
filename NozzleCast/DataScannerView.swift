@@ -59,7 +59,7 @@ struct ScannerCameraGate: View {
                 case .denied, .restricted:
                     unavailable(
                         icon: "camera.fill",
-                        message: "Camera access is off for NoozleCast",
+                        message: "Camera access is off for NozzleCast",
                         actionTitle: "Open Settings"
                     ) {
                         if let url = URL(string: UIApplication.openSettingsURLString) {

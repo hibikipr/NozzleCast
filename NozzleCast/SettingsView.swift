@@ -64,7 +64,7 @@ struct SettingsView: View {
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 64, height: 64)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        Text("NoozleCast 1.0.0")
+                        Text("NozzleCast 1.0.0")
                             .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
                             .foregroundStyle(.white)
                         Text("Local-first control for your farm.")
