@@ -134,6 +134,14 @@ struct PrinterDetailView: View {
             .background(Capsule().fill(Color.black.opacity(0.55)))
     }
 
+    /// Bambuddy's `door_open` field defaults to false for every printer model rather than
+    /// being nil when a model has no door to report on, so it can't tell us on its own whether
+    /// a "closed" reading is meaningful or just the default. The H2 series (H2C/H2D/H2S) is the
+    /// enclosed line with an actual front-door sensor Bambuddy surfaces this for.
+    private func hasDoorSensor(_ printer: Printer) -> Bool {
+        printer.model.uppercased().contains("H2")
+    }
+
     @ViewBuilder
     private func infoPillRow(_ printer: Printer) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -157,13 +165,17 @@ struct PrinterDetailView: View {
                 }
                 if let ok = printer.maintenanceOK {
                     InfoPill(
-                        icon: "wrench.and.screwdriver.fill",
+                        icon: "wrench.fill",
                         text: ok ? String(localized: "OK", comment: "Maintenance status: nothing due") : String(localized: "Due", comment: "Maintenance status: something needs attention"),
                         tint: ok ? NCColor.statusPrinting : NCColor.statusWarning
                     )
                 }
-                if printer.doorOpen {
-                    InfoPill(icon: "door.left.hand.open", text: String(localized: "Door Open"), tint: NCColor.statusWarning)
+                if hasDoorSensor(printer) {
+                    InfoPill(
+                        icon: printer.doorOpen ? "door.left.hand.open" : "door.left.hand.closed",
+                        text: printer.doorOpen ? String(localized: "Door Open", comment: "Enclosed printer's chamber door status") : String(localized: "Door Closed", comment: "Enclosed printer's chamber door status"),
+                        tint: printer.doorOpen ? NCColor.statusWarning : NCColor.textSecondary
+                    )
                 }
             }
         }

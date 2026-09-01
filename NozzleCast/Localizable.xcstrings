@@ -236,8 +236,11 @@
     "Done" : {
 
     },
+    "Door Closed" : {
+      "comment" : "Enclosed printer's chamber door status"
+    },
     "Door Open" : {
-
+      "comment" : "Enclosed printer's chamber door status"
     },
     "Due" : {
       "comment" : "Maintenance status: something needs attention"
