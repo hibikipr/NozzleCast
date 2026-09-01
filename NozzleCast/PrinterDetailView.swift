@@ -9,6 +9,7 @@ struct PrinterDetailView: View {
     @State private var showWarnings = false
     @State private var showCoverFullscreen = false
     @State private var isCameraLive = false
+    @State private var showAIDetection = false
 
     private var printer: Printer? { store.printer(printerID) }
 
@@ -32,6 +33,9 @@ struct PrinterDetailView: View {
 
                     if printer.state == .printing || printer.state == .paused, let job = printer.jobFileName {
                         jobCard(printer: printer, job: job)
+                            .padding(.horizontal, 16)
+                    } else if printer.state != .offline {
+                        idleStatusCard(printer)
                             .padding(.horizontal, 16)
                     }
 
@@ -79,6 +83,9 @@ struct PrinterDetailView: View {
             }
             .fullScreenCover(isPresented: $showCoverFullscreen) {
                 CoverImageViewer(printerID: printer.id, jobIdentity: printer.jobFileName ?? printer.id)
+            }
+            .sheet(isPresented: $showAIDetection) {
+                AIDetectionSheet(printerName: printer.name, isMonitoring: printer.aiMonitoringActive, lastError: printer.aiLastError)
             }
         } else {
             ContentUnavailableView(String(localized: "Printer not found"), systemImage: "printer.fill")
@@ -162,6 +169,18 @@ struct PrinterDetailView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                if printer.aiDetectionEnabled {
+                    Button {
+                        showAIDetection = true
+                    } label: {
+                        InfoPill(
+                            icon: "viewfinder",
+                            text: printer.aiMonitoringActive ? String(localized: "Monitoring", comment: "AI failure detection status: actively watching a print") : String(localized: "Idle", comment: "AI failure detection status: not currently watching a print"),
+                            tint: printer.aiMonitoringActive ? NCColor.statusPrinting : NCColor.textSecondary
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
                 if let fw = printer.firmwareVersion, !fw.isEmpty {
                     InfoPill(icon: "cpu", text: fw)
                 }
@@ -211,6 +230,58 @@ struct PrinterDetailView: View {
                 Text("\(printer.etaDescription ?? "--") remaining", comment: "Remaining print time, e.g. '12m remaining'")
                     .ncFont(size: 12.5, relativeTo: .caption)
                     .foregroundStyle(NCColor.textSecondary)
+            }
+        }
+        .padding(14)
+        .glassCard()
+    }
+
+    /// The idle/finished equivalent of `jobCard` — no active job, but still worth showing the
+    /// last plate render and whether it needs clearing before the next print can start.
+    private func idleStatusCard(_ printer: Printer) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Button {
+                    showCoverFullscreen = true
+                } label: {
+                    PrinterCoverImage(printerID: printer.id, jobIdentity: printer.id)
+                        .frame(width: 52, height: 52)
+                        .background(NCColor.well)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Text(printer.state.label)
+                            .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
+                        InfoPill(
+                            icon: printer.awaitingPlateClear ? "square.dashed" : "checkmark.square",
+                            text: printer.awaitingPlateClear ? String(localized: "Plate not Clear", comment: "Plate status: parts still on the build plate from the last print") : String(localized: "Plate Clear", comment: "Plate status: build plate is empty and ready"),
+                            tint: printer.awaitingPlateClear ? NCColor.statusWarning : NCColor.statusPrinting
+                        )
+                    }
+                    Text("No active job")
+                        .ncFont(size: 12.5, relativeTo: .caption)
+                        .foregroundStyle(NCColor.textSecondary)
+                }
+            }
+
+            if printer.awaitingPlateClear {
+                Button {
+                    store.clearPlate(printer.id)
+                } label: {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "square.dashed")
+                        Text("Mark plate as cleared")
+                        Spacer()
+                    }
+                    .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
+                    .foregroundStyle(NCColor.statusWarning)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NCColor.statusWarning.opacity(0.15)))
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(14)

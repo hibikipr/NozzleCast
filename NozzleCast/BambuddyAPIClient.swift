@@ -109,6 +109,24 @@ struct BambuddySmartPlugStatusDTO: Codable {
     var energy: BambuddySmartPlugEnergyDTO?
 }
 
+/// Decodes any JSON value while discarding its content — used for `per_printer`, whose entry
+/// shape isn't documented and isn't needed here; only which printer ids are present as keys
+/// (currently-monitored printers) matters.
+struct BambuddyIgnoredValue: Codable {
+    init(from decoder: Decoder) throws {}
+    func encode(to encoder: Encoder) throws {}
+}
+
+/// Bambuddy's integration with Obico, a self-hosted AI print-failure ("spaghetti") detection
+/// service — optional and account-wide, not a native printer feature.
+struct BambuddyObicoStatusDTO: Codable {
+    var enabled: Bool
+    /// Keyed by Bambuddy printer id (as a string) — presence of a key means that printer is
+    /// currently being monitored.
+    var perPrinter: [String: BambuddyIgnoredValue]
+    var lastError: String?
+}
+
 struct BambuddySpoolDTO: Codable {
     var id: Int
     var material: String
@@ -273,6 +291,10 @@ struct BambuddyAPIClient {
         try await get("/api/v1/maintenance/printers/\(printerID)")
     }
 
+    func obicoStatus() async throws -> BambuddyObicoStatusDTO {
+        try await get("/api/v1/obico/printer-status")
+    }
+
     /// Nil when the printer has no smart plug configured (the endpoint returns a bare `null`).
     func smartPlug(printerID: Int) async throws -> BambuddySmartPlugSummaryDTO? {
         try await get("/api/v1/smart-plugs/by-printer/\(printerID)")
@@ -318,6 +340,10 @@ struct BambuddyAPIClient {
 
     func homeAxes(printerID: Int) async throws {
         _ = try await send(request("/api/v1/printers/\(printerID)/home-axes", method: "POST"))
+    }
+
+    func clearPlate(printerID: Int) async throws {
+        _ = try await send(request("/api/v1/printers/\(printerID)/clear-plate", method: "POST"))
     }
 
     func setSmartPlug(plugID: Int, on: Bool) async throws {

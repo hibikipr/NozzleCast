@@ -147,6 +147,14 @@ struct Printer: Identifiable {
 
     var smartPlug: SmartPlugInfo? = nil
 
+    /// Obico AI print-failure ("spaghetti") detection — an optional, self-hosted, account-wide
+    /// integration, not a native printer feature. `aiDetectionEnabled` is the same for every
+    /// printer (it's an account-level toggle); `aiMonitoringActive` is per-printer (only true
+    /// while that specific printer currently has a print being watched).
+    var aiDetectionEnabled: Bool = false
+    var aiMonitoringActive: Bool = false
+    var aiLastError: String? = nil
+
     var isDualNozzle: Bool { nozzles.count > 1 }
 
     var etaDescription: String? {

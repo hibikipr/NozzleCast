@@ -38,6 +38,9 @@
         }
       }
     },
+    "%@ · AI Failure Detection" : {
+      "comment" : "Sheet title: printer name and the AI failure detection feature"
+    },
     "%@ · Choose a Slot" : {
       "comment" : "Sheet title: printer name and 'Choose a Slot'"
     },
@@ -300,7 +303,7 @@
 
     },
     "Idle" : {
-      "comment" : "Printer status"
+      "comment" : "AI failure detection status\nAI failure detection status: not currently watching a print\nPrinter status"
     },
     "In AMS" : {
       "comment" : "Inventory filter: spools currently loaded in an AMS"
@@ -322,6 +325,9 @@
     },
     "Label Photo" : {
       "comment" : "Scan mode: photograph the printed label"
+    },
+    "Last error" : {
+
     },
     "Light" : {
       "comment" : "Printer control button"
@@ -353,6 +359,9 @@
     "Manual" : {
       "comment" : "Scan mode: enter filament details by hand"
     },
+    "Mark plate as cleared" : {
+
+    },
     "Material" : {
       "comment" : "Filament field label"
     },
@@ -362,13 +371,22 @@
     "Monitor" : {
 
     },
+    "Monitoring" : {
+      "comment" : "AI failure detection status\nAI failure detection status: actively watching a print"
+    },
     "More" : {
 
     },
     "Net weight (g)" : {
       "comment" : "Filament field label"
     },
+    "No active job" : {
+
+    },
     "No match in the Open Filament Database or SpoolmanDB-Community. Fill in the details below and it'll be added as entered." : {
+
+    },
+    "No print is being monitored right now. Monitoring starts automatically with the next print." : {
 
     },
     "No printers found." : {
@@ -442,6 +460,12 @@
     },
     "Photograph the filament label" : {
 
+    },
+    "Plate Clear" : {
+      "comment" : "Plate status: build plate is empty and ready"
+    },
+    "Plate not Clear" : {
+      "comment" : "Plate status: parts still on the build plate from the last print"
     },
     "Point at the box barcode" : {
 
@@ -559,6 +583,9 @@
           }
         }
       }
+    },
+    "This print is being watched for failures." : {
+
     },
     "This printer has no AMS units." : {
 

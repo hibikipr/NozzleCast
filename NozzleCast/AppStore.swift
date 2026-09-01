@@ -103,8 +103,12 @@ final class AppStore {
             async let spoolDTOs = client.spools()
             async let assignmentDTOs = client.assignments()
             async let locationDTOs = client.locations()
+            // Account-wide, optional, and not part of a printer's own status - fetched
+            // separately and allowed to fail without affecting anything else in the refresh.
+            async let obicoTask: BambuddyObicoStatusDTO? = try? client.obicoStatus()
 
             let (printerList, spoolList, assignmentList, locationList) = try await (printerDTOs, spoolDTOs, assignmentDTOs, locationDTOs)
+            let obico = await obicoTask
 
             locationNames = Dictionary(uniqueKeysWithValues: locationList.map { ($0.id, $0.name) })
 
@@ -138,7 +142,7 @@ final class AppStore {
             }
 
             printers = printerList.map { dto in
-                Self.mapPrinter(dto, extras: extras[dto.id] ?? PrinterExtras(status: nil, maintenance: nil, smartPlug: nil), assignmentsByPrinterSlot: assignmentsByPrinterSlot)
+                Self.mapPrinter(dto, extras: extras[dto.id] ?? PrinterExtras(status: nil, maintenance: nil, smartPlug: nil), obico: obico, assignmentsByPrinterSlot: assignmentsByPrinterSlot)
             }
 
             spools = spoolList
@@ -186,7 +190,7 @@ final class AppStore {
         }
     }
 
-    private static func mapPrinter(_ dto: BambuddyPrinterDTO, extras: PrinterExtras, assignmentsByPrinterSlot: [String: BambuddyAssignmentDTO]) -> Printer {
+    private static func mapPrinter(_ dto: BambuddyPrinterDTO, extras: PrinterExtras, obico: BambuddyObicoStatusDTO?, assignmentsByPrinterSlot: [String: BambuddyAssignmentDTO]) -> Printer {
         let id = "bb-\(dto.id)"
         let status = extras.status
         let state = mapState(status)
@@ -301,7 +305,10 @@ final class AppStore {
             nozzleRack: nozzleRack,
             totalPrintHours: extras.maintenance?.totalPrintHours,
             maintenanceOK: extras.maintenance.map { $0.dueCount == 0 && $0.warningCount == 0 },
-            smartPlug: smartPlug
+            smartPlug: smartPlug,
+            aiDetectionEnabled: obico?.enabled ?? false,
+            aiMonitoringActive: obico?.perPrinter[String(dto.id)] != nil,
+            aiLastError: obico?.lastError
         )
     }
 
@@ -473,6 +480,21 @@ final class AppStore {
         Task {
             do {
                 try await client.homeAxes(printerID: bbID)
+            } catch {
+                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+    }
+
+    func clearPlate(_ printerID: String) {
+        guard let idx = printers.firstIndex(where: { $0.id == printerID }) else { return }
+        printers[idx].awaitingPlateClear = false
+
+        guard isLive, let client, let bbID = bambuddyID(printerID) else { return }
+        Task {
+            do {
+                try await client.clearPlate(printerID: bbID)
+                await refresh()
             } catch {
                 connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             }
