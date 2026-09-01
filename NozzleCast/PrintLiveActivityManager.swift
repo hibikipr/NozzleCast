@@ -13,8 +13,10 @@ final class PrintLiveActivityManager {
     private init() {}
 
     /// Starts, updates, or ends activities to match the given printers. Call after every
-    /// successful `AppStore.refresh()`.
-    func sync(printers: [Printer]) {
+    /// successful `AppStore.refresh()`. `coverThumbnails` is a best-effort, pre-downscaled JPEG
+    /// per printer (only needed for ones currently printing) — nil entries just leave the
+    /// activity's existing thumbnail as-is rather than clearing it.
+    func sync(printers: [Printer], coverThumbnails: [String: Data] = [:]) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
         let printingByID = Dictionary(uniqueKeysWithValues: printers.filter { $0.state == .printing }.map { ($0.id, $0) })
@@ -24,19 +26,20 @@ final class PrintLiveActivityManager {
                 Task { await activity.end(nil, dismissalPolicy: .after(.now.addingTimeInterval(30))) }
                 continue
             }
-            let state = Self.contentState(for: printer)
+            let existingThumbnail = activity.content.state.coverThumbnail
+            let state = Self.contentState(for: printer, coverThumbnail: coverThumbnails[printer.id] ?? existingThumbnail)
             Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
         }
 
         let activePrinterIDs = Set(Activity<PrintActivityAttributes>.activities.map(\.attributes.printerID))
         for printer in printingByID.values where !activePrinterIDs.contains(printer.id) {
             let attributes = PrintActivityAttributes(printerID: printer.id, printerName: printer.name)
-            let state = Self.contentState(for: printer)
+            let state = Self.contentState(for: printer, coverThumbnail: coverThumbnails[printer.id])
             _ = try? Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
         }
     }
 
-    private static func contentState(for printer: Printer) -> PrintActivityAttributes.ContentState {
+    private static func contentState(for printer: Printer, coverThumbnail: Data?) -> PrintActivityAttributes.ContentState {
         let progress = printer.progress ?? 0
         let now = Date()
         let estimatedEnd = printer.etaMinutesRemaining.map { now.addingTimeInterval(TimeInterval($0 * 60)) }
@@ -56,7 +59,8 @@ final class PrintLiveActivityManager {
             stateLabel: printer.state.label,
             jobName: printer.jobFileName,
             startedAt: startedAt,
-            estimatedEndAt: estimatedEnd
+            estimatedEndAt: estimatedEnd,
+            coverThumbnail: coverThumbnail
         )
     }
 }

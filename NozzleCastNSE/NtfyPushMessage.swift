@@ -10,6 +10,7 @@ struct NtfyPushMessage {
     var message: String?
     var priority: Int?
     var pollID: String?
+    var attachmentURL: URL?
 
     init?(userInfo: [AnyHashable: Any]) {
         guard let id = userInfo["id"] as? String,
@@ -27,18 +28,27 @@ struct NtfyPushMessage {
         } else {
             self.priority = userInfo["priority"] as? Int
         }
+        if let urlString = userInfo["attachment_url"] as? String {
+            self.attachmentURL = URL(string: urlString)
+        }
     }
 }
 
-/// The REST JSON shape ntfy returns from `/{topic}/json`, used only for the `poll_request`
-/// follow-up fetch (`?poll=1&id=...`) — a full JSON message rather than the flat push payload.
+/// The REST JSON shape ntfy returns from `/{topic}/json`, used both for the `poll_request`
+/// follow-up fetch (`?poll=1&id=...`) and to confirm the real attachment schema (verified live:
+/// `{"attachment":{"name":...,"type":...,"size":...,"url":...}}`).
 private struct NtfyPolledMessage: Decodable {
+    struct Attachment: Decodable {
+        var url: String
+    }
+
     var id: String
     var event: String
     var topic: String
     var title: String?
     var message: String?
     var priority: Int?
+    var attachment: Attachment?
 }
 
 extension NtfyPushMessage {
@@ -50,6 +60,7 @@ extension NtfyPushMessage {
         self.message = polled.message
         self.priority = polled.priority
         self.pollID = nil
+        self.attachmentURL = polled.attachment.flatMap { URL(string: $0.url) }
     }
 }
 

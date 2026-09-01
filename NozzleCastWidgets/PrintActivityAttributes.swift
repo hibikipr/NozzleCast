@@ -15,6 +15,9 @@ struct PrintActivityAttributes: ActivityAttributes {
         /// without needing a push for every tick.
         var startedAt: Date
         var estimatedEndAt: Date?
+        /// A small, heavily-compressed JPEG of the job's cover/plate image — kept tiny since
+        /// ActivityKit caps the whole content state at roughly 4KB serialized.
+        var coverThumbnail: Data?
     }
 
     var printerID: String

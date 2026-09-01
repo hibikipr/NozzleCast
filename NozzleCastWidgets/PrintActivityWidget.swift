@@ -1,8 +1,52 @@
 import ActivityKit
 import WidgetKit
 import SwiftUI
+import UIKit
 
 private let accent = Color(red: 0x2A / 255, green: 0x5F / 255, blue: 0xCC / 255)
+
+/// Renders the printer's latest camera snapshot (from Bambuddy's ntfy push attachment) when
+/// available, falling back to a plain printer icon before the first snapshot arrives.
+@ViewBuilder
+private func thumbnailView(_ data: Data?, size: CGFloat) -> some View {
+    if let data, let uiImage = UIImage(data: data) {
+        Image(uiImage: uiImage)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.25, style: .continuous))
+    } else {
+        RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
+            .fill(Color.white.opacity(0.08))
+            .frame(width: size, height: size)
+            .overlay {
+                Image(systemName: "printer.fill")
+                    .font(.system(size: size * 0.45))
+                    .foregroundStyle(accent)
+            }
+    }
+}
+
+/// A percentage that tracks the same date-interval interpolation as `progressView`'s bar,
+/// rather than the raw `state.progress` snapshot — otherwise the two visibly disagree between
+/// refreshes, since the bar keeps animating on-device while the number only updates when
+/// `AppStore.refresh()` runs (there's no continuous polling).
+private struct LiveProgressText: View {
+    var state: PrintActivityAttributes.ContentState
+
+    var body: some View {
+        if let end = state.estimatedEndAt, end > state.startedAt {
+            TimelineView(.periodic(from: state.startedAt, by: 1)) { context in
+                let total = end.timeIntervalSince(state.startedAt)
+                let elapsed = context.date.timeIntervalSince(state.startedAt)
+                let fraction = min(max(elapsed / total, 0), 1)
+                Text(fraction, format: .percent.precision(.fractionLength(0)))
+            }
+        } else {
+            Text(state.progress, format: .percent.precision(.fractionLength(0)))
+        }
+    }
+}
 
 struct PrintActivityWidget: Widget {
     var body: some WidgetConfiguration {
@@ -13,11 +57,10 @@ struct PrintActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Image(systemName: "printer.fill")
-                        .foregroundStyle(accent)
+                    thumbnailView(context.state.coverThumbnail, size: 36)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.progress, format: .percent.precision(.fractionLength(0)))
+                    LiveProgressText(state: context.state)
                         .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -37,10 +80,9 @@ struct PrintActivityWidget: Widget {
                     }
                 }
             } compactLeading: {
-                Image(systemName: "printer.fill")
-                    .foregroundStyle(accent)
+                thumbnailView(context.state.coverThumbnail, size: 20)
             } compactTrailing: {
-                Text(context.state.progress, format: .percent.precision(.fractionLength(0)))
+                LiveProgressText(state: context.state)
                     .font(.caption2)
                     .foregroundStyle(.white)
             } minimal: {
@@ -71,35 +113,37 @@ private struct LockScreenView: View {
     var state: PrintActivityAttributes.ContentState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "printer.fill")
-                    .foregroundStyle(accent)
-                Text(attributes.printerName)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Spacer()
-                Text(state.stateLabel)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.6))
-            }
-            if let job = state.jobName {
-                Text(job)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            progressView(state: state)
-            HStack {
-                Text(state.progress, format: .percent.precision(.fractionLength(0)))
-                Spacer()
-                if let end = state.estimatedEndAt {
-                    Text(end, style: .timer)
+        HStack(alignment: .top, spacing: 12) {
+            thumbnailView(state.coverThumbnail, size: 56)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(attributes.printerName)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text(state.stateLabel)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.6))
                 }
+                if let job = state.jobName {
+                    Text(job)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                progressView(state: state)
+                HStack {
+                    LiveProgressText(state: state)
+                    Spacer()
+                    if let end = state.estimatedEndAt {
+                        Text(end, style: .timer)
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.6))
             }
-            .font(.caption2)
-            .foregroundStyle(.white.opacity(0.6))
         }
         .padding()
     }

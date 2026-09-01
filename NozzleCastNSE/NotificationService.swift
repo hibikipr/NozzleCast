@@ -1,11 +1,14 @@
 import UserNotifications
+import ActivityKit
+import UIKit
 
 /// Bambuddy's self-hosted ntfy server relays through the user's shared Firebase project as a
 /// data-only push (no `aps.alert`), so iOS won't display anything unless something here builds
 /// the notification content. Ported from the user's own ntfy app
 /// (`ntfy-ios/ntfyNSE/NotificationService.swift`), trimmed to what Bambuddy's alerts actually
-/// use: title/body/priority. Markdown stripping, attachments, and custom actions are dropped —
-/// Bambuddy's notifications are plain text.
+/// use: title/body/priority/attachment. Bambuddy attaches a live camera snapshot to most print
+/// events (confirmed against real message history), so this also attaches that photo to the
+/// visible notification and pushes a small thumbnail into the matching printer's Live Activity.
 final class NotificationService: UNNotificationServiceExtension {
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestAttemptContent: UNMutableNotificationContent?
@@ -25,7 +28,7 @@ final class NotificationService: UNNotificationServiceExtension {
             case "poll_request":
                 await handlePollRequest(message, content: content)
             default:
-                handleMessage(message, content: content)
+                await handleMessage(message, content: content)
             }
         }
     }
@@ -41,8 +44,8 @@ final class NotificationService: UNNotificationServiceExtension {
         contentHandler = nil
     }
 
-    private func handleMessage(_ message: NtfyPushMessage, content: UNMutableNotificationContent) {
-        apply(message, to: content)
+    private func handleMessage(_ message: NtfyPushMessage, content: UNMutableNotificationContent) async {
+        await apply(message, to: content)
         deliver(content)
     }
 
@@ -53,11 +56,11 @@ final class NotificationService: UNNotificationServiceExtension {
             deliver(content)
             return
         }
-        apply(polled, to: content)
+        await apply(polled, to: content)
         deliver(content)
     }
 
-    private func apply(_ message: NtfyPushMessage, to content: UNMutableNotificationContent) {
+    private func apply(_ message: NtfyPushMessage, to content: UNMutableNotificationContent) async {
         content.title = message.title?.isEmpty == false ? message.title! : message.topic
         content.body = message.message ?? ""
         content.threadIdentifier = message.topic
@@ -78,11 +81,74 @@ final class NotificationService: UNNotificationServiceExtension {
             content.relevanceScore = 0.5
         }
 
+        if let attachmentURL = message.attachmentURL, let imageData = await Self.downloadImage(attachmentURL) {
+            if let localURL = Self.writeTempFile(imageData, id: message.id),
+               let attachment = try? UNNotificationAttachment(identifier: message.id, url: localURL) {
+                content.attachments = [attachment]
+            }
+            if let thumbnail = Self.downscaledThumbnail(imageData) {
+                Self.updateLiveActivity(matching: message, thumbnail: thumbnail)
+            }
+        }
+
         PushSharedStore.appendHistory(.init(
             id: message.id,
             title: content.title,
             body: content.body,
             receivedAt: Date()
         ))
+    }
+
+    private static func downloadImage(_ url: URL) async -> Data? {
+        var request = URLRequest(url: url)
+        if let authToken = PushSharedStore.loadNtfyConfig()?.authToken {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+        else { return nil }
+        return data
+    }
+
+    private static func writeTempFile(_ data: Data, id: String) -> URL? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(id).jpg")
+        guard (try? data.write(to: url)) != nil else { return nil }
+        return url
+    }
+
+    /// Downscales to a tiny JPEG for the Live Activity's content state, which ActivityKit caps
+    /// at roughly 4KB serialized — nowhere near enough for the original (often 100-300KB) photo.
+    private static func downscaledThumbnail(_ data: Data, maxDimension: CGFloat = 90, maxBytes: Int = 3000) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
+        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let resized = UIGraphicsImageRenderer(size: targetSize).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+
+        var quality: CGFloat = 0.6
+        var jpeg = resized.jpegData(compressionQuality: quality)
+        while let data = jpeg, data.count > maxBytes, quality > 0.1 {
+            quality -= 0.1
+            jpeg = resized.jpegData(compressionQuality: quality)
+        }
+        return jpeg
+    }
+
+    /// Bambuddy's ntfy messages don't carry a printer id, only a name embedded in the title/body
+    /// text — and inconsistently, sometimes the display name ("Vic H2C") and sometimes the raw
+    /// slug ("vic-h2c"). Stripping non-alphanumerics before comparing matches both forms.
+    private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data) {
+        let haystack = normalize((message.title ?? "") + " " + (message.message ?? ""))
+        for activity in Activity<PrintActivityAttributes>.activities {
+            guard haystack.contains(normalize(activity.attributes.printerName)) else { continue }
+            var state = activity.content.state
+            state.coverThumbnail = thumbnail
+            Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+        }
+    }
+
+    private static func normalize(_ s: String) -> String {
+        s.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 }
