@@ -116,9 +116,13 @@ final class NotificationService: UNNotificationServiceExtension {
         return url
     }
 
-    /// Downscales to a tiny JPEG for the Live Activity's content state, which ActivityKit caps
-    /// at roughly 4KB serialized — nowhere near enough for the original (often 100-300KB) photo.
-    private static func downscaledThumbnail(_ data: Data, maxDimension: CGFloat = 90, maxBytes: Int = 3000) -> Data? {
+    /// Downscales to a tiny JPEG for the Live Activity's content state. ActivityKit's real budget
+    /// for the *whole* serialized content state is close to 4KB, and a Data field costs ~33% more
+    /// than its raw byte count once base64-encoded into that JSON — plus progress/dates/strings
+    /// already take a share. A 3KB image blew that budget and the system ended the activity
+    /// outright rather than just dropping the update, so this stays well under with a hard cap:
+    /// if compression still can't hit it, no thumbnail is sent rather than risking the activity.
+    private static func downscaledThumbnail(_ data: Data, maxDimension: CGFloat = 44, maxBytes: Int = 900) -> Data? {
         guard let image = UIImage(data: data) else { return nil }
         let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
@@ -126,12 +130,13 @@ final class NotificationService: UNNotificationServiceExtension {
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
 
-        var quality: CGFloat = 0.6
+        var quality: CGFloat = 0.5
         var jpeg = resized.jpegData(compressionQuality: quality)
         while let data = jpeg, data.count > maxBytes, quality > 0.1 {
             quality -= 0.1
             jpeg = resized.jpegData(compressionQuality: quality)
         }
+        guard let jpeg, jpeg.count <= maxBytes else { return nil }
         return jpeg
     }
 
