@@ -25,9 +25,13 @@ struct ScanView: View {
 
     @State private var mode: ScanMode = .barcode
     @State private var step: ScanStep = .capture
-    @State private var result = ScannedResult(material: .pla, colorName: "Sunset Orange", colorHex: "#E8622C", brand: "Bambu Lab", netWeightGrams: 1000, alsoMatches: nil)
+    @State private var result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, alsoMatches: nil)
     @State private var addedSpool: Spool?
     @State private var showAssignPicker = false
+    @State private var scannerBridge = ScannerBridge()
+    @State private var showManualCodeEntry = false
+    @State private var manualCodeText = ""
+    @State private var notFoundNotice = false
 
     var body: some View {
         NavigationStack {
@@ -55,9 +59,29 @@ struct ScanView: View {
             .background(NCColor.canvasBackground.ignoresSafeArea())
             .navigationBarHidden(true)
             .onChange(of: mode) { _, newMode in
+                scannerBridge.reset()
                 if newMode == .manual {
                     result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, alsoMatches: nil)
                 }
+            }
+            .onChange(of: scannerBridge.lastBarcode) { _, newBarcode in
+                guard mode == .barcode, step == .capture, let newBarcode else { return }
+                runBarcodeLookup(newBarcode)
+            }
+            .alert("Enter Code Manually", isPresented: $showManualCodeEntry) {
+                TextField("Barcode or SKU", text: $manualCodeText)
+                    .textInputAutocapitalization(.characters)
+                Button("Look Up") {
+                    let code = manualCodeText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    manualCodeText = ""
+                    if !code.isEmpty { runBarcodeLookup(code, notifyIfMissing: true) }
+                }
+                Button("Cancel", role: .cancel) { manualCodeText = "" }
+            }
+            .alert("Not Found", isPresented: $notFoundNotice) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("No match in the Open Filament Database or SpoolmanDB-Community. Fill in the details below and it'll be added as entered.")
             }
             .sheet(isPresented: $showAssignPicker) {
                 if let addedSpool {
@@ -109,6 +133,23 @@ struct ScanView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(Color(hex: "#141414"))
 
+                if ScannerAvailability.isSupported {
+                    DataScannerView(mode: mode == .barcode ? .barcode : .text, bridge: scannerBridge)
+                        .id(mode)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "camera.metering.unknown")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.white.opacity(0.3))
+                        Text("Camera scanning needs a real device")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(NCColor.textTertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 30)
+                    }
+                }
+
                 VStack {
                     HStack {
                         CornerBracket().frame(width: 28, height: 28)
@@ -116,7 +157,9 @@ struct ScanView: View {
                         CornerBracket().rotationEffect(.degrees(90)).frame(width: 28, height: 28)
                     }
                     Spacer()
-                    ScanLine()
+                    if ScannerAvailability.isSupported == false {
+                        ScanLine()
+                    }
                     Spacer()
                     HStack {
                         CornerBracket().rotationEffect(.degrees(-90)).frame(width: 28, height: 28)
@@ -125,6 +168,7 @@ struct ScanView: View {
                     }
                 }
                 .padding(20)
+                .allowsHitTesting(false)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 360)
@@ -136,17 +180,26 @@ struct ScanView: View {
             Spacer()
 
             VStack(spacing: 10) {
-                Button {
-                    startScan()
-                } label: {
-                    ZStack {
-                        Circle().stroke(Color.white, lineWidth: 3).frame(width: 72, height: 72)
-                        Circle().fill(Color.white).frame(width: 58, height: 58)
+                if mode == .labelPhoto {
+                    Button {
+                        runTextParse(scannerBridge.liveText)
+                    } label: {
+                        ZStack {
+                            Circle().stroke(Color.white, lineWidth: 3).frame(width: 72, height: 72)
+                            Circle().fill(Color.white).frame(width: 58, height: 58)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
+                } else {
+                    Text("Scanning automatically…")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(NCColor.textTertiary)
+                        .frame(height: 72)
                 }
-                .buttonStyle(.plain)
 
-                Button("or enter code manually") { startScan() }
+                Button("or enter code manually") { showManualCodeEntry = true }
                     .font(.system(size: 12.5))
                     .foregroundStyle(NCColor.textTertiary)
             }
@@ -378,12 +431,23 @@ struct ScanView: View {
         }
     }
 
-    private func startScan() {
+    private func runBarcodeLookup(_ barcode: String, notifyIfMissing: Bool = false) {
         step = .loading
-        result = mode == .barcode
-            ? ScannedResult(material: .pla, colorName: "Sunset Orange", colorHex: "#E8622C", brand: "Bambu Lab", netWeightGrams: 1000, alsoMatches: "Bambu Lab PLA Basic — Orange (SKU 10102)")
-            : ScannedResult(material: .petg, colorName: "Cobalt Blue", colorHex: "#2A5FCC", brand: "Polymaker", netWeightGrams: 1000, alsoMatches: nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        Task {
+            let outcome = await FilamentLookupService.lookup(barcode: barcode)
+            result = outcome.result
+            step = .review
+            if !outcome.found, notifyIfMissing { notFoundNotice = true }
+        }
+    }
+
+    private func runTextParse(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        step = .loading
+        Task {
+            let outcome = await FilamentLookupService.parse(text: trimmed)
+            result = outcome.result
             step = .review
         }
     }
@@ -404,6 +468,7 @@ struct ScanView: View {
         step = .capture
         mode = .barcode
         addedSpool = nil
+        scannerBridge.reset()
     }
 }
 
