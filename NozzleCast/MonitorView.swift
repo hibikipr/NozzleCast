@@ -119,7 +119,7 @@ struct PrinterCard: View {
     private var thumbnail: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(NCColor.well)
+                .fill(NCColor.printerWell)
             if printer.state == .printing {
                 LiveCameraView(printerID: printer.id, pollInterval: 5, coverFallbackJobIdentity: printer.jobFileName ?? printer.id)
                     .font(.system(size: 20))
@@ -132,6 +132,10 @@ struct PrinterCard: View {
         }
         .frame(width: 60, height: 60)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(NCColor.printerWellBorder, lineWidth: 1)
+        )
         .overlay(alignment: .topLeading) {
             if printer.state == .printing {
                 LiveBadge().padding(4)

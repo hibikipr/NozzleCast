@@ -48,6 +48,11 @@ enum NCColor {
     static let cardBorder = Color.white.opacity(0.08)
     static let well = Color(hex: "#111111")
     static let wellAlt = Color(hex: "#141414")
+    /// `well` is close enough to black that a dark-housing printer render (the H2C, notably)
+    /// nearly disappears into it. Printer thumbnails use this instead — lighter fill plus a
+    /// visible border, so the container reads clearly regardless of how dark the image is.
+    static let printerWell = Color(hex: "#242424")
+    static let printerWellBorder = Color.white.opacity(0.14)
 
     static let textPrimary = Color.white
     static let textSecondary = Color(red: 235.0 / 255, green: 235.0 / 255, blue: 245.0 / 255).opacity(0.6)

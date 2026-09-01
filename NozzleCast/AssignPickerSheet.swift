@@ -43,7 +43,8 @@ struct AssignPickerSheet: View {
                                 PrinterThumbnailImage(assetName: printer.imageAssetName)
                                     .frame(width: 30, height: 30)
                                     .padding(4)
-                                    .background(RoundedRectangle(cornerRadius: 8).fill(NCColor.well))
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(NCColor.printerWell))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(NCColor.printerWellBorder, lineWidth: 1))
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(printer.name)
                                         .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
