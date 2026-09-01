@@ -19,10 +19,20 @@ final class PushNotificationManager: NSObject {
     private static let knownNtfyDefaultBaseUrl = "https://ntfy.townsville.cc"
 
     private(set) var isFirebaseConfigured = false
+    /// Whether we've asked Firebase to subscribe to the saved ntfy topic. This reflects intent,
+    /// not a confirmed round-trip: `Messaging.subscribe(toTopic:)`'s completion handler only
+    /// signals local SDK readiness, not actual delivery, and on the auto-resubscribe done from
+    /// `configureFirebaseIfNeeded()` at launch it may not fire before Settings is viewed — so
+    /// gating this on that callback left the UI stuck on "Tap to subscribe" even while pushes
+    /// were arriving successfully. Seeding it from the persisted config on init, and setting it
+    /// as soon as a subscribe is issued rather than waiting on the callback, keeps it truthful.
     private(set) var subscribedTopic: String?
     var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
-    private override init() { super.init() }
+    private override init() {
+        subscribedTopic = PushSharedStore.loadNtfyConfig()?.topic
+        super.init()
+    }
 
     /// Call once at app launch, after Firebase's own config file (if any) has been imported.
     func configureFirebaseIfNeeded() {
@@ -64,10 +74,12 @@ final class PushNotificationManager: NSObject {
     func subscribe(server: String, topic: String, authToken: String? = nil) {
         PushSharedStore.saveNtfyConfig(.init(server: server, topic: topic, authToken: authToken))
         guard isFirebaseConfigured else { return }
+        subscribedTopic = topic
         let fcmTopic = PushTopicHash.firebaseTopic(baseUrl: server, topic: topic, appDefaultBaseUrl: Self.knownNtfyDefaultBaseUrl)
-        Messaging.messaging().subscribe(toTopic: fcmTopic) { [weak self] error in
-            guard error == nil else { return }
-            Task { @MainActor in self?.subscribedTopic = topic }
+        Messaging.messaging().subscribe(toTopic: fcmTopic) { error in
+            if let error {
+                print("NozzleCast: FCM topic subscribe failed for \(fcmTopic): \(error)")
+            }
         }
     }
 
