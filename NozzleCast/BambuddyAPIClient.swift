@@ -40,6 +40,10 @@ struct BambuddyAMSUnitDTO: Codable {
     var isAmsHt: Bool?
     var humidity: Int?
     var temp: Double?
+    /// 0 when idle; any other value means the unit is actively running a drying cycle.
+    var dryStatus: Int?
+    var dryTargetTemp: Int?
+    var dryFilament: String?
 }
 
 struct BambuddyHMSErrorDTO: Codable {

@@ -232,7 +232,10 @@ final class AppStore {
                 isHT: unit.isAmsHt ?? false,
                 humidity: unit.humidity,
                 temperature: unit.temp,
-                feedsRightNozzle: feedsRightNozzle(unitID: unit.id)
+                feedsRightNozzle: feedsRightNozzle(unitID: unit.id),
+                isDrying: (unit.dryStatus ?? 0) != 0,
+                dryTargetTemp: unit.dryTargetTemp,
+                dryFilament: unit.dryFilament?.isEmpty == false ? unit.dryFilament : nil
             )
         }
 

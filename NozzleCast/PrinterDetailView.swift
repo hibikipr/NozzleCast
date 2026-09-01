@@ -404,13 +404,26 @@ struct PrinterDetailView: View {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.wellAlt))
     }
 
+    private func dryingDetail(_ unit: AMSUnit) -> String {
+        switch (unit.dryFilament, unit.dryTargetTemp) {
+        case let (filament?, temp?):
+            return String(localized: "\(filament) to \(temp)°C", comment: "Drying detail: filament type and target temperature, e.g. 'PLA to 55°C'")
+        case let (filament?, nil):
+            return filament
+        case let (nil, temp?):
+            return String(localized: "Target \(temp)°C", comment: "Drying detail: target temperature only")
+        case (nil, nil):
+            return ""
+        }
+    }
+
     private func amsSection(_ printer: Printer) -> some View {
         let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
         return VStack(alignment: .leading, spacing: 14) {
             Text("AMS Filament").sectionEyebrow()
             ForEach(printer.amsUnits) { unit in
-                VStack(alignment: .leading, spacing: 8) {
-                    if printer.amsUnits.count > 1 || unit.humidity != nil || unit.feedsRightNozzle != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    if printer.amsUnits.count > 1 || unit.humidity != nil || unit.feedsRightNozzle != nil || unit.isDrying {
                         HStack(spacing: 6) {
                             Text(unit.displayName(position: standardUnitOrder[unit.id] ?? 0))
                                 .ncFont(size: 11, weight: .semibold, relativeTo: .caption2)
@@ -418,12 +431,20 @@ struct PrinterDetailView: View {
                             if printer.isDualNozzle, let feedsRight = unit.feedsRightNozzle {
                                 InfoPill(icon: feedsRight ? "arrow.right" : "arrow.left", text: feedsRight ? "R" : "L")
                             }
+                            if unit.isDrying {
+                                InfoPill(icon: "wind", text: String(localized: "Drying", comment: "AMS unit is actively running a drying cycle"), tint: NCColor.accentLight)
+                            }
                             Spacer()
                             if let humidity = unit.humidity, let temp = unit.temperature {
                                 Text("\(humidity)% · \(Int(temp.rounded()))°C", comment: "AMS unit humidity and temperature, e.g. '27% · 30°C'")
                                     .ncFont(size: 10.5, relativeTo: .caption2)
                                     .foregroundStyle(NCColor.textTertiary)
                             }
+                        }
+                        if unit.isDrying, unit.dryFilament != nil || unit.dryTargetTemp != nil {
+                            Text(dryingDetail(unit))
+                                .ncFont(size: 10, relativeTo: .caption2)
+                                .foregroundStyle(NCColor.accentLight)
                         }
                     }
                     HStack(spacing: 8) {

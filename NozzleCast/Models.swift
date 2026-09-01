@@ -41,6 +41,10 @@ struct AMSUnit: Identifiable {
     /// or when the printer hasn't reported a mapping.
     var feedsRightNozzle: Bool?
 
+    var isDrying: Bool = false
+    var dryTargetTemp: Int?
+    var dryFilament: String?
+
     var id: Int { index }
 
     /// Bambu's high-temperature AMS unit carries an unrelated raw unit id (e.g. 129), so it

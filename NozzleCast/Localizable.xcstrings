@@ -13,6 +13,17 @@
     "%@ remaining" : {
       "comment" : "Remaining print time, e.g. '12m remaining'"
     },
+    "%@ to %lld°C" : {
+      "comment" : "Drying detail: filament type and target temperature, e.g. 'PLA to 55°C'",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ to %2$lld°C"
+          }
+        }
+      }
+    },
     "%@ · " : {
       "comment" : "AMS unit label prefix, followed by a slot number"
     },
@@ -256,6 +267,9 @@
     },
     "Door Open" : {
       "comment" : "Enclosed printer's chamber door status"
+    },
+    "Drying" : {
+      "comment" : "AMS unit is actively running a drying cycle"
     },
     "Due" : {
       "comment" : "Maintenance status: something needs attention"
@@ -569,6 +583,9 @@
     },
     "Switch to list view" : {
 
+    },
+    "Target %lld°C" : {
+      "comment" : "Drying detail: target temperature only"
     },
     "Temperatures" : {
 
