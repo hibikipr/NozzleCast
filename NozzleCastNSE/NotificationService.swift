@@ -87,7 +87,7 @@ final class NotificationService: UNNotificationServiceExtension {
                 content.attachments = [attachment]
             }
             if let thumbnail = Self.downscaledThumbnail(imageData) {
-                Self.updateLiveActivity(matching: message, thumbnail: thumbnail)
+                await Self.updateLiveActivity(matching: message, thumbnail: thumbnail)
             }
             // Same full-size download used for the banner attachment, kept alongside the history
             // entry so the in-app Notifications list can show it too (that list reads the shared
@@ -153,13 +153,16 @@ final class NotificationService: UNNotificationServiceExtension {
     /// Bambuddy's ntfy messages don't carry a printer id, only a name embedded in the title/body
     /// text — and inconsistently, sometimes the display name ("Vic H2C") and sometimes the raw
     /// slug ("vic-h2c"). Stripping non-alphanumerics before comparing matches both forms.
-    private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data) {
+    private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data) async {
         let haystack = normalize((message.title ?? "") + " " + (message.message ?? ""))
         for activity in Activity<PrintActivityAttributes>.activities {
             guard haystack.contains(normalize(activity.attributes.printerName)) else { continue }
             var state = activity.content.state
             state.liveSnapshot = thumbnail
-            Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+            // Awaited, not fired as an unstructured Task: the extension process is liable to be
+            // terminated shortly after this method returns and `deliver(content)` is called, so
+            // an un-awaited update here would very likely never actually reach the system.
+            await activity.update(ActivityContent(state: state, staleDate: nil))
         }
     }
 

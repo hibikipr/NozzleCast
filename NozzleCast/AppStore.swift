@@ -177,7 +177,7 @@ final class AppStore {
                     }
                 }
             }
-            PrintLiveActivityManager.shared.sync(printers: printers, coverImages: coverImages)
+            await PrintLiveActivityManager.shared.sync(printers: printers, coverImages: coverImages)
 
             spools = spoolList
                 .filter { $0.archivedAt == nil }

@@ -48,14 +48,18 @@ final class PrintLiveActivityManager {
     /// printer (only needed for ones currently printing) — nil entries just leave the activity's
     /// existing cover image as-is rather than clearing it, since it's fetched once at print
     /// start and doesn't change.
-    func sync(printers: [Printer], coverImages: [String: Data] = [:]) {
+    func sync(printers: [Printer], coverImages: [String: Data] = [:]) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
         let printingByID = Dictionary(uniqueKeysWithValues: printers.filter { $0.state == .printing }.map { ($0.id, $0) })
 
+        // Awaited rather than fired as unstructured Tasks: an un-awaited `Task { await
+        // activity.update(...) }` can get cut off before it completes if the app is backgrounded
+        // right after this call returns — which is exactly the common case (open the app, glance
+        // at it, lock the phone to check the Lock Screen) — silently dropping the update.
         for activity in Activity<PrintActivityAttributes>.activities {
             guard let printer = printingByID[activity.attributes.printerID] else {
-                Task { await activity.end(nil, dismissalPolicy: .after(.now.addingTimeInterval(30))) }
+                await activity.end(nil, dismissalPolicy: .after(.now.addingTimeInterval(30)))
                 continue
             }
             let existing = activity.content.state
@@ -64,7 +68,7 @@ final class PrintLiveActivityManager {
                 coverImage: coverImages[printer.id] ?? existing.coverImage,
                 liveSnapshot: existing.liveSnapshot
             )
-            Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+            await activity.update(ActivityContent(state: state, staleDate: nil))
         }
 
         let activePrinterIDs = Set(Activity<PrintActivityAttributes>.activities.map(\.attributes.printerID))
