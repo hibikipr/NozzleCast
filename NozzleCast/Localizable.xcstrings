@@ -420,6 +420,9 @@
     "Material Mismatch" : {
 
     },
+    "Midnight" : {
+      "comment" : "App icon option name"
+    },
     "Monitor" : {
 
     },
@@ -636,6 +639,9 @@
     },
     "Status" : {
 
+    },
+    "Steel" : {
+      "comment" : "App icon option name"
     },
     "Stop" : {
       "comment" : "Printer control button"

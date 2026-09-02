@@ -7,6 +7,7 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
     case light
     case steel
     case midnight
+    case ice
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
         case .light: "AppIcon-Light"
         case .steel: "AppIcon-Steel"
         case .midnight: "AppIcon-Midnight"
+        case .ice: "AppIcon-Ice"
         }
     }
 
@@ -27,6 +29,7 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
         case .light: "AppIconLightSource"
         case .steel: "AppIconSteelSource"
         case .midnight: "AppIconMidnightSource"
+        case .ice: "AppIconIceSource"
         }
     }
 
@@ -36,6 +39,7 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
         case .light: String(localized: "Light", comment: "App icon option name")
         case .steel: String(localized: "Steel", comment: "App icon option name")
         case .midnight: String(localized: "Midnight", comment: "App icon option name")
+        case .ice: String(localized: "Ice", comment: "App icon option name")
         }
     }
 }
@@ -151,6 +155,7 @@ struct SettingsView: View {
                 }
 
                 Section("App Icon") {
+                    ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(AppIconOption.allCases) { option in
                             Button {
@@ -182,9 +187,9 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        Spacer()
                     }
                     .padding(.vertical, 6)
+                    }
                 }
 
                 Section {
