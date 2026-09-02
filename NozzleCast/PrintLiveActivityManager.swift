@@ -33,7 +33,13 @@ final class PrintLiveActivityManager {
     static func downscaledCoverImage(_ image: UIImage, maxDimension: CGFloat = 36, maxBytes: Int = 1000) -> Data? {
         let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let resized = UIGraphicsImageRenderer(size: targetSize).image { _ in
+        // The real bug behind every "downscale still won't fit" symptom: UIGraphicsImageRenderer
+        // defaults its render scale to the device's screen scale (2x/3x), so a "36pt" render was
+        // actually rasterizing at up to 108x108 pixels — up to 9x the intended pixel count — no
+        // matter how low the JPEG quality went. Pin scale to 1 so `targetSize` is the real pixel size.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
 

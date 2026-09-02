@@ -130,16 +130,18 @@ final class NotificationService: UNNotificationServiceExtension {
     /// for the *whole* serialized content state is close to 4KB, and a Data field costs ~33% more
     /// than its raw byte count once base64-encoded into that JSON — plus progress/dates/strings
     /// already take a share; a 3KB image once blew that budget and the system ended the activity
-    /// outright rather than just dropping the update. The original 900-byte cap was tuned against
-    /// a desktop JPEG encoder's output and turned out to be unreachable for real camera photos via
-    /// `UIGraphicsImageRenderer`/`jpegData(compressionQuality:)` even at the lowest quality step —
-    /// confirmed on-device the cover-image path had the exact same problem — so every real photo
-    /// was silently rejected. Raised with real empirical margin instead of a guessed one.
+    /// outright rather than just dropping the update. The real bug behind every "still won't fit"
+    /// symptom: `UIGraphicsImageRenderer` defaults its render scale to the device's screen scale
+    /// (2x/3x), so a "40pt" render was actually rasterizing up to 9x the intended pixel count no
+    /// matter how low the JPEG quality went — pinning `format.scale = 1` fixes the real cause;
+    /// the byte cap only ever needed to be this generous to mask that.
     private static func downscaledThumbnail(_ data: Data, maxDimension: CGFloat = 40, maxBytes: Int = 1300) -> Data? {
         guard let image = UIImage(data: data) else { return nil }
         let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let resized = UIGraphicsImageRenderer(size: targetSize).image { _ in
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
 
