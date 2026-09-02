@@ -162,14 +162,16 @@ final class AppStore {
 
             // The cover render is static for the whole print, so only fetch it once per job
             // rather than on every refresh — the Live Activity manager tells us who already has one.
-            let printersNeedingCover = printers.filter { $0.state == .printing && !PrintLiveActivityManager.shared.hasCoverImage(printerID: $0.id) }
+            let printersNeedingCover = printers.filter { $0.state == .printing && !PrintLiveActivityManager.shared.hasCoverImage(printerName: $0.name) }
             var coverImages: [String: Data] = [:]
             if !printersNeedingCover.isEmpty {
                 await withTaskGroup(of: (String, Data?).self) { group in
                     for printer in printersNeedingCover {
                         group.addTask {
+                            // The API call itself still needs Bambuddy's real numeric id; only the
+                            // dictionary key handed to the Live Activity manager uses the name-based one.
                             let image = await self.printerCoverImage(printerID: printer.id)
-                            return (printer.id, image.flatMap { PrintLiveActivityManager.downscaledCoverImage($0) })
+                            return (PrintActivityAttributes.normalizedID(printer.name), image.flatMap { PrintLiveActivityManager.downscaledCoverImage($0) })
                         }
                     }
                     for await (id, data) in group {

@@ -18,9 +18,9 @@ final class PrintLiveActivityManager {
 
     /// Whether a printer's activity already has a cover image cached, so callers can skip
     /// re-fetching it (it's static for the whole print, unlike `liveSnapshot`).
-    func hasCoverImage(printerID: String) -> Bool {
+    func hasCoverImage(printerName: String) -> Bool {
         Activity<PrintActivityAttributes>.activities
-            .first { $0.attributes.printerID == printerID }?
+            .first { $0.attributes.printerID == PrintActivityAttributes.normalizedID(printerName) }?
             .content.state.coverImage != nil
     }
 
@@ -54,14 +54,15 @@ final class PrintLiveActivityManager {
     }
 
     /// Starts, updates, or ends activities to match the given printers. Call after every
-    /// successful `AppStore.refresh()`. `coverImages` is a best-effort, pre-downscaled JPEG per
-    /// printer (only needed for ones currently printing) — nil entries just leave the activity's
-    /// existing cover image as-is rather than clearing it, since it's fetched once at print
-    /// start and doesn't change.
+    /// successful `AppStore.refresh()`. `coverImages` is a best-effort, pre-downscaled JPEG,
+    /// keyed by `PrintActivityAttributes.normalizedID(printer.name)` (not `printer.id` — see
+    /// that function's doc) — only needed for ones currently printing; nil entries just leave
+    /// the activity's existing cover image as-is rather than clearing it, since it's fetched
+    /// once at print start and doesn't change.
     func sync(printers: [Printer], coverImages: [String: Data] = [:]) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
-        let printingByID = Dictionary(uniqueKeysWithValues: printers.filter { $0.state == .printing }.map { ($0.id, $0) })
+        let printingByID = Dictionary(uniqueKeysWithValues: printers.filter { $0.state == .printing }.map { (PrintActivityAttributes.normalizedID($0.name), $0) })
 
         // Awaited rather than fired as unstructured Tasks: an un-awaited `Task { await
         // activity.update(...) }` can get cut off before it completes if the app is backgrounded
@@ -75,16 +76,17 @@ final class PrintLiveActivityManager {
             let existing = activity.content.state
             let state = Self.contentState(
                 for: printer,
-                coverImage: coverImages[printer.id] ?? existing.coverImage,
+                coverImage: coverImages[activity.attributes.printerID] ?? existing.coverImage,
                 liveSnapshot: existing.liveSnapshot
             )
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
 
         let activePrinterIDs = Set(Activity<PrintActivityAttributes>.activities.map(\.attributes.printerID))
-        for printer in printingByID.values where !activePrinterIDs.contains(printer.id) {
-            let attributes = PrintActivityAttributes(printerID: printer.id, printerName: printer.name)
-            let state = Self.contentState(for: printer, coverImage: coverImages[printer.id], liveSnapshot: nil)
+        for printer in printingByID.values where !activePrinterIDs.contains(PrintActivityAttributes.normalizedID(printer.name)) {
+            let id = PrintActivityAttributes.normalizedID(printer.name)
+            let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
+            let state = Self.contentState(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
             _ = try? Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
         }
     }

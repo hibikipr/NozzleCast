@@ -157,18 +157,25 @@ final class NotificationService: UNNotificationServiceExtension {
 
     /// Bambuddy's ntfy messages don't carry a printer id, only a name embedded in the title/body
     /// text — and inconsistently, sometimes the display name ("Vic H2C") and sometimes the raw
-    /// slug ("vic-h2c"). Stripping non-alphanumerics before comparing matches both forms.
+    /// slug ("vic-h2c"). `PrintActivityAttributes.normalizedID` strips everything but
+    /// letters/digits so both forms compare equal, and is shared with the app side so an
+    /// activity either process creates or updates is found correctly by the other.
     ///
-    /// Also the *only* mechanism that ends a finished print's Live Activity. AppStore.refresh()
-    /// only runs while the app is foregrounded, so a print that completes overnight with the app
-    /// backgrounded would otherwise sit frozen on "Printing" indefinitely — confirmed as a real
-    /// bug in practice. Bambuddy's own completion/failure pushes arrive regardless of app state,
-    /// so detecting them here is the only way to close this out promptly either way.
+    /// Also the *only* mechanism that starts or ends a Live Activity when the app isn't
+    /// foregrounded. `AppStore.refresh()` — the only other thing that manages activities — only
+    /// runs while the app is open, so without this: a print starting with the app backgrounded
+    /// would show no Live Activity at all until the app was next opened (confirmed as a real bug
+    /// — the "Print Started" notification arrived fine, nothing else did), and a print completing
+    /// overnight would leave one frozen on "Printing" indefinitely (also confirmed). Both are
+    /// closed by reacting to Bambuddy's own push events here, which arrive regardless of app state.
     private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?) async {
-        let haystack = normalize((message.title ?? "") + " " + (message.message ?? ""))
+        let haystack = PrintActivityAttributes.normalizedID((message.title ?? "") + " " + (message.message ?? ""))
         let terminalLabel = terminalStateLabel(forTitle: message.title ?? "")
+        var matchedAny = false
+
         for activity in Activity<PrintActivityAttributes>.activities {
-            guard haystack.contains(normalize(activity.attributes.printerName)) else { continue }
+            guard haystack.contains(activity.attributes.printerID) else { continue }
+            matchedAny = true
             var state = activity.content.state
             if let thumbnail { state.liveSnapshot = thumbnail }
 
@@ -186,6 +193,34 @@ final class NotificationService: UNNotificationServiceExtension {
                 await activity.update(ActivityContent(state: state, staleDate: nil))
             }
         }
+
+        // No existing activity matched this printer, and this event says a print began: start
+        // one. There's no progress/ETA/temperature data available here (only free-text push
+        // content) — AppStore.refresh() fills those in with real numbers the next time the app is
+        // opened; this just makes sure something accurate shows up immediately rather than
+        // nothing at all.
+        guard !matchedAny, terminalLabel == nil,
+              isStartEvent(forTitle: message.title ?? ""),
+              let printerName = printerName(fromMessage: message.message ?? ""),
+              ActivityAuthorizationInfo().areActivitiesEnabled
+        else { return }
+
+        let attributes = PrintActivityAttributes(printerID: PrintActivityAttributes.normalizedID(printerName), printerName: printerName)
+        let now = Date()
+        let state = PrintActivityAttributes.ContentState(
+            progress: 0,
+            stateLabel: "Printing",
+            jobName: nil,
+            startedAt: now,
+            estimatedEndAt: nil,
+            currentLayer: nil,
+            totalLayers: nil,
+            nozzleTempC: nil,
+            bedTempC: nil,
+            coverImage: nil,
+            liveSnapshot: thumbnail
+        )
+        _ = try? Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
     }
 
     /// Bambuddy's titles for these are plain and consistent enough to substring-match: "Complete"
@@ -203,7 +238,19 @@ final class NotificationService: UNNotificationServiceExtension {
         return nil
     }
 
-    private static func normalize(_ s: String) -> String {
-        s.lowercased().filter { $0.isLetter || $0.isNumber }
+    /// Matches Bambuddy's own "Print Started" as well as the separate OctoPrint/OctoEverywhere
+    /// integration's bare "Started" (both real titles seen on the shared ntfy topic) — either one
+    /// means the same real-world fact, that the print did start.
+    private static func isStartEvent(forTitle title: String) -> Bool {
+        title.lowercased().contains("start")
+    }
+
+    /// Bambuddy's message bodies consistently lead with "{Printer Name}: ..." — e.g.
+    /// "Vic H2C: No AMS Version..." or "sam-p1s: Started". Extracting that prefix is the only
+    /// way to get a printer name here at all, since ntfy messages carry no printer id.
+    private static func printerName(fromMessage message: String) -> String? {
+        guard let colonIndex = message.firstIndex(of: ":") else { return nil }
+        let name = message[message.startIndex..<colonIndex].trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
     }
 }

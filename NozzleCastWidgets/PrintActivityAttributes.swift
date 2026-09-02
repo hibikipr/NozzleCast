@@ -39,3 +39,15 @@ struct PrintActivityAttributes: ActivityAttributes {
     var printerID: String
     var printerName: String
 }
+
+extension PrintActivityAttributes {
+    /// The canonical matching key for a printer, derived from its display name rather than
+    /// Bambuddy's numeric id. The app knows that numeric id; the notification extension only
+    /// ever sees a printer name in push text (ntfy messages carry no printer id) — so an
+    /// activity either side creates or updates has to be keyed on something both can compute
+    /// the same way, which the numeric id isn't. Strips everything but letters/digits so
+    /// "Vic H2C" and "vic-h2c" (Bambuddy uses both forms depending on the event) match.
+    static func normalizedID(_ printerName: String) -> String {
+        printerName.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+}
