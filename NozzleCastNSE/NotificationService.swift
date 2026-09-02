@@ -173,7 +173,11 @@ final class NotificationService: UNNotificationServiceExtension {
         let terminalLabel = terminalStateLabel(forTitle: message.title ?? "")
         var matchedAny = false
 
-        for activity in Activity<PrintActivityAttributes>.activities {
+        // Only `.active` activities count as a match — an already-ended one still lingers in
+        // `.activities` through its dismissal window (up to 30 minutes), and without this a new
+        // print starting on the same printer within that window would find the old, dismissing
+        // activity, update it instead of starting a fresh one, and never show a new card at all.
+        for activity in Activity<PrintActivityAttributes>.activities where activity.activityState == .active {
             guard haystack.contains(activity.attributes.printerID) else { continue }
             matchedAny = true
             var state = activity.content.state

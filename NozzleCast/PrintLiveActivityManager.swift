@@ -20,7 +20,7 @@ final class PrintLiveActivityManager {
     /// re-fetching it (it's static for the whole print, unlike `liveSnapshot`).
     func hasCoverImage(printerName: String) -> Bool {
         Activity<PrintActivityAttributes>.activities
-            .first { $0.attributes.printerID == PrintActivityAttributes.normalizedID(printerName) }?
+            .first { $0.activityState == .active && $0.attributes.printerID == PrintActivityAttributes.normalizedID(printerName) }?
             .content.state.coverImage != nil
     }
 
@@ -68,7 +68,13 @@ final class PrintLiveActivityManager {
         // activity.update(...) }` can get cut off before it completes if the app is backgrounded
         // right after this call returns — which is exactly the common case (open the app, glance
         // at it, lock the phone to check the Lock Screen) — silently dropping the update.
-        for activity in Activity<PrintActivityAttributes>.activities {
+        // Only `.active` activities are touched or counted below — an already-ended one lingers
+        // in `.activities` through its dismissal window (up to 30 minutes), and without this
+        // filter a new print starting on the same printer within that window would be seen as
+        // "already has an activity" and never get a fresh one.
+        let activeActivities = Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }
+
+        for activity in activeActivities {
             guard let printer = printingByID[activity.attributes.printerID] else {
                 await activity.end(nil, dismissalPolicy: .after(.now.addingTimeInterval(30)))
                 continue
@@ -82,7 +88,7 @@ final class PrintLiveActivityManager {
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
 
-        let activePrinterIDs = Set(Activity<PrintActivityAttributes>.activities.map(\.attributes.printerID))
+        let activePrinterIDs = Set(activeActivities.map(\.attributes.printerID))
         for printer in printingByID.values where !activePrinterIDs.contains(PrintActivityAttributes.normalizedID(printer.name)) {
             let id = PrintActivityAttributes.normalizedID(printer.name)
             let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
