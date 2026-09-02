@@ -238,9 +238,17 @@ final class NotificationService: UNNotificationServiceExtension {
     /// Completed" push later had no visible effect (the activity was already `.ended`, so the
     /// `.active`-only filter in `updateLiveActivity` skipped it entirely). A percentage in the
     /// title unambiguously marks it as a progress update, never the terminal event.
+    ///
+    /// Same problem, different title: Bambuddy's "First Layer Complete" milestone (fired almost
+    /// immediately after a print starts) also contains "complete" but carries no percentage, so
+    /// the guard above doesn't catch it — confirmed as a second real instance of this exact bug:
+    /// it ended the Live Activity within moments of starting, before any of the print's real
+    /// progress could ever be applied. Excluding any title mentioning "layer" closes this
+    /// specifically, since none of Bambuddy's genuine completion titles do.
     private static func terminalStateLabel(forTitle title: String) -> String? {
         guard progressFraction(forTitle: title) == nil else { return nil }
         let t = title.lowercased()
+        guard !t.contains("layer") else { return nil }
         if t.contains("complete") { return "Complete" }
         if t.contains("fail") { return "Failed" }
         if t.contains("cancel") { return "Cancelled" }
