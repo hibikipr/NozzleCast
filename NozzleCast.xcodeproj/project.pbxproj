@@ -11,6 +11,9 @@
 		000000000000000000000124 /* NozzleCastWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 000000000000000000000123 /* NozzleCastWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeaderOnCopy, ); }; };
 		000000000000000000000131 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000310000000 /* FirebaseCore */; };
 		000000000000000000000132 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000320000000 /* FirebaseMessaging */; };
+		5340B109B8A10DFF5FD5ED9A /* NozzleCastShared in Frameworks */ = {isa = PBXBuildFile; productRef = F30A7FF92A4745103761DD3F /* NozzleCastShared */; };
+		D2CC53B6040C2C34158A3B9B /* NozzleCastShared in Frameworks */ = {isa = PBXBuildFile; productRef = 9B792C4E500114085100CCDA /* NozzleCastShared */; };
+		FF0F9E8A15B09B1A2A7840C7 /* NozzleCastShared in Frameworks */ = {isa = PBXBuildFile; productRef = 96BCD481A8FEEE932784897B /* NozzleCastShared */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +72,8 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		000000000000000000000010 /* NozzleCast */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = NozzleCast;
 			sourceTree = "<group>";
 		};
@@ -96,16 +101,19 @@
 			files = (
 				000000000000000000000131 /* FirebaseCore in Frameworks */,
 				000000000000000000000132 /* FirebaseMessaging in Frameworks */,
+				5340B109B8A10DFF5FD5ED9A /* NozzleCastShared in Frameworks */,
 			);
 		};
 		000000000000000230000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				FF0F9E8A15B09B1A2A7840C7 /* NozzleCastShared in Frameworks */,
 			);
 		};
 		000000000000000430000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				D2CC53B6040C2C34158A3B9B /* NozzleCastShared in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -156,6 +164,7 @@
 			packageProductDependencies = (
 				000000000000000310000000 /* FirebaseCore */,
 				000000000000000320000000 /* FirebaseMessaging */,
+				F30A7FF92A4745103761DD3F /* NozzleCastShared */,
 			);
 			productName = NozzleCast;
 			productReference = 000000000000000000000120 /* NozzleCast.app */;
@@ -171,10 +180,15 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000011 /* NozzleCastNSE */,
 			);
 			name = NozzleCastNSE;
+			packageProductDependencies = (
+				96BCD481A8FEEE932784897B /* NozzleCastShared */,
+			);
 			productName = NozzleCastNSE;
 			productReference = 000000000000000000000121 /* NozzleCastNSE.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -189,10 +203,15 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000013 /* NozzleCastWidgets */,
 			);
 			name = NozzleCastWidgets;
+			packageProductDependencies = (
+				9B792C4E500114085100CCDA /* NozzleCastShared */,
+			);
 			productName = NozzleCastWidgets;
 			productReference = 000000000000000000000123 /* NozzleCastWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -229,6 +248,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				770656938D3A226D7E10F8D5 /* XCLocalSwiftPackageReference "NozzleCastShared" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -292,7 +312,7 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		000000000000000011000000 /* Debug configuration for PBXProject "NozzleCast" */ = {
+		000000000000000011000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -362,7 +382,7 @@
 			};
 			name = Debug;
 		};
-		000000000000000012000000 /* Release configuration for PBXProject "NozzleCast" */ = {
+		000000000000000012000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -424,7 +444,7 @@
 			};
 			name = Release;
 		};
-		000000000000000111000000 /* Debug configuration for PBXNativeTarget "NozzleCast" */ = {
+		000000000000000111000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -472,7 +492,7 @@
 			};
 			name = Debug;
 		};
-		000000000000000112000000 /* Release configuration for PBXNativeTarget "NozzleCast" */ = {
+		000000000000000112000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -520,7 +540,7 @@
 			};
 			name = Release;
 		};
-		000000000000000211000000 /* Debug configuration for PBXNativeTarget "NozzleCastNSE" */ = {
+		000000000000000211000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -550,7 +570,7 @@
 			};
 			name = Debug;
 		};
-		000000000000000212000000 /* Release configuration for PBXNativeTarget "NozzleCastNSE" */ = {
+		000000000000000212000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -580,7 +600,7 @@
 			};
 			name = Release;
 		};
-		000000000000000411000000 /* Debug configuration for PBXNativeTarget "NozzleCastWidgets" */ = {
+		000000000000000411000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -608,7 +628,7 @@
 			};
 			name = Debug;
 		};
-		000000000000000412000000 /* Release configuration for PBXNativeTarget "NozzleCastWidgets" */ = {
+		000000000000000412000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -642,36 +662,43 @@
 		000000000000000010000000 /* Build configuration list for PBXProject "NozzleCast" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				000000000000000011000000 /* Debug configuration for PBXProject "NozzleCast" */,
-				000000000000000012000000 /* Release configuration for PBXProject "NozzleCast" */,
+				000000000000000011000000 /* Debug */,
+				000000000000000012000000 /* Release */,
 			);
 			defaultConfigurationName = Release;
 		};
 		000000000000000110000000 /* Build configuration list for PBXNativeTarget "NozzleCast" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				000000000000000111000000 /* Debug configuration for PBXNativeTarget "NozzleCast" */,
-				000000000000000112000000 /* Release configuration for PBXNativeTarget "NozzleCast" */,
+				000000000000000111000000 /* Debug */,
+				000000000000000112000000 /* Release */,
 			);
 			defaultConfigurationName = Release;
 		};
 		000000000000000210000000 /* Build configuration list for PBXNativeTarget "NozzleCastNSE" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				000000000000000211000000 /* Debug configuration for PBXNativeTarget "NozzleCastNSE" */,
-				000000000000000212000000 /* Release configuration for PBXNativeTarget "NozzleCastNSE" */,
+				000000000000000211000000 /* Debug */,
+				000000000000000212000000 /* Release */,
 			);
 			defaultConfigurationName = Release;
 		};
 		000000000000000410000000 /* Build configuration list for PBXNativeTarget "NozzleCastWidgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				000000000000000411000000 /* Debug configuration for PBXNativeTarget "NozzleCastWidgets" */,
-				000000000000000412000000 /* Release configuration for PBXNativeTarget "NozzleCastWidgets" */,
+				000000000000000411000000 /* Debug */,
+				000000000000000412000000 /* Release */,
 			);
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		770656938D3A226D7E10F8D5 /* XCLocalSwiftPackageReference "NozzleCastShared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = NozzleCastShared;
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
@@ -694,6 +721,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 000000000000000300000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseMessaging;
+		};
+		96BCD481A8FEEE932784897B /* NozzleCastShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 770656938D3A226D7E10F8D5 /* XCLocalSwiftPackageReference "NozzleCastShared" */;
+			productName = NozzleCastShared;
+		};
+		9B792C4E500114085100CCDA /* NozzleCastShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 770656938D3A226D7E10F8D5 /* XCLocalSwiftPackageReference "NozzleCastShared" */;
+			productName = NozzleCastShared;
+		};
+		F30A7FF92A4745103761DD3F /* NozzleCastShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 770656938D3A226D7E10F8D5 /* XCLocalSwiftPackageReference "NozzleCastShared" */;
+			productName = NozzleCastShared;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import NozzleCastShared
 
 enum ConnectionStatus: Equatable {
     case notConfigured

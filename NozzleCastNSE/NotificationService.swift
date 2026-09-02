@@ -1,6 +1,7 @@
 import UserNotifications
 import ActivityKit
 import UIKit
+import NozzleCastShared
 
 /// Bambuddy's self-hosted ntfy server relays through the user's shared Firebase project as a
 /// data-only push (no `aps.alert`), so iOS won't display anything unless something here builds

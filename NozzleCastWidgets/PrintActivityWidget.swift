@@ -2,6 +2,7 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 import UIKit
+import NozzleCastShared
 
 private let accent = Color(red: 0x2A / 255, green: 0x5F / 255, blue: 0xCC / 255)
 

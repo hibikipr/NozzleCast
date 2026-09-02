@@ -4,6 +4,7 @@ import UIKit
 import UserNotifications
 import FirebaseCore
 import FirebaseMessaging
+import NozzleCastShared
 
 /// Owns the Firebase/APNs push pipeline: configuring Firebase from the user-imported config,
 /// registering for remote notifications, and subscribing to Bambuddy's ntfy topic once Bambuddy

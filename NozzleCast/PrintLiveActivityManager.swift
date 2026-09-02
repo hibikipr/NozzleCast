@@ -1,6 +1,7 @@
 import ActivityKit
 import Foundation
 import UIKit
+import NozzleCastShared
 
 /// Keeps one Live Activity per actively-printing printer in sync with `AppStore`'s latest
 /// refresh. There's no push channel driving most of this state between refreshes (Bambuddy's
