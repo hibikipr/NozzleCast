@@ -26,7 +26,11 @@ final class PrintLiveActivityManager {
 
     /// Downscales a plate/cover render to a tiny JPEG for the Live Activity's content state.
     /// Sized to coexist with `liveSnapshot` in the same ~4KB budget (see `ContentState`'s note).
-    static func downscaledCoverImage(_ image: UIImage, maxDimension: CGFloat = 40, maxBytes: Int = 700) -> Data? {
+    /// The byte cap was originally tuned against a desktop JPEG encoder's output for a sample
+    /// image and turned out to reject every real cover render on-device — `UIGraphicsImageRenderer`
+    /// / `jpegData(compressionQuality:)` compress noticeably less efficiently than that encoder
+    /// did for the same content, even at the lowest quality step. Confirmed empirically this time.
+    static func downscaledCoverImage(_ image: UIImage, maxDimension: CGFloat = 36, maxBytes: Int = 1000) -> Data? {
         let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         let resized = UIGraphicsImageRenderer(size: targetSize).image { _ in
