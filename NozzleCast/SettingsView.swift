@@ -3,9 +3,12 @@ import UIKit
 import UniformTypeIdentifiers
 
 private enum AppIconOption: String, CaseIterable, Identifiable {
+    /// The primary icon — Steel's image now lives in `AppIcon.appiconset` itself.
     case `default`
-    case light
-    case steel
+    /// The original dark icon, formerly the primary — kept on as an alternate since Steel took
+    /// over the primary slot.
+    case classic
+    case snow
     case midnight
     case ice
 
@@ -16,8 +19,8 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
     var alternateIconName: String? {
         switch self {
         case .default: nil
-        case .light: "AppIcon-Light"
-        case .steel: "AppIcon-Steel"
+        case .classic: "AppIcon-Classic"
+        case .snow: "AppIcon-Snow"
         case .midnight: "AppIcon-Midnight"
         case .ice: "AppIcon-Ice"
         }
@@ -26,8 +29,8 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
     var assetName: String {
         switch self {
         case .default: "AppIconSource"
-        case .light: "AppIconLightSource"
-        case .steel: "AppIconSteelSource"
+        case .classic: "AppIconClassicSource"
+        case .snow: "AppIconSnowSource"
         case .midnight: "AppIconMidnightSource"
         case .ice: "AppIconIceSource"
         }
@@ -36,8 +39,8 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .default: String(localized: "Default", comment: "App icon option name")
-        case .light: String(localized: "Light", comment: "App icon option name")
-        case .steel: String(localized: "Steel", comment: "App icon option name")
+        case .classic: String(localized: "Classic", comment: "App icon option name")
+        case .snow: String(localized: "Snow", comment: "App icon option name")
         case .midnight: String(localized: "Midnight", comment: "App icon option name")
         case .ice: String(localized: "Ice", comment: "App icon option name")
         }
