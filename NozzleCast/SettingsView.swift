@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 private enum AppIconOption: String, CaseIterable, Identifiable {
     case `default`
     case light
+    case steel
+    case midnight
 
     var id: String { rawValue }
 
@@ -14,6 +16,8 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
         switch self {
         case .default: nil
         case .light: "AppIcon-Light"
+        case .steel: "AppIcon-Steel"
+        case .midnight: "AppIcon-Midnight"
         }
     }
 
@@ -21,6 +25,8 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
         switch self {
         case .default: "AppIconSource"
         case .light: "AppIconLightSource"
+        case .steel: "AppIconSteelSource"
+        case .midnight: "AppIconMidnightSource"
         }
     }
 
@@ -28,6 +34,8 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
         switch self {
         case .default: String(localized: "Default", comment: "App icon option name")
         case .light: String(localized: "Light", comment: "App icon option name")
+        case .steel: String(localized: "Steel", comment: "App icon option name")
+        case .midnight: String(localized: "Midnight", comment: "App icon option name")
         }
     }
 }
@@ -38,7 +46,7 @@ struct SettingsView: View {
     @State private var showFileImporter = false
     @State private var importError: String?
     @State private var pushManager = PushNotificationManager.shared
-    @State private var selectedIcon: AppIconOption = UIApplication.shared.alternateIconName == "AppIcon-Light" ? .light : .default
+    @State private var selectedIcon: AppIconOption = AppIconOption.allCases.first { $0.alternateIconName == UIApplication.shared.alternateIconName } ?? .default
 
     var body: some View {
         NavigationStack {
