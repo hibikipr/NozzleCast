@@ -145,7 +145,7 @@ struct InventoryView: View {
                 }
                 .background(NCColor.canvasBackground.ignoresSafeArea())
                 .navigationBarHidden(true)
-                .refreshable { await store.refresh() }
+                .refreshable { await store.testConnectionAndRefresh() }
 
                 Button {
                     selectedTab = .scan

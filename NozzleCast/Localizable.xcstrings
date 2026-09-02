@@ -348,6 +348,9 @@
     "Home Axes" : {
 
     },
+    "Ice" : {
+      "comment" : "App icon option name"
+    },
     "Idle" : {
       "comment" : "AI failure detection status\nAI failure detection status: not currently watching a print\nPrinter status"
     },

@@ -218,7 +218,7 @@ struct SettingsView: View {
             .navigationDestination(for: String.self) { id in
                 PrinterDetailView(printerID: id)
             }
-            .refreshable { await store.refresh() }
+            .refreshable { await store.testConnectionAndRefresh() }
             .sheet(isPresented: $showConnectionSheet) {
                 BambuddyConnectionSheet()
             }

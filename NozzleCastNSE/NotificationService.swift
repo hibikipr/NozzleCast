@@ -81,19 +81,19 @@ final class NotificationService: UNNotificationServiceExtension {
             content.relevanceScore = 0.5
         }
 
+        var thumbnail: Data?
         if let attachmentURL = message.attachmentURL, let imageData = await Self.downloadImage(attachmentURL) {
             if let localURL = Self.writeTempFile(imageData, id: message.id),
                let attachment = try? UNNotificationAttachment(identifier: message.id, url: localURL) {
                 content.attachments = [attachment]
             }
-            if let thumbnail = Self.downscaledThumbnail(imageData) {
-                await Self.updateLiveActivity(matching: message, thumbnail: thumbnail)
-            }
+            thumbnail = Self.downscaledThumbnail(imageData)
             // Same full-size download used for the banner attachment, kept alongside the history
             // entry so the in-app Notifications list can show it too (that list reads the shared
             // history log directly, not the system's notification center).
             PushSharedStore.saveHistoryImage(imageData, id: message.id)
         }
+        await Self.updateLiveActivity(matching: message, thumbnail: thumbnail)
 
         PushSharedStore.appendHistory(.init(
             id: message.id,
@@ -158,17 +158,49 @@ final class NotificationService: UNNotificationServiceExtension {
     /// Bambuddy's ntfy messages don't carry a printer id, only a name embedded in the title/body
     /// text — and inconsistently, sometimes the display name ("Vic H2C") and sometimes the raw
     /// slug ("vic-h2c"). Stripping non-alphanumerics before comparing matches both forms.
-    private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data) async {
+    ///
+    /// Also the *only* mechanism that ends a finished print's Live Activity. AppStore.refresh()
+    /// only runs while the app is foregrounded, so a print that completes overnight with the app
+    /// backgrounded would otherwise sit frozen on "Printing" indefinitely — confirmed as a real
+    /// bug in practice. Bambuddy's own completion/failure pushes arrive regardless of app state,
+    /// so detecting them here is the only way to close this out promptly either way.
+    private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?) async {
         let haystack = normalize((message.title ?? "") + " " + (message.message ?? ""))
+        let terminalLabel = terminalStateLabel(forTitle: message.title ?? "")
         for activity in Activity<PrintActivityAttributes>.activities {
             guard haystack.contains(normalize(activity.attributes.printerName)) else { continue }
             var state = activity.content.state
-            state.liveSnapshot = thumbnail
+            if let thumbnail { state.liveSnapshot = thumbnail }
+
             // Awaited, not fired as an unstructured Task: the extension process is liable to be
             // terminated shortly after this method returns and `deliver(content)` is called, so
             // an un-awaited update here would very likely never actually reach the system.
-            await activity.update(ActivityContent(state: state, staleDate: nil))
+            if let terminalLabel {
+                state.stateLabel = terminalLabel
+                if terminalLabel == "Complete" {
+                    state.progress = 1
+                    state.estimatedEndAt = Date()
+                }
+                await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(.now.addingTimeInterval(1800)))
+            } else {
+                await activity.update(ActivityContent(state: state, staleDate: nil))
+            }
         }
+    }
+
+    /// Bambuddy's titles for these are plain and consistent enough to substring-match: "Complete"
+    /// and "Print Completed" both contain "complete", as does the later, harmless-to-also-match
+    /// "Bed Cooldown Complete" (which only ever fires after printing is already done, so ending
+    /// the activity again there is a no-op). Failure/stop titles aren't confirmed against real
+    /// traffic yet, but Bambuddy's own event flags (on_print_failed, on_print_stopped) strongly
+    /// imply similarly plain wording.
+    private static func terminalStateLabel(forTitle title: String) -> String? {
+        let t = title.lowercased()
+        if t.contains("complete") { return "Complete" }
+        if t.contains("fail") { return "Failed" }
+        if t.contains("cancel") { return "Cancelled" }
+        if t.contains("stop") { return "Stopped" }
+        return nil
     }
 
     private static func normalize(_ s: String) -> String {

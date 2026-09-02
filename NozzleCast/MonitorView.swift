@@ -67,7 +67,7 @@ struct MonitorView: View {
             }
             .background(NCColor.canvasBackground.ignoresSafeArea())
             .navigationBarHidden(true)
-            .refreshable { await store.refresh() }
+            .refreshable { await store.testConnectionAndRefresh() }
             .navigationDestination(for: String.self) { id in
                 PrinterDetailView(printerID: id)
             }
