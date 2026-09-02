@@ -1,5 +1,36 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
+
+private enum AppIconOption: String, CaseIterable, Identifiable {
+    case `default`
+    case light
+
+    var id: String { rawValue }
+
+    /// `nil` selects the primary icon — `UIApplication.setAlternateIconName(nil)` is how you
+    /// switch back to it, it isn't itself a registered alternate name.
+    var alternateIconName: String? {
+        switch self {
+        case .default: nil
+        case .light: "AppIcon-Light"
+        }
+    }
+
+    var assetName: String {
+        switch self {
+        case .default: "AppIconSource"
+        case .light: "AppIconLightSource"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .default: String(localized: "Default", comment: "App icon option name")
+        case .light: String(localized: "Light", comment: "App icon option name")
+        }
+    }
+}
 
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
@@ -7,6 +38,7 @@ struct SettingsView: View {
     @State private var showFileImporter = false
     @State private var importError: String?
     @State private var pushManager = PushNotificationManager.shared
+    @State private var selectedIcon: AppIconOption = UIApplication.shared.alternateIconName == "AppIcon-Light" ? .light : .default
 
     var body: some View {
         NavigationStack {
@@ -108,6 +140,43 @@ struct SettingsView: View {
                             }
                         }
                     }
+                }
+
+                Section("App Icon") {
+                    HStack(spacing: 16) {
+                        ForEach(AppIconOption.allCases) { option in
+                            Button {
+                                selectIcon(option)
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Image(option.assetName)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 56, height: 56)
+                                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .strokeBorder(selectedIcon == option ? NCColor.accent : Color.clear, lineWidth: 2.5)
+                                        )
+                                        .overlay(alignment: .bottomTrailing) {
+                                            if selectedIcon == option {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .font(.system(size: 16))
+                                                    .symbolRenderingMode(.palette)
+                                                    .foregroundStyle(.white, NCColor.accent)
+                                                    .offset(x: 4, y: 4)
+                                            }
+                                        }
+                                    Text(option.title)
+                                        .ncFont(size: 11, relativeTo: .caption2)
+                                        .foregroundStyle(NCColor.textSecondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 6)
                 }
 
                 Section {
@@ -216,6 +285,14 @@ struct SettingsView: View {
             return String(localized: "Connecting to your Bambuddy server…", comment: "Settings footer: connecting")
         case .notConfigured:
             return String(localized: "Showing demo data. Tap Server to connect to your Bambuddy instance.", comment: "Settings footer: no server configured")
+        }
+    }
+
+    private func selectIcon(_ option: AppIconOption) {
+        guard option != selectedIcon else { return }
+        UIApplication.shared.setAlternateIconName(option.alternateIconName) { error in
+            guard error == nil else { return }
+            Task { @MainActor in selectedIcon = option }
         }
     }
 
