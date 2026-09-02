@@ -158,32 +158,38 @@ final class NotificationService: UNNotificationServiceExtension {
     /// Bambuddy's ntfy messages don't carry a printer id, only a name embedded in the title/body
     /// text — and inconsistently, sometimes the display name ("Vic H2C") and sometimes the raw
     /// slug ("vic-h2c"). `PrintActivityAttributes.normalizedID` strips everything but
-    /// letters/digits so both forms compare equal, and is shared with the app side so an
-    /// activity either process creates or updates is found correctly by the other.
+    /// letters/digits so both forms compare equal, and is shared with the app side and with
+    /// `nozzlecast-relay` (the self-hosted push-to-start relay, see `../ARCHITECTURE.md`) so an
+    /// activity any of the three creates or updates is found correctly by the others.
     ///
-    /// Ending an *existing* activity here works reliably in the background — that's what closes
-    /// out a print that completes overnight instead of leaving the Live Activity frozen on
-    /// "Printing" (confirmed as a real bug). Starting a *new* one from here does not: ActivityKit
-    /// only allows `Activity.request` to succeed while the containing app is foreground, and this
-    /// extension runs with the phone locked just as often as not — that call throws
-    /// `ActivityAuthorizationError.visibility` in exactly that case (see the NCDEBUG log below).
-    /// It's kept as a harmless best-effort for the narrow case where the app happens to already be
-    /// foreground when the push lands, but the real fallback for "print started while backgrounded"
-    /// is `MonitorView`'s scenePhase-triggered `AppStore.refresh()` on next foreground/unlock — see
-    /// `../ARCHITECTURE.md#live-activities` for what a proper fix (ActivityKit push-to-start
-    /// tokens) would require.
+    /// Only ever *updates* or *ends* an existing activity — never starts one. `ActivityKit` only
+    /// allows `Activity.request` to succeed while the containing app is foreground, so an
+    /// extension-side start attempt threw `ActivityAuthorizationError.visibility` almost every
+    /// time (confirmed as a real, mostly-dead code path, since this runs with the phone locked
+    /// just as often as not) and was removed. Starting a Live Activity while the phone is locked
+    /// is instead `nozzlecast-relay`'s job, via ActivityKit's push-to-start mechanism — it
+    /// watches Bambuddy's ntfy topic directly and fires a push-to-start APNs request the moment a
+    /// print starts, independent of whether this extension or the app ever run at all.
     private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?) async {
         let haystack = PrintActivityAttributes.normalizedID((message.title ?? "") + " " + (message.message ?? ""))
         let terminalLabel = terminalStateLabel(forTitle: message.title ?? "")
-        var matchedAny = false
+        let progress = progressFraction(forTitle: message.title ?? "")
+        let remainingMinutes = remainingMinutes(fromMessage: message.message ?? "")
+
+        let allActivities = Activity<PrintActivityAttributes>.activities
+        NSLog("NCDEBUG NSE update haystack=%@ terminalLabel=%@ allActivities=%@", haystack, terminalLabel ?? "nil",
+              allActivities.map { "id=\($0.id) printerID=\($0.attributes.printerID) state=\($0.activityState)" }.description)
 
         // Only `.active` activities count as a match — an already-ended one still lingers in
         // `.activities` through its dismissal window (up to 30 minutes), and without this a new
         // print starting on the same printer within that window would find the old, dismissing
-        // activity, update it instead of starting a fresh one, and never show a new card at all.
-        for activity in Activity<PrintActivityAttributes>.activities where activity.activityState == .active {
-            guard haystack.contains(activity.attributes.printerID) else { continue }
-            matchedAny = true
+        // activity, update it instead of the relay's fresh one, and never show a new card at all.
+        for activity in allActivities where activity.activityState == .active {
+            guard haystack.contains(activity.attributes.printerID) else {
+                NSLog("NCDEBUG NSE no match: printerID=%@ not in haystack", activity.attributes.printerID)
+                continue
+            }
+            NSLog("NCDEBUG NSE matched activity id=%@ printerID=%@", activity.id, activity.attributes.printerID)
             var state = activity.content.state
             if let thumbnail { state.liveSnapshot = thumbnail }
 
@@ -197,46 +203,23 @@ final class NotificationService: UNNotificationServiceExtension {
                     state.estimatedEndAt = Date()
                 }
                 await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(.now.addingTimeInterval(1800)))
+                NSLog("NCDEBUG NSE ended activity id=%@ resultingState=%@", activity.id, String(describing: activity.activityState))
             } else {
+                // Bambuddy's progress titles carry the real percentage and remaining time (e.g.
+                // "Print 70% Complete" / "...Remaining: 4m") — previously ignored entirely, which
+                // left the Live Activity frozen at whatever value it started with (0% from the
+                // relay's push-to-start, since it has no telemetry access) until the app was next
+                // opened and did its own foreground refresh against Bambuddy's real API. Parsing
+                // these directly out of the push text closes that gap without needing the
+                // extension to make any of its own network calls.
+                if let progress {
+                    state.progress = progress
+                    if let remainingMinutes {
+                        state.estimatedEndAt = Date().addingTimeInterval(TimeInterval(remainingMinutes * 60))
+                    }
+                }
                 await activity.update(ActivityContent(state: state, staleDate: nil))
             }
-        }
-
-        // No existing activity matched this printer, and this event says a print began: start
-        // one. There's no progress/ETA/temperature data available here (only free-text push
-        // content) — AppStore.refresh() fills those in with real numbers the next time the app is
-        // opened; this just makes sure something accurate shows up immediately rather than
-        // nothing at all.
-        NSLog("NCDEBUG NSE start-check matchedAny=%d terminalLabel=%@ isStart=%d areActivitiesEnabled=%d title=%@",
-              matchedAny, terminalLabel ?? "nil", isStartEvent(forTitle: message.title ?? ""),
-              ActivityAuthorizationInfo().areActivitiesEnabled, message.title ?? "nil")
-
-        guard !matchedAny, terminalLabel == nil,
-              isStartEvent(forTitle: message.title ?? ""),
-              let printerName = printerName(fromMessage: message.message ?? ""),
-              ActivityAuthorizationInfo().areActivitiesEnabled
-        else { return }
-
-        let attributes = PrintActivityAttributes(printerID: PrintActivityAttributes.normalizedID(printerName), printerName: printerName)
-        let now = Date()
-        let state = PrintActivityAttributes.ContentState(
-            progress: 0,
-            stateLabel: "Printing",
-            jobName: nil,
-            startedAt: now,
-            estimatedEndAt: nil,
-            currentLayer: nil,
-            totalLayers: nil,
-            nozzleTempC: nil,
-            bedTempC: nil,
-            coverImage: nil,
-            liveSnapshot: thumbnail
-        )
-        do {
-            let activity = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
-            NSLog("NCDEBUG NSE requested activity id=%@ state=%@", activity.id, String(describing: activity.activityState))
-        } catch {
-            NSLog("NCDEBUG NSE Activity.request failed: %@", String(describing: error))
         }
     }
 
@@ -255,19 +238,20 @@ final class NotificationService: UNNotificationServiceExtension {
         return nil
     }
 
-    /// Matches Bambuddy's own "Print Started" as well as the separate OctoPrint/OctoEverywhere
-    /// integration's bare "Started" (both real titles seen on the shared ntfy topic) — either one
-    /// means the same real-world fact, that the print did start.
-    private static func isStartEvent(forTitle title: String) -> Bool {
-        title.lowercased().contains("start")
+    /// Bambuddy's progress titles are consistently "Print {N}% Complete" — pulls the first
+    /// integer immediately before a "%" and normalizes it to a 0...1 fraction for `ContentState`.
+    private static func progressFraction(forTitle title: String) -> Double? {
+        guard let match = title.range(of: #"\d+(?=%)"#, options: .regularExpression),
+              let percent = Int(title[match])
+        else { return nil }
+        return Double(percent) / 100
     }
 
-    /// Bambuddy's message bodies consistently lead with "{Printer Name}: ..." — e.g.
-    /// "Vic H2C: No AMS Version..." or "sam-p1s: Started". Extracting that prefix is the only
-    /// way to get a printer name here at all, since ntfy messages carry no printer id.
-    private static func printerName(fromMessage message: String) -> String? {
-        guard let colonIndex = message.firstIndex(of: ":") else { return nil }
-        let name = message[message.startIndex..<colonIndex].trimmingCharacters(in: .whitespaces)
-        return name.isEmpty ? nil : name
+    /// Bambuddy's progress messages consistently end with "...Remaining: {N}m" — pulls the
+    /// integer minute count so the Live Activity's countdown can be recomputed from a push
+    /// alone, without the extension making any network call of its own.
+    private static func remainingMinutes(fromMessage message: String) -> Int? {
+        guard let match = message.range(of: #"(?<=Remaining: )\d+(?=m)"#, options: .regularExpression) else { return nil }
+        return Int(message[match])
     }
 }

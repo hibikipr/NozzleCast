@@ -128,32 +128,35 @@ Two mechanisms bridge them, chosen for how small the actual needs are:
   name ("Vic H2C") and sometimes the printer's raw slug ("vic-h2c"). Both the extension's activity
   matching and its terminal-state detection strip everything but letters/digits before comparing,
   which matches either form.
-- **Starting a Live Activity while the phone is locked doesn't work, and can't be patched from
-  where it lives today.** ActivityKit only allows `Activity.request` (starting a *new* activity)
-  to succeed while the containing app is in the foreground — confirmed via Apple's own
+- **Starting a Live Activity while the phone is locked needs a push-to-start relay, not an
+  extension-side workaround.** ActivityKit only allows `Activity.request` (starting a *new*
+  activity) to succeed while the containing app is in the foreground — confirmed via Apple's own
   `ActivityAuthorizationError.visibility` ("The app tried to start the Live Activity while it was
-  in the background"). `NotificationService.updateLiveActivity` tries to start one from the
-  extension when a "print started" push arrives with no matching activity, but that call throws
-  `.visibility` whenever the phone is locked or the app is backgrounded — i.e. exactly the case
-  it was written for. It's left in as a harmless no-op fallback for the rare case the app happens
-  to already be foreground, but it isn't reliable. What currently mitigates this: `MonitorView`
-  triggers `AppStore.refresh()` (which calls `PrintLiveActivityManager.sync()`) on every
-  `scenePhase` transition to `.active`, so the missing activity catches up the moment the app is
-  next opened or unlocked into — but there's still a real gap between the print starting and the
-  phone being unlocked.
+  in the background"). An earlier version of `NotificationService.updateLiveActivity` tried to
+  start one from the extension when a "print started" push arrived with no matching activity, but
+  that call threw `.visibility` whenever the phone was locked or the app was backgrounded — i.e.
+  exactly the case it was written for — so it was removed once the real fix landed.
 
-  The actual fix is ActivityKit's **push-to-start** mechanism: observe
-  `Activity<PrintActivityAttributes>.pushToStartTokenUpdates`, and have something send a
-  properly-shaped APNs payload directly (`"event": "start"` plus `attributes-type`/`attributes`/
-  `alert`, per Apple's ActivityKit push notification spec) whenever Bambuddy reports a print
-  starting. This can't be bolted onto the current ntfy → Firebase → NSE pipeline — push-to-start
-  notifications go straight to APNs and are handled by the system before any app code runs, so the
-  NSE never sees them. It needs a component that (a) receives the push-to-start token from the app
-  and (b) can call APNs directly the moment Bambuddy's "print started" event fires. Given this
-  project's "no backend of NozzleCast's own" principle, the least-bad shape is probably a small,
-  self-hosted relay the user runs alongside Bambuddy/ntfy — not a NozzleCast-operated service —
-  but that's a real new moving part, not a client-side change, which is why it's documented here
-  rather than implemented.
+  The real fix is [`nozzlecast-relay`](https://github.com/hibikipr/nozzlecast-relay), a small,
+  self-hosted Node.js service the user runs alongside Bambuddy/ntfy (not a NozzleCast-operated
+  service, matching this project's "no backend of NozzleCast's own" principle). It subscribes to
+  Bambuddy's ntfy topic directly via SSE, and on a "print started" event sends a properly-shaped
+  ActivityKit push-to-start APNs request (`"event": "start"` plus `attributes-type`/`attributes`/
+  `content-state`/`alert`) straight to Apple — bypassing the app/NSE entirely, since push-to-start
+  notifications are handled by the system before any app code runs. The app's own role is just
+  registering: `PushNotificationManager` observes
+  `Activity<PrintActivityAttributes>.pushToStartTokenUpdates` and POSTs each token to the relay's
+  `/register` endpoint (`RelayConfigStore`/`RelayConnectionSheet` hold the relay's URL and auth
+  secret, entered once in Settings). Confirmed working end-to-end on a real device, phone locked.
+
+  `NotificationService.updateLiveActivity` still only ever *updates* or *ends* an existing
+  activity — matching Bambuddy's periodic progress pushes (`"Print {N}% Complete"`, with a
+  `"Remaining: {N}m"` suffix) by parsing the percentage and remaining-time directly out of the
+  push text, so progress advances from background pushes alone rather than staying frozen at the
+  relay's initial `progress: 0` until the app is next foregrounded. It still never *starts* one —
+  that's the relay's job — and `MonitorView`'s scenePhase-triggered `AppStore.refresh()` remains
+  the fallback that reconciles everything against Bambuddy's real telemetry the moment the app is
+  next opened.
 
 ## AMS and inventory
 
