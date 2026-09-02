@@ -166,6 +166,9 @@
     "API Key" : {
       "comment" : "Settings row label"
     },
+    "App Icon" : {
+
+    },
     "Assign Anyway" : {
 
     },
@@ -276,6 +279,9 @@
     "Couldn't start the camera: %@" : {
 
     },
+    "Default" : {
+      "comment" : "App icon option name"
+    },
     "Disconnect" : {
 
     },
@@ -373,7 +379,7 @@
 
     },
     "Light" : {
-      "comment" : "Printer control button"
+      "comment" : "App icon option name\nPrinter control button"
     },
     "LIVE" : {
 
