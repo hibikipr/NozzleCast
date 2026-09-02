@@ -203,6 +203,10 @@ final class NotificationService: UNNotificationServiceExtension {
         // content) — AppStore.refresh() fills those in with real numbers the next time the app is
         // opened; this just makes sure something accurate shows up immediately rather than
         // nothing at all.
+        NSLog("NCDEBUG NSE start-check matchedAny=%d terminalLabel=%@ isStart=%d areActivitiesEnabled=%d title=%@",
+              matchedAny, terminalLabel ?? "nil", isStartEvent(forTitle: message.title ?? ""),
+              ActivityAuthorizationInfo().areActivitiesEnabled, message.title ?? "nil")
+
         guard !matchedAny, terminalLabel == nil,
               isStartEvent(forTitle: message.title ?? ""),
               let printerName = printerName(fromMessage: message.message ?? ""),
@@ -224,7 +228,12 @@ final class NotificationService: UNNotificationServiceExtension {
             coverImage: nil,
             liveSnapshot: thumbnail
         )
-        _ = try? Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
+        do {
+            let activity = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
+            NSLog("NCDEBUG NSE requested activity id=%@ state=%@", activity.id, String(describing: activity.activityState))
+        } catch {
+            NSLog("NCDEBUG NSE Activity.request failed: %@", String(describing: error))
+        }
     }
 
     /// Bambuddy's titles for these are plain and consistent enough to substring-match: "Complete"
