@@ -18,6 +18,8 @@ final class NotificationService: UNNotificationServiceExtension {
         let content = (request.content.mutableCopy() as? UNMutableNotificationContent) ?? UNMutableNotificationContent()
         bestAttemptContent = content
 
+        NSLog("NCDEBUG NSE didReceive userInfo=%@", request.content.userInfo)
+
         guard let message = NtfyPushMessage(userInfo: request.content.userInfo) else {
             deliver(content)
             return
