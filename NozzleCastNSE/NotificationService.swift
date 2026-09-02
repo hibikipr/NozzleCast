@@ -229,7 +229,17 @@ final class NotificationService: UNNotificationServiceExtension {
     /// the activity again there is a no-op). Failure/stop titles aren't confirmed against real
     /// traffic yet, but Bambuddy's own event flags (on_print_failed, on_print_stopped) strongly
     /// imply similarly plain wording.
+    ///
+    /// Critical guard: Bambuddy's own progress-milestone titles ("Print 50% Complete") *also*
+    /// contain the word "complete" — without excluding any title carrying a percentage, every
+    /// progress push was mistaken for the print's actual completion, ending the Live Activity at
+    /// the very first milestone. Confirmed as a real bug in practice: progress stayed frozen at
+    /// its initial value (the update branch was never reached) and the real final "Print
+    /// Completed" push later had no visible effect (the activity was already `.ended`, so the
+    /// `.active`-only filter in `updateLiveActivity` skipped it entirely). A percentage in the
+    /// title unambiguously marks it as a progress update, never the terminal event.
     private static func terminalStateLabel(forTitle title: String) -> String? {
+        guard progressFraction(forTitle: title) == nil else { return nil }
         let t = title.lowercased()
         if t.contains("complete") { return "Complete" }
         if t.contains("fail") { return "Failed" }
