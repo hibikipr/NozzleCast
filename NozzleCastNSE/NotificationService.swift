@@ -161,13 +161,17 @@ final class NotificationService: UNNotificationServiceExtension {
     /// letters/digits so both forms compare equal, and is shared with the app side so an
     /// activity either process creates or updates is found correctly by the other.
     ///
-    /// Also the *only* mechanism that starts or ends a Live Activity when the app isn't
-    /// foregrounded. `AppStore.refresh()` — the only other thing that manages activities — only
-    /// runs while the app is open, so without this: a print starting with the app backgrounded
-    /// would show no Live Activity at all until the app was next opened (confirmed as a real bug
-    /// — the "Print Started" notification arrived fine, nothing else did), and a print completing
-    /// overnight would leave one frozen on "Printing" indefinitely (also confirmed). Both are
-    /// closed by reacting to Bambuddy's own push events here, which arrive regardless of app state.
+    /// Ending an *existing* activity here works reliably in the background — that's what closes
+    /// out a print that completes overnight instead of leaving the Live Activity frozen on
+    /// "Printing" (confirmed as a real bug). Starting a *new* one from here does not: ActivityKit
+    /// only allows `Activity.request` to succeed while the containing app is foreground, and this
+    /// extension runs with the phone locked just as often as not — that call throws
+    /// `ActivityAuthorizationError.visibility` in exactly that case (see the NCDEBUG log below).
+    /// It's kept as a harmless best-effort for the narrow case where the app happens to already be
+    /// foreground when the push lands, but the real fallback for "print started while backgrounded"
+    /// is `MonitorView`'s scenePhase-triggered `AppStore.refresh()` on next foreground/unlock — see
+    /// `../ARCHITECTURE.md#live-activities` for what a proper fix (ActivityKit push-to-start
+    /// tokens) would require.
     private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?) async {
         let haystack = PrintActivityAttributes.normalizedID((message.title ?? "") + " " + (message.message ?? ""))
         let terminalLabel = terminalStateLabel(forTitle: message.title ?? "")

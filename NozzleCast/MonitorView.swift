@@ -78,7 +78,19 @@ struct MonitorView: View {
             }
             .onAppear { refreshUnreadCount() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { refreshUnreadCount() }
+                guard phase == .active else { return }
+                refreshUnreadCount()
+                // ActivityKit only allows starting a *new* Live Activity while the app is
+                // foreground (Notification Service Extension attempts to do it while
+                // backgrounded/locked always throw `.visibility` — see
+                // NotificationService.updateLiveActivity). This is what actually catches up a
+                // print that started while the app was backgrounded: a cold launch already
+                // triggers AppStore.init()'s refresh, but resuming an app the system kept alive
+                // in memory doesn't re-run init, so without this a still-live process would sit
+                // there showing no Live Activity until manually pulled-to-refresh.
+                if store.isLive {
+                    Task { await store.refresh() }
+                }
             }
         }
     }
