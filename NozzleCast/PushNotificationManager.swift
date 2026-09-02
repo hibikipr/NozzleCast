@@ -1,3 +1,4 @@
+import ActivityKit
 import Foundation
 import UIKit
 import UserNotifications
@@ -29,6 +30,11 @@ final class PushNotificationManager: NSObject {
     private(set) var subscribedTopic: String?
     var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
+    /// The push-to-start token most recently registered with the relay, if any — reflects intent
+    /// (a register call was issued), not delivery confirmation, same caveat as `subscribedTopic`.
+    private(set) var registeredPushToStartToken: String?
+    private var pushToStartObservationTask: Task<Void, Never>?
+
     private override init() {
         subscribedTopic = PushSharedStore.loadNtfyConfig()?.topic
         super.init()
@@ -46,6 +52,53 @@ final class PushNotificationManager: NSObject {
         // needs to be re-issued now that Messaging is live.
         if let config = PushSharedStore.loadNtfyConfig() {
             subscribe(server: config.server, topic: config.topic)
+        }
+
+        startObservingPushToStartTokenIfConfigured()
+    }
+
+    /// Starts (once) an app-lifetime task that registers every push-to-start token ActivityKit
+    /// issues or rotates with the relay. Safe to call repeatedly — a no-op once the observation
+    /// task is already running. Call again after the relay config changes (e.g. the user just
+    /// saved a URL/secret in Settings) so a config saved after launch starts observing too.
+    func startObservingPushToStartTokenIfConfigured() {
+        guard pushToStartObservationTask == nil, RelayConfigStore.isConfigured else { return }
+        pushToStartObservationTask = Task {
+            for await tokenData in Activity<PrintActivityAttributes>.pushToStartTokenUpdates {
+                await registerPushToStartToken(tokenData)
+            }
+        }
+    }
+
+    /// POSTs a push-to-start token to the relay's `/register` endpoint. `environment` mirrors
+    /// which APNs environment this build's `aps-environment` entitlement actually uses — Xcode
+    /// sets that from the provisioning profile at build time (development for a local/Debug
+    /// build, production for a distribution/Release build), so `#if DEBUG` tracks it closely
+    /// enough without parsing the embedded provisioning profile.
+    private func registerPushToStartToken(_ tokenData: Data) async {
+        guard let config = RelayConfigStore.load() else { return }
+        let token = tokenData.map { String(format: "%02x", $0) }.joined()
+        #if DEBUG
+        let environment = "sandbox"
+        #else
+        let environment = "production"
+        #endif
+
+        var request = URLRequest(url: config.url.appendingPathComponent("register"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(["token": token, "environment": environment])
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                print("NozzleCast: relay token registration failed with unexpected response")
+                return
+            }
+            registeredPushToStartToken = token
+        } catch {
+            print("NozzleCast: relay token registration failed: \(error)")
         }
     }
 

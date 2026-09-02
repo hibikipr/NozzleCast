@@ -50,6 +50,7 @@ private enum AppIconOption: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
     @State private var showConnectionSheet = false
+    @State private var showRelaySheet = false
     @State private var showFileImporter = false
     @State private var importError: String?
     @State private var pushManager = PushNotificationManager.shared
@@ -90,6 +91,18 @@ struct SettingsView: View {
                         } label: {
                             Text("Notification History")
                                 .foregroundStyle(.white)
+                        }
+                        Button {
+                            showRelaySheet = true
+                        } label: {
+                            settingsRow(
+                                title: String(localized: "Push-to-Start Relay", comment: "Settings row label"),
+                                value: pushManager.registeredPushToStartToken != nil
+                                    ? String(localized: "Registered", comment: "Settings row value: relay token registered")
+                                    : (RelayConfigStore.isConfigured
+                                        ? String(localized: "Configured", comment: "Settings row value: relay saved but not yet confirmed registered")
+                                        : String(localized: "Not configured", comment: "Settings row value when no relay is set"))
+                            )
                         }
                     }
                 } header: {
@@ -222,6 +235,9 @@ struct SettingsView: View {
                 PrinterDetailView(printerID: id)
             }
             .refreshable { await store.testConnectionAndRefresh() }
+            .sheet(isPresented: $showRelaySheet) {
+                RelayConnectionSheet()
+            }
             .sheet(isPresented: $showConnectionSheet) {
                 BambuddyConnectionSheet()
             }
