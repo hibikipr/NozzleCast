@@ -90,9 +90,14 @@ Two mechanisms bridge them, chosen for how small the actual needs are:
 - **Two image sources, not one.** `ContentState` carries both `coverImage` (the sliced-plate
   render, fetched once by the app when a print starts — it's static for the whole job, so it's
   cached via `PrintLiveActivityManager.hasCoverImage` and never re-fetched) and `liveSnapshot`
-  (Bambuddy's live camera frame, pushed independently by the notification extension whenever a
-  photo-bearing event arrives). The widget prefers the live snapshot and falls back to the cover
-  render, so there's almost always a real image rather than a generic icon.
+  (Bambuddy's live camera frame, meant to be pushed independently by the notification extension
+  whenever a photo-bearing event arrives). The widget prefers the live snapshot and falls back to
+  the cover render, so there's almost always a real image rather than a generic icon.
+  **Open question as of the push-to-start work below, not yet re-verified**: that extension-side
+  path goes through the same local `Activity.activities` lookup confirmed dead for every
+  push-to-start-created activity, so neither image may currently be reaching the Live Activity at
+  all — the relay's direct per-activity update pushes don't carry image data today. Worth checking
+  on the next real test print before assuming either image still shows.
 - **The `UIGraphicsImageRenderer` scale trap.** Both image downscale helpers pin
   `format.scale = 1` explicitly. Without it, `UIGraphicsImageRenderer(size:)` defaults to the
   device's screen scale (2x/3x), so a "40pt" thumbnail was actually rasterizing at up to 9x the
@@ -116,13 +121,17 @@ Two mechanisms bridge them, chosen for how small the actual needs are:
   guarantee of running to completion before that happened. Both `PrintLiveActivityManager.sync()`
   and the extension's `updateLiveActivity()` are `async` specifically so their callers can await
   them fully before returning.
-- **The extension is what actually ends a finished Live Activity**, not the app. Since the app only
-  refreshes in the foreground, a print completing overnight with the app backgrounded would
-  otherwise leave the Live Activity frozen on "Printing" indefinitely — confirmed as a real bug in
-  practice. Bambuddy's completion/failure/stop pushes arrive via APNs regardless of app state, so
-  the extension detects them by title (substring-matching "complete"/"fail"/"cancel"/"stop" — the
-  only titles confirmed against live traffic are the "complete" family; the others are inferred
-  from Bambuddy's own event-flag names) and finalizes the activity itself.
+- **The extension used to be what actually ended a finished Live Activity, back when the app
+  created every activity itself.** Bambuddy's completion/failure/stop pushes arrive via APNs
+  regardless of app state, so the extension detects them by title (substring-matching
+  "complete"/"fail"/"cancel"/"stop" — the only titles confirmed against live traffic are the
+  "complete" family; the others are inferred from Bambuddy's own event-flag names) and calls
+  `activity.end(...)` itself. That logic is still in place and still correct *if* it can find a
+  matching activity — but see the push-to-start entry below: every activity today is
+  push-to-start-created, and this extension can never locally find one of those, so in practice
+  this path doesn't fire anymore. Ending now happens via the relay's direct per-activity push
+  instead. Kept in place as a working fallback for any activity the app *does* create locally,
+  not removed outright.
 - **Printer matching by normalized name text, not an ID.** ntfy messages carry no printer
   identifier, only a name embedded in the title/body — and inconsistently, sometimes the display
   name ("Vic H2C") and sometimes the printer's raw slug ("vic-h2c"). Both the extension's activity
