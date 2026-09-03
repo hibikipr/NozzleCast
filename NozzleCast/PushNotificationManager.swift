@@ -120,6 +120,39 @@ final class PushNotificationManager: NSObject {
 
     func handleAPNsToken(_ deviceToken: Data) {
         Messaging.messaging().apnsToken = deviceToken
+        Task { await registerDeviceToken(deviceToken) }
+    }
+
+    /// POSTs the app's plain APNs device token (distinct from the ActivityKit push-to-start
+    /// token registered above) to the relay's `/register-device` endpoint. The relay sends a
+    /// silent `content-available` push to this token alongside every push-to-start request, so
+    /// the app runs `PrintLiveActivityManager.sync` in the background — see that type's doc
+    /// comment for why a push-to-start-created activity is otherwise invisible to the app, NSE,
+    /// and widget extension until something runs that sync at least once.
+    private func registerDeviceToken(_ deviceToken: Data) async {
+        guard let config = RelayConfigStore.load() else { return }
+        let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+        #if DEBUG
+        let environment = "sandbox"
+        #else
+        let environment = "production"
+        #endif
+
+        var request = URLRequest(url: config.url.appendingPathComponent("register-device"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(["token": token, "environment": environment])
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                print("NozzleCast: relay device token registration failed with unexpected response")
+                return
+            }
+        } catch {
+            print("NozzleCast: relay device token registration failed: \(error)")
+        }
     }
 
     /// Subscribes to the FCM topic that mirrors ntfy's `server`+`topic`, and remembers the ntfy

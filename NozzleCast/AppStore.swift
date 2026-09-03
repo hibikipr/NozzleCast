@@ -11,6 +11,12 @@ enum ConnectionStatus: Equatable {
 
 @Observable
 final class AppStore {
+    /// Set once by `MyApp` at launch. `AppStore` itself lives as a SwiftUI `@State` owned by the
+    /// view hierarchy (for `.environment(store)`), but `AppDelegate`'s background remote
+    /// notification callback has no view-hierarchy access — it needs a way to reach the same
+    /// instance to run `refresh()` when a background wake push arrives.
+    static weak var shared: AppStore?
+
     var printers: [Printer] = []
     var spools: [Spool] = []
     var config: BambuddyConfig
@@ -22,6 +28,7 @@ final class AppStore {
 
     init(config: BambuddyConfig) {
         self.config = config
+        Self.shared = self
         if config.isConfigured {
             connectionStatus = .connecting
             Task { await testConnectionAndRefresh() }
