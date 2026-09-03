@@ -31,7 +31,7 @@ final class PrintLiveActivityManager {
     /// image and turned out to reject every real cover render on-device — `UIGraphicsImageRenderer`
     /// / `jpegData(compressionQuality:)` compress noticeably less efficiently than that encoder
     /// did for the same content, even at the lowest quality step. Confirmed empirically this time.
-    static func downscaledCoverImage(_ image: UIImage, maxDimension: CGFloat = 36, maxBytes: Int = 1000) -> Data? {
+    nonisolated static func downscaledCoverImage(_ image: UIImage, maxDimension: CGFloat = 36, maxBytes: Int = 1000) -> Data? {
         let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         // The real bug behind every "downscale still won't fit" symptom: UIGraphicsImageRenderer
