@@ -1,0 +1,387 @@
+<title>NozzleCast Privacy</title>
+<style>
+  :root {
+    --bg: #F6F5F2;
+    --surface: #FFFFFF;
+    --text: #1B1D1F;
+    --text-muted: #5B5F66;
+    --border: #E2E0DA;
+    --accent: #2A5FCC;
+    --accent-soft: #E8EEFC;
+    --mono-bg: #F0EFEA;
+    --mono-border: #DEDBD3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131417;
+      --surface: #1B1D21;
+      --text: #EDEDEC;
+      --text-muted: #9A9CA3;
+      --border: #2B2D31;
+      --accent: #7DA0F0;
+      --accent-soft: #1E2740;
+      --mono-bg: #1E2024;
+      --mono-border: #303237;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131417;
+    --surface: #1B1D21;
+    --text: #EDEDEC;
+    --text-muted: #9A9CA3;
+    --border: #2B2D31;
+    --accent: #7DA0F0;
+    --accent-soft: #1E2740;
+    --mono-bg: #1E2024;
+    --mono-border: #303237;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    line-height: 1.65;
+    font-size: 16.5px;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 680px);
+    justify-content: center;
+    gap: 64px;
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+  }
+
+  header.masthead {
+    grid-column: 1 / -1;
+    max-width: 680px;
+    margin: 0 auto 8px 264px;
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .eyebrow .mark {
+    width: 7px; height: 7px; border-radius: 2px;
+    background: var(--accent);
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  h1 {
+    font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    font-weight: 600;
+    font-size: 2.15rem;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 10px 0 6px;
+  }
+
+  .dek {
+    font-family: "IBM Plex Sans", sans-serif;
+    color: var(--text-muted);
+    font-size: 1.02rem;
+    max-width: 54ch;
+    margin: 0;
+  }
+
+  .meta-row {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .meta-row span b { color: var(--text); font-weight: 500; }
+
+  nav.toc {
+    position: sticky;
+    top: 48px;
+    align-self: start;
+    font-family: "IBM Plex Sans", sans-serif;
+  }
+  nav.toc .toc-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  nav.toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    border-left: 1px solid var(--border);
+  }
+  nav.toc li { margin: 0; }
+  nav.toc a {
+    display: block;
+    padding: 7px 0 7px 16px;
+    margin-left: -1px;
+    border-left: 2px solid transparent;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13.5px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  nav.toc a:hover, nav.toc a:focus-visible {
+    color: var(--text);
+    border-left-color: var(--accent);
+  }
+  nav.toc .num {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--accent);
+    margin-right: 8px;
+    font-size: 12px;
+  }
+
+  main { min-width: 0; }
+
+  section {
+    padding-top: 44px;
+    margin-top: 44px;
+    border-top: 1px solid var(--border);
+    scroll-margin-top: 32px;
+  }
+  section:first-of-type {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 8px;
+  }
+
+  h2 {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    text-wrap: balance;
+    margin: 0 0 16px;
+  }
+  h2 .num {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 400;
+    color: var(--accent);
+    font-size: 0.85rem;
+  }
+
+  p { margin: 0 0 14px; max-width: 66ch; }
+  ul { margin: 0 0 14px; padding-left: 1.3em; max-width: 62ch; }
+  li { margin-bottom: 8px; }
+
+  code, .field {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.87em;
+    background: var(--mono-bg);
+    border: 1px solid var(--mono-border);
+    padding: 0.1em 0.42em;
+    border-radius: 4px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin: 0 0 16px;
+  }
+  .card h3 {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p:last-child { margin-bottom: 0; }
+  .card + .card { margin-top: -4px; }
+
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+    margin: 0 0 20px;
+  }
+
+  .dot-you { color: #2E8B57; }
+  .dot-server { color: var(--accent); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .dot-you { color: #6FCB9F; }
+  }
+  :root[data-theme="dark"] .dot-you { color: #6FCB9F; }
+
+  .no-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.95rem;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .no-row:last-child { border-bottom: none; }
+  .no-row .x {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  footer {
+    grid-column: 1 / -1;
+    max-width: 680px;
+    margin: 56px auto 0 264px;
+    padding-top: 28px;
+    border-top: 1px solid var(--border);
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+  footer a { color: var(--accent); }
+
+  @media (max-width: 780px) {
+    .shell { grid-template-columns: minmax(0, 1fr); padding: 32px 20px 72px; }
+    header.masthead, footer { margin-left: 0; }
+    nav.toc { position: static; margin-bottom: 12px; }
+    nav.toc ol { columns: 2; border-left: none; }
+    nav.toc a { border-left: none; padding-left: 0; }
+    nav.toc a:hover { border-left: none; }
+  }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<header class="masthead">
+  <div class="eyebrow"><span class="mark"></span>NozzleCast · Privacy Policy</div>
+  <h1>Your printers, your server, your data.</h1>
+  <p class="dek">NozzleCast is a client for a Bambuddy instance you already run. There is no NozzleCast account, no NozzleCast server, and nothing described below is collected by its developer.</p>
+  <div class="meta-row">
+    <span>Effective <b>September 3, 2026</b></span>
+    <span>Applies to <b>NozzleCast for iOS</b></span>
+    <span>Contact <b>support@townsville.cc</b></span>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="Sections">
+    <div class="toc-label">On this page</div>
+    <ol>
+      <li><a href="#overview"><span class="num">01</span>Overview</a></li>
+      <li><a href="#config"><span class="num">02</span>What you configure</a></li>
+      <li><a href="#printing"><span class="num">03</span>Printer &amp; filament data</a></li>
+      <li><a href="#camera"><span class="num">04</span>Camera &amp; scanning</a></li>
+      <li><a href="#push"><span class="num">05</span>Push &amp; Live Activities</a></li>
+      <li><a href="#not-collected"><span class="num">06</span>What we don't do</a></li>
+      <li><a href="#retention"><span class="num">07</span>Retention &amp; deletion</a></li>
+      <li><a href="#children"><span class="num">08</span>Children's privacy</a></li>
+      <li><a href="#changes"><span class="num">09</span>Changes to this policy</a></li>
+      <li><a href="#contact"><span class="num">10</span>Contact</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="overview">
+      <h2><span class="num">01</span>Overview</h2>
+      <p>NozzleCast is a monitoring and control client for <a href="#" style="color:inherit">Bambuddy</a>, a self-hosted 3D-printer management server. It connects directly to the Bambuddy instance and, optionally, the push-notification relay that you set up and run yourself &mdash; typically on your own home network or personal server.</p>
+      <p>There is no NozzleCast cloud service in between. The people who make NozzleCast never receive, store, or have access to your printer data, your server address, your API keys, or your usage of the app. This policy exists to be precise about that, not to disclose a hidden data pipeline.</p>
+    </section>
+
+    <section id="config">
+      <h2><span class="num">02</span>What you configure</h2>
+      <p>Setting up NozzleCast means entering connection details for infrastructure you already control:</p>
+      <div class="card">
+        <h3>Bambuddy server</h3>
+        <p>Your server's <code>URL</code> and <code>API key</code>, entered in Settings. Stored in the iOS Keychain on your device only. Sent only to the host you typed in, over the connection you configured.</p>
+      </div>
+      <div class="card">
+        <h3>Push relay (optional)</h3>
+        <p>If you run <code>nozzlecast-relay</code> for Live Activities, its <code>URL</code> and auth secret are stored the same way &mdash; on-device, sent only to your relay.</p>
+      </div>
+      <div class="card">
+        <h3>Firebase config (optional)</h3>
+        <p>A <code>GoogleService-Info.plist</code> you import from your own Firebase project, used solely to subscribe to the ntfy alert topic your Bambuddy instance already publishes to.</p>
+      </div>
+    </section>
+
+    <section id="printing">
+      <h2><span class="num">03</span>Printer &amp; filament data</h2>
+      <p>While you use the app, NozzleCast reads live data from your Bambuddy server &mdash; printer status, job progress, temperatures, AMS filament slots, camera snapshots, and your filament inventory &mdash; and displays it. This data:</p>
+      <div class="flow-grid">
+        <div class="card">
+          <h3><span class="dot-you">●</span> stays between you and your server</h3>
+          <p>It is fetched over the connection you configured and rendered on your device. It is not copied to any third-party service.</p>
+        </div>
+        <div class="card">
+          <h3><span class="dot-server">●</span> is cached only briefly, locally</h3>
+          <p>NozzleCast keeps an in-memory copy so the app feels responsive; it does not maintain its own database of your print history.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="camera">
+      <h2><span class="num">04</span>Camera &amp; scanning</h2>
+      <p>The Scan tab uses your device's camera to read filament spool barcodes and printed labels, via Apple's on-device <code>VisionKit</code> text and barcode recognition. Frames are processed entirely on your device and are never recorded, uploaded, or sent anywhere &mdash; not to Bambuddy, not to a NozzleCast server (which doesn't exist), not to Apple beyond the standard on-device Vision framework.</p>
+    </section>
+
+    <section id="push">
+      <h2><span class="num">05</span>Push notifications &amp; Live Activities</h2>
+      <p>To show a Live Activity while your phone is locked, iOS issues push tokens that NozzleCast registers with your own relay server so it can send updates directly to your device via Apple's push service:</p>
+      <ul>
+        <li>Your device's APNs token and each Live Activity's push token are sent only to the relay <code>URL</code> you configured &mdash; infrastructure you run.</li>
+        <li>Apple Push Notification service (APNs) and, for ntfy-based alerts, Firebase Cloud Messaging handle final delivery to your device, as they do for any iOS app that sends notifications.</li>
+        <li>None of these tokens are visible to, or usable by, anyone other than your own relay and Apple's push infrastructure.</li>
+      </ul>
+    </section>
+
+    <section id="not-collected">
+      <h2><span class="num">06</span>What we don't do</h2>
+      <div class="card" style="padding-top:6px; padding-bottom:6px;">
+        <div class="no-row"><span class="x">no</span><span>Analytics, crash reporting, or usage tracking of any kind</span></div>
+        <div class="no-row"><span class="x">no</span><span>Advertising or ad identifiers</span></div>
+        <div class="no-row"><span class="x">no</span><span>NozzleCast-operated accounts, servers, or databases</span></div>
+        <div class="no-row"><span class="x">no</span><span>Sharing or selling of any data, to anyone, ever</span></div>
+        <div class="no-row"><span class="x">no</span><span>Access to your Bambuddy data by the app's developer</span></div>
+      </div>
+    </section>
+
+    <section id="retention">
+      <h2><span class="num">07</span>Retention &amp; deletion</h2>
+      <p>Your server URL, API key, and relay credentials live in the iOS Keychain for as long as NozzleCast is installed. Deleting the app removes them. Printer and filament data is never persisted outside your own Bambuddy server &mdash; there is nothing else to delete on our end, because nothing else exists.</p>
+    </section>
+
+    <section id="children">
+      <h2><span class="num">08</span>Children's privacy</h2>
+      <p>NozzleCast is a technical tool for operating 3D-printer infrastructure and is not directed at children. It does not knowingly collect information from anyone, of any age, beyond what's described above &mdash; all of which is configuration you provide to connect to your own equipment.</p>
+    </section>
+
+    <section id="changes">
+      <h2><span class="num">09</span>Changes to this policy</h2>
+      <p>If this policy changes, the date at the top of this page will update and the revised version will be posted at this same address. Material changes will also be noted in the app's release notes.</p>
+    </section>
+
+    <section id="contact">
+      <h2><span class="num">10</span>Contact</h2>
+      <p>Questions about this policy or how NozzleCast handles data can be sent to <a href="mailto:support@townsville.cc" style="color:var(--accent)">support@townsville.cc</a>.</p>
+    </section>
+  </main>
+
+  <footer>
+    NozzleCast is an independent, self-hosted companion app for Bambuddy. Not affiliated with Bambu Lab.
+  </footer>
+</div>
