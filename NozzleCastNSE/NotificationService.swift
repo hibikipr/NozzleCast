@@ -165,14 +165,23 @@ final class NotificationService: UNNotificationServiceExtension {
     /// `nozzlecast-relay` (the self-hosted push-to-start relay, see `../ARCHITECTURE.md`) so an
     /// activity any of the three creates or updates is found correctly by the others.
     ///
-    /// Only ever *updates* or *ends* an existing activity — never starts one. `ActivityKit` only
-    /// allows `Activity.request` to succeed while the containing app is foreground, so an
-    /// extension-side start attempt threw `ActivityAuthorizationError.visibility` almost every
-    /// time (confirmed as a real, mostly-dead code path, since this runs with the phone locked
-    /// just as often as not) and was removed. Starting a Live Activity while the phone is locked
-    /// is instead `nozzlecast-relay`'s job, via ActivityKit's push-to-start mechanism — it
-    /// watches Bambuddy's ntfy topic directly and fires a push-to-start APNs request the moment a
-    /// print starts, independent of whether this extension or the app ever run at all.
+    /// Only ever *updates* or *ends* an existing activity — never starts one, for the same
+    /// foreground-only restriction documented on the app side. But there's a harder limitation on
+    /// top of that, confirmed live across a full print: `Activity<PrintActivityAttributes>.activities`
+    /// (and `.activityUpdates`) never surfaced a push-to-start-created activity to this extension at
+    /// all — not a timing race, empty at 0%, 50%, 75%, and even at the final "Print Completed"
+    /// event. This extension is a fresh OS process per push with no local state carried over, and a
+    /// push-to-start activity was never created by any call to `Activity.request()` in any local
+    /// process, so nothing here can ever discover it. The loop below only ever matches an activity
+    /// this extension's own process already happens to know about — which in practice, now that
+    /// every activity is push-to-start-created, is effectively never. It's kept as a harmless,
+    /// possibly-useful-again-later fallback rather than removed outright.
+    ///
+    /// The real fix for push-to-start-created activities is `PushNotificationManager`'s per-activity
+    /// push token registration: each activity's own `pushTokenUpdates` token is sent to
+    /// `nozzlecast-relay`'s `/register-activity`, and the relay pushes `update`/`end` events
+    /// directly to that token via APNs — no local discovery needed on either side. Confirmed working
+    /// end-to-end (start → progress → completion, all while locked) as of this writing.
     private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?) async {
         let haystack = PrintActivityAttributes.normalizedID((message.title ?? "") + " " + (message.message ?? ""))
         let terminalLabel = terminalStateLabel(forTitle: message.title ?? "")
