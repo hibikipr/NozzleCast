@@ -29,6 +29,24 @@ private func thumbnailView(_ data: Data?, size: CGFloat) -> some View {
     }
 }
 
+/// A small colored count badge matching Bambuddy's own printer-card issue indicator — red for
+/// `issueSeverity == "error"` (Bambuddy's Fatal/Serious), yellow/orange for `"warning"`
+/// (Bambuddy's own Warning tier). `issueSeverity == nil` (including Bambuddy's Info tier, which
+/// is deliberately excluded upstream — see `PrintActivityAttributes.ContentState.issueSeverity`)
+/// renders nothing.
+@ViewBuilder
+private func issueBadge(_ state: PrintActivityAttributes.ContentState) -> some View {
+    if let severity = state.issueSeverity, let count = state.issueCount, count > 0 {
+        let color: Color = severity == "error" ? Color(hex: "#EF4444") : Color(hex: "#F97316")
+        Text("\(count)")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(minWidth: 14, minHeight: 14)
+            .background(Circle().fill(color))
+            .overlay(Circle().stroke(Color.black.opacity(0.4), lineWidth: 1))
+    }
+}
+
 private struct TelemetryChip: View {
     var icon: String
     var text: String
@@ -91,6 +109,9 @@ struct PrintActivityWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     thumbnailView(context.state.preferredThumbnail, size: 36)
+                        .overlay(alignment: .topTrailing) {
+                            issueBadge(context.state).padding(-3)
+                        }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     LiveProgressText(state: context.state)
@@ -160,6 +181,9 @@ private struct LockScreenView: View {
                         .background(Capsule().fill(Color.black.opacity(0.55)))
                         .padding(3)
                     }
+                }
+                .overlay(alignment: .topTrailing) {
+                    issueBadge(state).padding(-3)
                 }
 
             VStack(alignment: .leading, spacing: 8) {

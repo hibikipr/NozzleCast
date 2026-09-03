@@ -113,6 +113,9 @@ final class PrintLiveActivityManager {
             startedAt = now
         }
 
+        let qualifyingSeverities = printer.hmsErrors.map(\.severity).filter { $0 <= 3 }
+        let issueSeverity: String? = qualifyingSeverities.isEmpty ? nil : (qualifyingSeverities.contains { $0 <= 2 } ? "error" : "warning")
+
         return .init(
             progress: progress,
             stateLabel: printer.state.label,
@@ -124,7 +127,9 @@ final class PrintLiveActivityManager {
             nozzleTempC: printer.nozzle.current,
             bedTempC: printer.bed.current,
             coverImage: coverImage,
-            liveSnapshot: liveSnapshot
+            liveSnapshot: liveSnapshot,
+            issueSeverity: issueSeverity,
+            issueCount: qualifyingSeverities.isEmpty ? nil : qualifyingSeverities.count
         )
     }
 }

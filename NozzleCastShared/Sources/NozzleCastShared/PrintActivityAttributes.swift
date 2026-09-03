@@ -23,6 +23,18 @@ public struct PrintActivityAttributes: ActivityAttributes {
         public var nozzleTempC: Int?
         public var bedTempC: Int?
 
+        /// Bambuddy's own HMS severity scale collapsed to two tiers for the badge: "error"
+        /// (severity 1-2, Bambuddy's Fatal/Serious) or "warning" (severity 3, Bambuddy's own
+        /// "Warning" label) — nil when there's no qualifying issue. Severity 4/Info (Bambuddy's
+        /// own default case) is deliberately excluded here, not just at nil-count: confirmed live
+        /// that a routine "Developer Mode not enabled" advisory is genuine severity 5, and Bambuddy's
+        /// own UI colors that blue/informational, never as a warning or error — surfacing it as a
+        /// print-affecting badge here would be a false positive, matching the false positive already
+        /// hit and fixed relay-side (see nozzlecast-relay's hms-severity-badge design doc).
+        public var issueSeverity: String?
+        /// Count of currently active issues at `issueSeverity`'s tier or worse (severity <= 3).
+        public var issueCount: Int?
+
         /// The sliced-plate cover render, fetched once by the app when the print starts (it
         /// doesn't change during the print). Shown until a live snapshot arrives, and as the
         /// fallback whenever one hasn't.
@@ -47,7 +59,9 @@ public struct PrintActivityAttributes: ActivityAttributes {
             nozzleTempC: Int? = nil,
             bedTempC: Int? = nil,
             coverImage: Data? = nil,
-            liveSnapshot: Data? = nil
+            liveSnapshot: Data? = nil,
+            issueSeverity: String? = nil,
+            issueCount: Int? = nil
         ) {
             self.progress = progress
             self.stateLabel = stateLabel
@@ -60,6 +74,8 @@ public struct PrintActivityAttributes: ActivityAttributes {
             self.bedTempC = bedTempC
             self.coverImage = coverImage
             self.liveSnapshot = liveSnapshot
+            self.issueSeverity = issueSeverity
+            self.issueCount = issueCount
         }
     }
 
