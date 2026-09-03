@@ -2,9 +2,30 @@ import UIKit
 import UserNotifications
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    /// Owned here, not as a SwiftUI `@State` in `MyApp`: `UIApplicationDelegateAdaptor` guarantees
+    /// this delegate (and therefore this property) exists before any `Scene` is created, which is
+    /// the only launch-time guarantee that survives a headless background launch — e.g. one woken
+    /// solely by the relay's silent `content-available` push while the phone is locked and the app
+    /// isn't already running. A `WindowGroup`'s `@State` has no such guarantee; relying on it here
+    /// meant `didReceiveRemoteNotification` could find no store to refresh on exactly the launches
+    /// this whole push-to-start path exists for.
+    let store = AppStore(config: BambuddyConfig())
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         PushNotificationManager.shared.configureFirebaseIfNeeded()
         UNUserNotificationCenter.current().delegate = self
+
+        // Re-registering on every launch (not just the one time the user tapped "enable" in
+        // Settings) keeps the plain APNs device token the relay uses for its `content-available`
+        // wake push fresh — `didRegisterForRemoteNotificationsWithDeviceToken` fires again even
+        // when the token hasn't changed, but skipping this call on ordinary relaunches meant a
+        // rotated token would silently stop the relay's wake push from ever reaching this device.
+        Task {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            if settings.authorizationStatus == .authorized {
+                await MainActor.run { application.registerForRemoteNotifications() }
+            }
+        }
         return true
     }
 
@@ -28,12 +49,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        guard let store = AppStore.shared else {
-            completionHandler(.noData)
-            return
-        }
+        NSLog("NCDEBUG AppDelegate received remote notification, waking store to sync")
         Task {
             await store.refresh()
+            NSLog("NCDEBUG AppDelegate background sync complete")
             completionHandler(.newData)
         }
     }

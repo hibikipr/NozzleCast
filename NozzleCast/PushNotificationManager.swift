@@ -63,9 +63,15 @@ final class PushNotificationManager: NSObject {
     /// task is already running. Call again after the relay config changes (e.g. the user just
     /// saved a URL/secret in Settings) so a config saved after launch starts observing too.
     func startObservingPushToStartTokenIfConfigured() {
-        guard pushToStartObservationTask == nil, RelayConfigStore.isConfigured else { return }
+        guard pushToStartObservationTask == nil, RelayConfigStore.isConfigured else {
+            NSLog("NCDEBUG push-to-start observation not started: alreadyRunning=%d relayConfigured=%d",
+                  pushToStartObservationTask != nil, RelayConfigStore.isConfigured)
+            return
+        }
+        NSLog("NCDEBUG push-to-start observation starting")
         pushToStartObservationTask = Task {
             for await tokenData in Activity<PrintActivityAttributes>.pushToStartTokenUpdates {
+                NSLog("NCDEBUG push-to-start token received (%d bytes), registering with relay", tokenData.count)
                 await registerPushToStartToken(tokenData)
             }
         }
@@ -77,7 +83,10 @@ final class PushNotificationManager: NSObject {
     /// build, production for a distribution/Release build), so `#if DEBUG` tracks it closely
     /// enough without parsing the embedded provisioning profile.
     private func registerPushToStartToken(_ tokenData: Data) async {
-        guard let config = RelayConfigStore.load() else { return }
+        guard let config = RelayConfigStore.load() else {
+            NSLog("NCDEBUG push-to-start token registration skipped: no relay configured")
+            return
+        }
         let token = tokenData.map { String(format: "%02x", $0) }.joined()
         #if DEBUG
         let environment = "sandbox"
@@ -94,12 +103,13 @@ final class PushNotificationManager: NSObject {
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                print("NozzleCast: relay token registration failed with unexpected response")
+                NSLog("NCDEBUG relay token registration failed with unexpected response: %@", String(describing: response))
                 return
             }
+            NSLog("NCDEBUG relay token registration succeeded (environment=%@)", environment)
             registeredPushToStartToken = token
         } catch {
-            print("NozzleCast: relay token registration failed: \(error)")
+            NSLog("NCDEBUG relay token registration failed: %@", String(describing: error))
         }
     }
 
@@ -130,7 +140,10 @@ final class PushNotificationManager: NSObject {
     /// comment for why a push-to-start-created activity is otherwise invisible to the app, NSE,
     /// and widget extension until something runs that sync at least once.
     private func registerDeviceToken(_ deviceToken: Data) async {
-        guard let config = RelayConfigStore.load() else { return }
+        guard let config = RelayConfigStore.load() else {
+            NSLog("NCDEBUG device token registration skipped: no relay configured")
+            return
+        }
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         #if DEBUG
         let environment = "sandbox"
@@ -147,11 +160,12 @@ final class PushNotificationManager: NSObject {
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                print("NozzleCast: relay device token registration failed with unexpected response")
+                NSLog("NCDEBUG relay device token registration failed with unexpected response: %@", String(describing: response))
                 return
             }
+            NSLog("NCDEBUG relay device token registration succeeded (environment=%@)", environment)
         } catch {
-            print("NozzleCast: relay device token registration failed: \(error)")
+            NSLog("NCDEBUG relay device token registration failed: %@", String(describing: error))
         }
     }
 
