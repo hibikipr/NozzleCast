@@ -41,10 +41,17 @@ struct AMSAssignSheet: View {
         dismiss()
     }
 
-    private var filteredSpools: [Spool] {
+    /// Recomputed via `onChange`/`onAppear` on the body below rather than as a computed
+    /// property, so this only re-filters when `store.spools` or `searchText` actually change.
+    @State private var filteredSpools: [Spool] = []
+
+    private func recomputeFilteredSpools() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return store.spools }
-        return store.spools.filter {
+        guard !query.isEmpty else {
+            filteredSpools = store.spools
+            return
+        }
+        filteredSpools = store.spools.filter {
             $0.colorName.localizedCaseInsensitiveContains(query)
                 || $0.brand.localizedCaseInsensitiveContains(query)
                 || $0.material.localizedCaseInsensitiveContains(query)
@@ -142,6 +149,9 @@ struct AMSAssignSheet: View {
                 comment: "Material mismatch confirmation when assigning a spool whose material differs from what the printer reports for that AMS slot"
             )
         }
+        .onAppear { recomputeFilteredSpools() }
+        .onChange(of: store.spools) { recomputeFilteredSpools() }
+        .onChange(of: searchText) { recomputeFilteredSpools() }
     }
 
     private var searchField: some View {

@@ -56,7 +56,16 @@ struct MonitorView: View {
                     } else {
                         ForEach(store.printers) { printer in
                             NavigationLink(value: printer.id) {
-                                PrinterCard(printer: printer)
+                                PrinterCard(
+                                    id: printer.id,
+                                    name: printer.name,
+                                    state: printer.state,
+                                    jobFileName: printer.jobFileName,
+                                    progress: printer.progress,
+                                    etaDescription: printer.etaDescription,
+                                    allTrays: printer.allTrays,
+                                    imageAssetName: printer.imageAssetName
+                                )
                             }
                             .buttonStyle(.plain)
                             .padding(.horizontal, 16)
@@ -100,8 +109,18 @@ struct MonitorView: View {
     }
 }
 
+/// Narrow, per-field inputs rather than the whole `Printer` struct — this row only renders
+/// these 8 fields, so it shouldn't re-render when an unrelated field (temps, HMS errors, wifi,
+/// maintenance, etc.) changes on this same printer during a refresh.
 struct PrinterCard: View {
-    var printer: Printer
+    var id: String
+    var name: String
+    var state: PrinterState
+    var jobFileName: String?
+    var progress: Double?
+    var etaDescription: String?
+    var allTrays: [AMSTray]
+    var imageAssetName: String?
     @Environment(AppStore.self) private var store
     @State private var isCameraLive = false
 
@@ -111,35 +130,35 @@ struct PrinterCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(printer.name)
+                    Text(name)
                         .ncFont(size: 16, weight: .semibold, relativeTo: .headline)
                         .foregroundStyle(.white)
                     Spacer()
                     HStack(spacing: 5) {
-                        StatusDot(state: printer.state)
-                        Text(printer.state.label)
+                        StatusDot(state: state)
+                        Text(state.label)
                             .ncFont(size: 13, weight: .medium, relativeTo: .footnote)
                             .foregroundStyle(NCColor.textSecondary)
                     }
                 }
 
-                if printer.state == .printing || printer.state == .paused, let job = printer.jobFileName {
+                if state == .printing || state == .paused, let job = jobFileName {
                     Text(job)
                         .ncFont(size: 12.5, relativeTo: .caption)
                         .foregroundStyle(NCColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    ProgressBar(progress: printer.progress ?? 0)
+                    ProgressBar(progress: progress ?? 0)
                     HStack {
-                        Text(printer.progress ?? 0, format: .percent.precision(.fractionLength(0)))
+                        Text(progress ?? 0, format: .percent.precision(.fractionLength(0)))
                         Text("·")
-                        Text("\(printer.etaDescription ?? "--") left", comment: "Remaining print time, e.g. '12m left'")
+                        Text("\(etaDescription ?? "--") left", comment: "Remaining print time, e.g. '12m left'")
                     }
                     .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
-                    if !printer.allTrays.isEmpty {
+                    if !allTrays.isEmpty {
                         FlowLayout(spacing: 6, rowSpacing: 6) {
-                            ForEach(printer.allTrays) { tray in
+                            ForEach(allTrays) { tray in
                                 let spool = store.spool(tray.spoolID)
                                 Circle()
                                     .fill(spool.map { Color(hex: $0.colorHex) } ?? Color.white.opacity(0.08))
@@ -147,9 +166,9 @@ struct PrinterCard: View {
                             }
                         }
                     }
-                } else if !printer.allTrays.isEmpty {
+                } else if !allTrays.isEmpty {
                     FlowLayout(spacing: 7, rowSpacing: 7) {
-                        ForEach(printer.allTrays) { tray in
+                        ForEach(allTrays) { tray in
                             let spool = store.spool(tray.spoolID)
                             Circle()
                                 .fill(spool.map { Color(hex: $0.colorHex) } ?? Color.white.opacity(0.08))
@@ -172,13 +191,13 @@ struct PrinterCard: View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(NCColor.printerWell)
-            if printer.state == .printing {
-                LiveCameraView(printerID: printer.id, pollInterval: 5, coverFallbackJobIdentity: printer.jobFileName ?? printer.id, isShowingLiveFrame: $isCameraLive)
+            if state == .printing {
+                LiveCameraView(printerID: id, pollInterval: 5, coverFallbackJobIdentity: jobFileName ?? id, isShowingLiveFrame: $isCameraLive)
                     .font(.system(size: 20))
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                PrinterThumbnailImage(assetName: printer.imageAssetName)
+                PrinterThumbnailImage(assetName: imageAssetName)
                     .padding(8)
             }
         }

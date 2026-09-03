@@ -28,8 +28,13 @@ struct InventoryView: View {
     @State private var editingSpool: Spool?
     @Binding var selectedTab: RootTab
 
-    private var filtered: [Spool] {
-        store.spools.filter { spool in
+    /// Recomputed via `onChange`/`onAppear` below rather than as a computed property, so
+    /// filtering/searching over `store.spools` only runs when an actual input changed, not on
+    /// every unrelated body evaluation of this view.
+    @State private var filtered: [Spool] = []
+
+    private func recomputeFiltered() {
+        filtered = store.spools.filter { spool in
             let matchesFilter: Bool
             switch filter {
             case .all: matchesFilter = true
@@ -164,6 +169,10 @@ struct InventoryView: View {
                 EditSpoolSheet(spool: spool)
             }
         }
+        .onAppear { recomputeFiltered() }
+        .onChange(of: store.spools) { recomputeFiltered() }
+        .onChange(of: filter) { recomputeFiltered() }
+        .onChange(of: searchText) { recomputeFiltered() }
     }
 
     private var layoutToggle: some View {

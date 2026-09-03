@@ -7,23 +7,35 @@ struct FlowLayout: Layout {
     var spacing: CGFloat = 7
     var rowSpacing: CGFloat = 7
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var rows = rowsFitting(width: width, subviews: subviews)
-        if rows.isEmpty { rows = [[]] }
-        let height = rows.reduce(0) { partial, row in
-            partial + (row.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0)
-        } + rowSpacing * CGFloat(max(0, rows.count - 1))
-        return CGSize(width: width.isFinite ? width : (rows.first?.reduce(0) { $0 + $1.sizeThatFits(.unspecified).width + spacing } ?? 0), height: height)
+    /// Subview sizes measured once per layout pass and reused across `sizeThatFits` and
+    /// `placeSubviews`, instead of calling `sizeThatFits(.unspecified)` on every subview 2-3x
+    /// per pass.
+    func makeCache(subviews: Subviews) -> [CGSize] {
+        subviews.map { $0.sizeThatFits(.unspecified) }
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func updateCache(_ cache: inout [CGSize], subviews: Subviews) {
+        cache = subviews.map { $0.sizeThatFits(.unspecified) }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout [CGSize]) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var rows = rowsFitting(width: width, subviews: subviews, sizes: cache)
+        if rows.isEmpty { rows = [[]] }
+        let height = rows.reduce(0) { partial, row in
+            partial + (row.map { cache[$0].height }.max() ?? 0)
+        } + rowSpacing * CGFloat(max(0, rows.count - 1))
+        let firstRowWidth = rows.first?.reduce(CGFloat(0)) { $0 + cache[$1].width + spacing } ?? 0
+        return CGSize(width: width.isFinite ? width : firstRowWidth, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout [CGSize]) {
         var x = bounds.minX
         var y = bounds.minY
         var rowHeight: CGFloat = 0
 
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+        for (index, subview) in subviews.enumerated() {
+            let size = cache[index]
             if x + size.width > bounds.maxX, x > bounds.minX {
                 x = bounds.minX
                 y += rowHeight + rowSpacing
@@ -35,18 +47,18 @@ struct FlowLayout: Layout {
         }
     }
 
-    private func rowsFitting(width: CGFloat, subviews: Subviews) -> [[LayoutSubviews.Element]] {
-        var rows: [[LayoutSubviews.Element]] = []
-        var current: [LayoutSubviews.Element] = []
+    private func rowsFitting(width: CGFloat, subviews: Subviews, sizes: [CGSize]) -> [[Int]] {
+        var rows: [[Int]] = []
+        var current: [Int] = []
         var x: CGFloat = 0
-        for subview in subviews {
-            let w = subview.sizeThatFits(.unspecified).width
+        for index in subviews.indices {
+            let w = sizes[index].width
             if x + w > width, !current.isEmpty {
                 rows.append(current)
                 current = []
                 x = 0
             }
-            current.append(subview)
+            current.append(index)
             x += w + spacing
         }
         if !current.isEmpty { rows.append(current) }

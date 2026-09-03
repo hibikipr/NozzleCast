@@ -3,8 +3,6 @@ import SwiftUI
 struct PrinterDetailView: View {
     var printerID: String
     @Environment(AppStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @State private var assignTray: AMSTray?
     @State private var showWarnings = false
     @State private var showCoverFullscreen = false
@@ -15,66 +13,14 @@ struct PrinterDetailView: View {
 
     var body: some View {
         if let printer {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    videoHeader(printer)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(printer.name)
-                            .ncFont(size: 24, weight: .bold, relativeTo: .title)
-                        Text(printer.statusSubtitle)
-                            .ncFont(size: 15, relativeTo: .subheadline)
-                            .foregroundStyle(NCColor.textSecondary)
-                    }
-                    .padding(.horizontal, 16)
-
-                    infoPillRow(printer)
-                        .padding(.horizontal, 16)
-
-                    if printer.state == .printing || printer.state == .paused, let job = printer.jobFileName {
-                        jobCard(printer: printer, job: job)
-                            .padding(.horizontal, 16)
-                    } else if printer.state != .offline {
-                        idleStatusCard(printer)
-                            .padding(.horizontal, 16)
-                    }
-
-                    controlsRow(printer)
-                        .padding(.horizontal, 16)
-
-                    temperaturesSection(printer)
-                        .padding(.horizontal, 16)
-
-                    fansSection(printer)
-                        .padding(.horizontal, 16)
-
-                    if !printer.amsUnits.isEmpty {
-                        amsSection(printer)
-                            .padding(.horizontal, 16)
-                    }
-
-                    if !printer.externalTrays.isEmpty {
-                        externalSection(printer)
-                            .padding(.horizontal, 16)
-                    }
-
-                    if !printer.nozzleRack.isEmpty {
-                        nozzleRackSection(printer)
-                            .padding(.horizontal, 16)
-                    }
-
-                    if printer.smartPlug != nil {
-                        powerSection(printer)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 32)
-                    } else {
-                        Color.clear.frame(height: 12)
-                    }
-                }
-            }
-            .background(NCColor.canvasBackground.ignoresSafeArea())
-            .navigationBarHidden(true)
-            .toolbar(.hidden, for: .tabBar)
+            PrinterDetailContent(
+                printer: printer,
+                isCameraLive: $isCameraLive,
+                assignTray: $assignTray,
+                showWarnings: $showWarnings,
+                showAIDetection: $showAIDetection,
+                showCoverFullscreen: $showCoverFullscreen
+            )
             .sheet(item: $assignTray) { tray in
                 AMSAssignSheet(printerID: printerID, amsIndex: tray.amsIndex, trayIndex: tray.trayIndex)
             }
@@ -91,17 +37,145 @@ struct PrinterDetailView: View {
             ContentUnavailableView(String(localized: "Printer not found"), systemImage: "printer.fill")
         }
     }
+}
 
-    @ViewBuilder
-    private func videoHeader(_ printer: Printer) -> some View {
+/// The whole screen still re-evaluates whenever the store's `printers` array changes at all
+/// (since `printer` above is looked up by id from the whole collection), but each section below
+/// is its own `View` type with narrow inputs, so a change to a *different* printer — or to a
+/// field of *this* printer that a given section doesn't render — only reconstructs that
+/// section's input values; it doesn't re-run the section's own body.
+struct PrinterDetailContent: View {
+    var printer: Printer
+    @Binding var isCameraLive: Bool
+    @Binding var assignTray: AMSTray?
+    @Binding var showWarnings: Bool
+    @Binding var showAIDetection: Bool
+    @Binding var showCoverFullscreen: Bool
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                PrinterVideoHeader(printerID: printer.id, state: printer.state, jobFileName: printer.jobFileName, isCameraLive: $isCameraLive)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(printer.name)
+                        .ncFont(size: 24, weight: .bold, relativeTo: .title)
+                    Text(printer.statusSubtitle)
+                        .ncFont(size: 15, relativeTo: .subheadline)
+                        .foregroundStyle(NCColor.textSecondary)
+                }
+                .padding(.horizontal, 16)
+
+                PrinterInfoPillRow(
+                    model: printer.model,
+                    wifiSignalDBm: printer.wifiSignalDBm,
+                    hmsErrorCount: printer.hmsErrors.count,
+                    aiDetectionEnabled: printer.aiDetectionEnabled,
+                    aiMonitoringActive: printer.aiMonitoringActive,
+                    firmwareVersion: printer.firmwareVersion,
+                    totalPrintHours: printer.totalPrintHours,
+                    maintenanceOK: printer.maintenanceOK,
+                    doorOpen: printer.doorOpen,
+                    showWarnings: $showWarnings,
+                    showAIDetection: $showAIDetection
+                )
+                .padding(.horizontal, 16)
+
+                if printer.state == .printing || printer.state == .paused, let job = printer.jobFileName {
+                    PrinterJobCard(printerID: printer.id, job: job, progress: printer.progress, etaDescription: printer.etaDescription, showCoverFullscreen: $showCoverFullscreen)
+                        .padding(.horizontal, 16)
+                } else if printer.state != .offline {
+                    PrinterIdleStatusCard(printerID: printer.id, stateLabel: printer.state.label, awaitingPlateClear: printer.awaitingPlateClear, showCoverFullscreen: $showCoverFullscreen)
+                        .padding(.horizontal, 16)
+                }
+
+                PrinterControlsRow(printerID: printer.id, state: printer.state, lightOn: printer.lightOn)
+                    .padding(.horizontal, 16)
+
+                PrinterTemperaturesSection(nozzle: printer.nozzle, rightNozzle: printer.rightNozzle, bed: printer.bed, chamber: printer.chamber)
+                    .padding(.horizontal, 16)
+
+                PrinterFansSection(fanSpeeds: printer.fanSpeeds)
+                    .padding(.horizontal, 16)
+
+                if !printer.amsUnits.isEmpty {
+                    PrinterAMSSection(printerID: printer.id, amsUnits: printer.amsUnits, isDualNozzle: printer.isDualNozzle, isPrinting: printer.state == .printing, assignTray: $assignTray)
+                        .padding(.horizontal, 16)
+                }
+
+                if !printer.externalTrays.isEmpty {
+                    PrinterExternalSection(externalTrays: printer.externalTrays)
+                        .padding(.horizontal, 16)
+                }
+
+                if !printer.nozzleRack.isEmpty {
+                    PrinterNozzleRackSection(nozzleRack: printer.nozzleRack)
+                        .padding(.horizontal, 16)
+                }
+
+                if let smartPlug = printer.smartPlug {
+                    PrinterPowerSection(printerID: printer.id, smartPlug: smartPlug)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 32)
+                } else {
+                    Color.clear.frame(height: 12)
+                }
+            }
+        }
+        .background(NCColor.canvasBackground.ignoresSafeArea())
+        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .tabBar)
+    }
+}
+
+/// Shared menu content for the header ellipsis button and the controls row's "More" menu.
+/// Only needs the printer's id, not the whole `Printer`.
+struct PrinterMoreMenuItems: View {
+    var printerID: String
+    @Environment(AppStore.self) private var store
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Button {
+            Task { await store.refresh() }
+        } label: {
+            Label("Refresh Status", systemImage: "arrow.clockwise")
+        }
+
+        if store.isLive {
+            Button {
+                store.homeAxes(printerID)
+            } label: {
+                Label("Home Axes", systemImage: "house")
+            }
+
+            if let url = store.webCameraURL(printerID: printerID) {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label("Open Camera in Browser", systemImage: "safari")
+                }
+            }
+        }
+    }
+}
+
+struct PrinterVideoHeader: View {
+    var printerID: String
+    var state: PrinterState
+    var jobFileName: String?
+    @Binding var isCameraLive: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
         ZStack {
             LinearGradient(colors: [Color(hex: "#2a2a2a"), Color(hex: "#141414")], startPoint: .top, endPoint: .bottom)
-            if printer.state == .offline {
+            if state == .offline {
                 Image(systemName: "camera.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(.white.opacity(0.3))
             } else {
-                LiveCameraView(printerID: printer.id, pollInterval: 3, showsErrorDetail: true, coverFallbackJobIdentity: printer.jobFileName ?? printer.id, isShowingLiveFrame: $isCameraLive)
+                LiveCameraView(printerID: printerID, pollInterval: 3, showsErrorDetail: true, coverFallbackJobIdentity: jobFileName ?? printerID, isShowingLiveFrame: $isCameraLive)
                     .font(.system(size: 44))
             }
         }
@@ -111,7 +185,7 @@ struct PrinterDetailView: View {
                 GlassIconButton(systemName: "chevron.left") { dismiss() }
                 Spacer()
                 Menu {
-                    moreMenuItems(printer)
+                    PrinterMoreMenuItems(printerID: printerID)
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 15, weight: .semibold))
@@ -125,7 +199,7 @@ struct PrinterDetailView: View {
         }
         .overlay(alignment: .topLeading) {
             Group {
-                if printer.state == .offline {
+                if state == .offline {
                     offlinePill
                 } else if isCameraLive {
                     LiveBadge().scaleEffect(1.3)
@@ -145,70 +219,89 @@ struct PrinterDetailView: View {
             .padding(.vertical, 4)
             .background(Capsule().fill(Color.black.opacity(0.55)))
     }
+}
+
+struct PrinterInfoPillRow: View {
+    var model: String
+    var wifiSignalDBm: Int?
+    var hmsErrorCount: Int
+    var aiDetectionEnabled: Bool
+    var aiMonitoringActive: Bool
+    var firmwareVersion: String?
+    var totalPrintHours: Double?
+    var maintenanceOK: Bool?
+    var doorOpen: Bool
+    @Binding var showWarnings: Bool
+    @Binding var showAIDetection: Bool
 
     /// Bambuddy's `door_open` field defaults to false for every printer model rather than
     /// being nil when a model has no door to report on, so it can't tell us on its own whether
     /// a "closed" reading is meaningful or just the default. The H2 series (H2C/H2D/H2S) is the
     /// enclosed line with an actual front-door sensor Bambuddy surfaces this for.
-    private func hasDoorSensor(_ printer: Printer) -> Bool {
-        printer.model.uppercased().contains("H2")
-    }
+    private var hasDoorSensor: Bool { model.uppercased().contains("H2") }
 
-    @ViewBuilder
-    private func infoPillRow(_ printer: Printer) -> some View {
+    var body: some View {
         FlowLayout(spacing: 6, rowSpacing: 6) {
-                if let dbm = printer.wifiSignalDBm {
-                    InfoPill(icon: "wifi", text: "\(dbm)dBm")
+            if let dbm = wifiSignalDBm {
+                InfoPill(icon: "wifi", text: "\(dbm)dBm")
+            }
+            if hmsErrorCount > 0 {
+                Button {
+                    showWarnings = true
+                } label: {
+                    InfoPill(icon: "exclamationmark.triangle.fill", text: "\(hmsErrorCount)", tint: NCColor.statusWarning)
                 }
-                if !printer.hmsErrors.isEmpty {
-                    Button {
-                        showWarnings = true
-                    } label: {
-                        InfoPill(icon: "exclamationmark.triangle.fill", text: "\(printer.hmsErrors.count)", tint: NCColor.statusWarning)
-                    }
-                    .buttonStyle(.plain)
-                }
-                if printer.aiDetectionEnabled {
-                    Button {
-                        showAIDetection = true
-                    } label: {
-                        InfoPill(
-                            icon: "viewfinder",
-                            text: printer.aiMonitoringActive ? String(localized: "Monitoring", comment: "AI failure detection status: actively watching a print") : String(localized: "Idle", comment: "AI failure detection status: not currently watching a print"),
-                            tint: printer.aiMonitoringActive ? NCColor.statusPrinting : NCColor.textSecondary
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-                if let fw = printer.firmwareVersion, !fw.isEmpty {
-                    InfoPill(icon: "cpu", text: fw)
-                }
-                if let hours = printer.totalPrintHours {
-                    InfoPill(icon: "clock", text: "\(Int(hours))h")
-                }
-                if let ok = printer.maintenanceOK {
+                .buttonStyle(.plain)
+            }
+            if aiDetectionEnabled {
+                Button {
+                    showAIDetection = true
+                } label: {
                     InfoPill(
-                        icon: "wrench.fill",
-                        text: ok ? String(localized: "OK", comment: "Maintenance status: nothing due") : String(localized: "Due", comment: "Maintenance status: something needs attention"),
-                        tint: ok ? NCColor.statusPrinting : NCColor.statusWarning
+                        icon: "viewfinder",
+                        text: aiMonitoringActive ? String(localized: "Monitoring", comment: "AI failure detection status: actively watching a print") : String(localized: "Idle", comment: "AI failure detection status: not currently watching a print"),
+                        tint: aiMonitoringActive ? NCColor.statusPrinting : NCColor.textSecondary
                     )
                 }
-                if hasDoorSensor(printer) {
-                    InfoPill(
-                        icon: printer.doorOpen ? "door.left.hand.open" : "door.left.hand.closed",
-                        text: printer.doorOpen ? String(localized: "Door Open", comment: "Enclosed printer's chamber door status") : String(localized: "Door Closed", comment: "Enclosed printer's chamber door status"),
-                        tint: printer.doorOpen ? NCColor.statusWarning : NCColor.textSecondary
-                    )
-                }
+                .buttonStyle(.plain)
+            }
+            if let fw = firmwareVersion, !fw.isEmpty {
+                InfoPill(icon: "cpu", text: fw)
+            }
+            if let hours = totalPrintHours {
+                InfoPill(icon: "clock", text: "\(Int(hours))h")
+            }
+            if let ok = maintenanceOK {
+                InfoPill(
+                    icon: "wrench.fill",
+                    text: ok ? String(localized: "OK", comment: "Maintenance status: nothing due") : String(localized: "Due", comment: "Maintenance status: something needs attention"),
+                    tint: ok ? NCColor.statusPrinting : NCColor.statusWarning
+                )
+            }
+            if hasDoorSensor {
+                InfoPill(
+                    icon: doorOpen ? "door.left.hand.open" : "door.left.hand.closed",
+                    text: doorOpen ? String(localized: "Door Open", comment: "Enclosed printer's chamber door status") : String(localized: "Door Closed", comment: "Enclosed printer's chamber door status"),
+                    tint: doorOpen ? NCColor.statusWarning : NCColor.textSecondary
+                )
+            }
         }
     }
+}
 
-    private func jobCard(printer: Printer, job: String) -> some View {
+struct PrinterJobCard: View {
+    var printerID: String
+    var job: String
+    var progress: Double?
+    var etaDescription: String?
+    @Binding var showCoverFullscreen: Bool
+
+    var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Button {
                 showCoverFullscreen = true
             } label: {
-                PrinterCoverImage(printerID: printer.id, jobIdentity: job)
+                PrinterCoverImage(printerID: printerID, jobIdentity: job)
                     .frame(width: 52, height: 52)
                     .background(NCColor.well)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -221,11 +314,11 @@ struct PrinterDetailView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
-                    Text(printer.progress ?? 0, format: .percent.precision(.fractionLength(0)))
+                    Text(progress ?? 0, format: .percent.precision(.fractionLength(0)))
                         .ncFont(size: 15, weight: .bold, relativeTo: .subheadline)
                 }
-                ProgressBar(progress: printer.progress ?? 0)
-                Text("\(printer.etaDescription ?? "--") remaining", comment: "Remaining print time, e.g. '12m remaining'")
+                ProgressBar(progress: progress ?? 0)
+                Text("\(etaDescription ?? "--") remaining", comment: "Remaining print time, e.g. '12m remaining'")
                     .ncFont(size: 12.5, relativeTo: .caption)
                     .foregroundStyle(NCColor.textSecondary)
             }
@@ -233,16 +326,24 @@ struct PrinterDetailView: View {
         .padding(14)
         .glassCard()
     }
+}
 
-    /// The idle/finished equivalent of `jobCard` — no active job, but still worth showing the
-    /// last plate render and whether it needs clearing before the next print can start.
-    private func idleStatusCard(_ printer: Printer) -> some View {
+/// The idle/finished equivalent of `PrinterJobCard` — no active job, but still worth showing the
+/// last plate render and whether it needs clearing before the next print can start.
+struct PrinterIdleStatusCard: View {
+    var printerID: String
+    var stateLabel: String
+    var awaitingPlateClear: Bool
+    @Binding var showCoverFullscreen: Bool
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Button {
                     showCoverFullscreen = true
                 } label: {
-                    PrinterCoverImage(printerID: printer.id, jobIdentity: printer.id)
+                    PrinterCoverImage(printerID: printerID, jobIdentity: printerID)
                         .frame(width: 52, height: 52)
                         .background(NCColor.well)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -250,12 +351,12 @@ struct PrinterDetailView: View {
                 .buttonStyle(.plain)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
-                        Text(printer.state.label)
+                        Text(stateLabel)
                             .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
                         InfoPill(
-                            icon: printer.awaitingPlateClear ? "square.dashed" : "checkmark.square",
-                            text: printer.awaitingPlateClear ? String(localized: "Plate not Clear", comment: "Plate status: parts still on the build plate from the last print") : String(localized: "Plate Clear", comment: "Plate status: build plate is empty and ready"),
-                            tint: printer.awaitingPlateClear ? NCColor.statusWarning : NCColor.statusPrinting
+                            icon: awaitingPlateClear ? "square.dashed" : "checkmark.square",
+                            text: awaitingPlateClear ? String(localized: "Plate not Clear", comment: "Plate status: parts still on the build plate from the last print") : String(localized: "Plate Clear", comment: "Plate status: build plate is empty and ready"),
+                            tint: awaitingPlateClear ? NCColor.statusWarning : NCColor.statusPrinting
                         )
                     }
                     Text("No active job")
@@ -264,9 +365,9 @@ struct PrinterDetailView: View {
                 }
             }
 
-            if printer.awaitingPlateClear {
+            if awaitingPlateClear {
                 Button {
-                    store.clearPlate(printer.id)
+                    store.clearPlate(printerID)
                 } label: {
                     HStack {
                         Spacer()
@@ -285,27 +386,34 @@ struct PrinterDetailView: View {
         .padding(14)
         .glassCard()
     }
+}
 
-    private func controlsRow(_ printer: Printer) -> some View {
+struct PrinterControlsRow: View {
+    var printerID: String
+    var state: PrinterState
+    var lightOn: Bool
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
         HStack(spacing: 16) {
             ControlButton(
-                systemName: printer.state == .printing ? "pause.fill" : "play.fill",
-                label: printer.state == .printing
+                systemName: state == .printing ? "pause.fill" : "play.fill",
+                label: state == .printing
                     ? String(localized: "Pause", comment: "Printer control button")
-                    : (printer.state == .paused
+                    : (state == .paused
                         ? String(localized: "Resume", comment: "Printer control button")
                         : String(localized: "Start", comment: "Printer control button"))
             ) {
-                store.togglePause(printer.id)
+                store.togglePause(printerID)
             }
             ControlButton(systemName: "stop.fill", label: String(localized: "Stop", comment: "Printer control button")) {
-                store.stop(printer.id)
+                store.stop(printerID)
             }
-            ControlButton(systemName: "lightbulb.fill", label: String(localized: "Light", comment: "Printer control button"), isActive: printer.lightOn) {
-                store.toggleLight(printer.id)
+            ControlButton(systemName: "lightbulb.fill", label: String(localized: "Light", comment: "Printer control button"), isActive: lightOn) {
+                store.toggleLight(printerID)
             }
             Menu {
-                moreMenuItems(printer)
+                PrinterMoreMenuItems(printerID: printerID)
             } label: {
                 VStack(spacing: 6) {
                     Image(systemName: "ellipsis")
@@ -322,66 +430,40 @@ struct PrinterDetailView: View {
             Spacer()
         }
     }
+}
 
-    @ViewBuilder
-    private func moreMenuItems(_ printer: Printer) -> some View {
-        Button {
-            Task { await store.refresh() }
-        } label: {
-            Label("Refresh Status", systemImage: "arrow.clockwise")
-        }
+struct PrinterTemperaturesSection: View {
+    var nozzle: TemperatureReading
+    var rightNozzle: TemperatureReading?
+    var bed: TemperatureReading
+    var chamber: TemperatureReading?
 
-        if store.isLive {
-            Button {
-                store.homeAxes(printer.id)
-            } label: {
-                Label("Home Axes", systemImage: "house")
-            }
-
-            if let url = store.webCameraURL(printerID: printer.id) {
-                Button {
-                    openURL(url)
-                } label: {
-                    Label("Open Camera in Browser", systemImage: "safari")
-                }
-            }
-        }
-    }
-
-    private func temperaturesSection(_ printer: Printer) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Temperatures").sectionEyebrow()
             HStack(spacing: 10) {
-                if let right = printer.rightNozzle {
-                    tempChip(icon: "flame.fill", caption: String(localized: "Nozzle L", comment: "Left nozzle temperature reading label"), reading: printer.nozzle, showTarget: true)
-                    tempChip(icon: "flame.fill", caption: String(localized: "Nozzle R", comment: "Right nozzle temperature reading label"), reading: right, showTarget: true)
+                if let rightNozzle {
+                    TemperatureChip(icon: "flame.fill", caption: String(localized: "Nozzle L", comment: "Left nozzle temperature reading label"), reading: nozzle, showTarget: true)
+                    TemperatureChip(icon: "flame.fill", caption: String(localized: "Nozzle R", comment: "Right nozzle temperature reading label"), reading: rightNozzle, showTarget: true)
                 } else {
-                    tempChip(icon: "flame.fill", caption: String(localized: "Nozzle", comment: "Temperature reading label"), reading: printer.nozzle, showTarget: true)
+                    TemperatureChip(icon: "flame.fill", caption: String(localized: "Nozzle", comment: "Temperature reading label"), reading: nozzle, showTarget: true)
                 }
-                tempChip(icon: "square.stack.3d.up.fill", caption: String(localized: "Bed", comment: "Temperature reading label"), reading: printer.bed, showTarget: true)
-                if let chamber = printer.chamber {
-                    tempChip(icon: "cube.fill", caption: String(localized: "Chamber", comment: "Temperature reading label"), reading: chamber, showTarget: false)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func fansSection(_ printer: Printer) -> some View {
-        let speeds = printer.fanSpeeds
-        if speeds.partCooling != nil || speeds.auxiliary != nil || speeds.chamber != nil {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Fans").sectionEyebrow()
-                HStack(spacing: 10) {
-                    FanSpeedChip(icon: "wind", caption: String(localized: "Part Cooling", comment: "Fan speed label"), percent: speeds.partCooling)
-                    FanSpeedChip(icon: "arrow.up.and.down.and.arrow.left.and.right", caption: String(localized: "Auxiliary", comment: "Fan speed label"), percent: speeds.auxiliary)
-                    FanSpeedChip(icon: "fan.fill", caption: String(localized: "Chamber", comment: "Fan speed label"), percent: speeds.chamber)
+                TemperatureChip(icon: "square.stack.3d.up.fill", caption: String(localized: "Bed", comment: "Temperature reading label"), reading: bed, showTarget: true)
+                if let chamber {
+                    TemperatureChip(icon: "cube.fill", caption: String(localized: "Chamber", comment: "Temperature reading label"), reading: chamber, showTarget: false)
                 }
             }
         }
     }
+}
 
-    private func tempChip(icon: String, caption: String, reading: TemperatureReading, showTarget: Bool) -> some View {
+struct TemperatureChip: View {
+    var icon: String
+    var caption: String
+    var reading: TemperatureReading
+    var showTarget: Bool
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 18))
@@ -401,6 +483,36 @@ struct PrinterDetailView: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.wellAlt))
     }
+}
+
+struct PrinterFansSection: View {
+    var fanSpeeds: FanSpeeds
+
+    var body: some View {
+        if fanSpeeds.partCooling != nil || fanSpeeds.auxiliary != nil || fanSpeeds.chamber != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Fans").sectionEyebrow()
+                HStack(spacing: 10) {
+                    FanSpeedChip(icon: "wind", caption: String(localized: "Part Cooling", comment: "Fan speed label"), percent: fanSpeeds.partCooling)
+                    FanSpeedChip(icon: "arrow.up.and.down.and.arrow.left.and.right", caption: String(localized: "Auxiliary", comment: "Fan speed label"), percent: fanSpeeds.auxiliary)
+                    FanSpeedChip(icon: "fan.fill", caption: String(localized: "Chamber", comment: "Fan speed label"), percent: fanSpeeds.chamber)
+                }
+            }
+        }
+    }
+}
+
+struct PrinterAMSSection: View {
+    var printerID: String
+    var amsUnits: [AMSUnit]
+    var isDualNozzle: Bool
+    var isPrinting: Bool
+    @Binding var assignTray: AMSTray?
+    @Environment(AppStore.self) private var store
+
+    private var standardUnitOrder: [Int: Int] {
+        Dictionary(uniqueKeysWithValues: amsUnits.filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
+    }
 
     private func dryingDetail(_ unit: AMSUnit) -> String {
         switch (unit.dryFilament, unit.dryTargetTemp) {
@@ -415,18 +527,18 @@ struct PrinterDetailView: View {
         }
     }
 
-    private func amsSection(_ printer: Printer) -> some View {
-        let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
-        return VStack(alignment: .leading, spacing: 14) {
+    var body: some View {
+        let order = standardUnitOrder
+        VStack(alignment: .leading, spacing: 14) {
             Text("AMS Filament").sectionEyebrow()
-            ForEach(printer.amsUnits) { unit in
+            ForEach(amsUnits) { unit in
                 VStack(alignment: .leading, spacing: 4) {
-                    if printer.amsUnits.count > 1 || unit.humidity != nil || unit.feedsRightNozzle != nil || unit.isDrying {
+                    if amsUnits.count > 1 || unit.humidity != nil || unit.feedsRightNozzle != nil || unit.isDrying {
                         HStack(spacing: 6) {
-                            Text(unit.displayName(position: standardUnitOrder[unit.id] ?? 0))
+                            Text(unit.displayName(position: order[unit.id] ?? 0))
                                 .ncFont(size: 11, weight: .semibold, relativeTo: .caption2)
                                 .foregroundStyle(NCColor.textTertiary)
-                            if printer.isDualNozzle, let feedsRight = unit.feedsRightNozzle {
+                            if isDualNozzle, let feedsRight = unit.feedsRightNozzle {
                                 InfoPill(icon: feedsRight ? "arrow.right" : "arrow.left", text: feedsRight ? "R" : "L")
                             }
                             if unit.isDrying {
@@ -453,14 +565,14 @@ struct PrinterDetailView: View {
                                 AMSSlotCard(
                                     spool: store.spool(tray.spoolID),
                                     slotIndex: tray.trayIndex,
-                                    isActive: tray.spoolID != nil && printer.state == .printing,
+                                    isActive: tray.spoolID != nil && isPrinting,
                                     tray: tray
                                 )
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
                                 Button {
-                                    store.rereadRFID(printerID: printer.id, amsIndex: tray.amsIndex, trayIndex: tray.trayIndex)
+                                    store.rereadRFID(printerID: printerID, amsIndex: tray.amsIndex, trayIndex: tray.trayIndex)
                                 } label: {
                                     Label("Re-read RFID", systemImage: "wave.3.right")
                                 }
@@ -471,62 +583,69 @@ struct PrinterDetailView: View {
             }
         }
     }
+}
 
-    private func externalSection(_ printer: Printer) -> some View {
+struct PrinterExternalSection: View {
+    var externalTrays: [AMSTray]
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("External").sectionEyebrow()
             HStack(spacing: 8) {
-                ForEach(printer.externalTrays) { tray in
+                ForEach(externalTrays) { tray in
                     AMSSlotCard(spool: store.spool(tray.spoolID), slotIndex: tray.trayIndex, tray: tray)
                 }
             }
         }
     }
+}
 
-    private func nozzleRackSection(_ printer: Printer) -> some View {
+struct PrinterNozzleRackSection: View {
+    var nozzleRack: [NozzleRackSlot]
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Nozzle Rack").sectionEyebrow()
             FlowLayout(spacing: 8, rowSpacing: 8) {
-                ForEach(printer.nozzleRack) { slot in
+                ForEach(nozzleRack) { slot in
                     NozzleRackChip(slot: slot)
                 }
             }
         }
     }
+}
 
-    private func powerSection(_ printer: Printer) -> some View {
-        Group {
-            if let plug = printer.smartPlug {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Power").sectionEyebrow()
-                    powerRow(plug: plug, printer: printer)
-                }
-            }
-        }
-    }
+struct PrinterPowerSection: View {
+    var printerID: String
+    var smartPlug: SmartPlugInfo
+    @Environment(AppStore.self) private var store
 
-    private func powerRow(plug: SmartPlugInfo, printer: Printer) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "bolt.fill")
-                .font(.system(size: 16))
-                .foregroundStyle(plug.isOn ? NCColor.statusPrinting : NCColor.textTertiary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(plug.name)
-                    .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
-                    .foregroundStyle(.white)
-                if let watts = plug.watts {
-                    Text("\(watts.formatted(.number.precision(.fractionLength(0))))W")
-                        .ncFont(size: 12, relativeTo: .caption)
-                        .foregroundStyle(NCColor.textTertiary)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Power").sectionEyebrow()
+            HStack(spacing: 12) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(smartPlug.isOn ? NCColor.statusPrinting : NCColor.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(smartPlug.name)
+                        .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(.white)
+                    if let watts = smartPlug.watts {
+                        Text("\(watts.formatted(.number.precision(.fractionLength(0))))W")
+                            .ncFont(size: 12, relativeTo: .caption)
+                            .foregroundStyle(NCColor.textTertiary)
+                    }
                 }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { smartPlug.isOn },
+                    set: { _ in store.toggleSmartPlug(printerID) }
+                ))
+                .labelsHidden()
+                .tint(NCColor.accent)
             }
-            Spacer()
-            Toggle("", isOn: Binding(
-                get: { plug.isOn },
-                set: { _ in store.toggleSmartPlug(printer.id) }
-            ))
-            .labelsHidden()
-            .tint(NCColor.accent)
         }
         .padding(14)
         .glassCard()

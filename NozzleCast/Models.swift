@@ -4,14 +4,14 @@ enum PrinterState: String, CaseIterable {
     case printing, paused, idle, error, offline
 }
 
-struct TemperatureReading {
+struct TemperatureReading: Equatable {
     var current: Int
     var target: Int?
 }
 
 /// One physical filament slot: `amsIndex` identifies the AMS unit (a printer may have more than one),
 /// `trayIndex` the slot within that unit.
-struct AMSTray: Identifiable {
+struct AMSTray: Identifiable, Equatable {
     var amsIndex: Int
     var trayIndex: Int
     var spoolID: String?
@@ -30,7 +30,7 @@ struct AMSTray: Identifiable {
     var id: String { "\(amsIndex)-\(trayIndex)" }
 }
 
-struct AMSUnit: Identifiable {
+struct AMSUnit: Identifiable, Equatable {
     var index: Int
     var trays: [AMSTray]
     var isHT: Bool = false
@@ -57,7 +57,7 @@ struct AMSUnit: Identifiable {
 }
 
 /// A physical spool bay on a dual-nozzle printer's automatic nozzle-changer rack.
-struct NozzleRackSlot: Identifiable {
+struct NozzleRackSlot: Identifiable, Equatable {
     var id: Int
     var diameter: String
     var maxTemp: Int
@@ -65,7 +65,7 @@ struct NozzleRackSlot: Identifiable {
     var filamentColorHex: String?
 }
 
-struct NozzleInfo: Identifiable {
+struct NozzleInfo: Identifiable, Equatable {
     var index: Int
     var type: String
     var diameter: String
@@ -73,7 +73,7 @@ struct NozzleInfo: Identifiable {
     var id: Int { index }
 }
 
-struct HMSError: Identifiable {
+struct HMSError: Identifiable, Equatable {
     var id: String { fullCode }
     var fullCode: String
     var severity: Int
@@ -100,20 +100,20 @@ struct HMSError: Identifiable {
     }
 }
 
-struct FanSpeeds {
+struct FanSpeeds: Equatable {
     var partCooling: Int?
     var auxiliary: Int?
     var chamber: Int?
 }
 
-struct SmartPlugInfo {
+struct SmartPlugInfo: Equatable {
     var id: Int
     var name: String
     var isOn: Bool
     var watts: Double?
 }
 
-struct Printer: Identifiable {
+struct Printer: Identifiable, Equatable {
     let id: String
     var name: String
     var model: String
@@ -204,7 +204,7 @@ enum SpoolLocation: Equatable {
     case storage(name: String?)
 }
 
-struct Spool: Identifiable {
+struct Spool: Identifiable, Equatable {
     let id: String
     /// The raw material string, e.g. "PLA", "PETG-HF", "PC" — Bambuddy accepts any value here,
     /// not a fixed set, so this isn't `FilamentMaterial` (that enum is a coarse bucketing
