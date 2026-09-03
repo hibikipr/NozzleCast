@@ -72,119 +72,161 @@ Two mechanisms bridge them, chosen for how small the actual needs are:
   log. This is *not* a general-purpose sync mechanism; it's sized for "one ntfy subscription and a
   short list of recent notifications," which is what the app actually needs. Core Data/CloudKit
   would be solving a problem this app doesn't have.
-- **Duplicated small Swift files, not real shared source.** `PushSharedStore` and
-  `PrintActivityAttributes` each exist as near-identical copies in more than one target
-  (`NozzleCast/`, `NozzleCastNSE/`, `NozzleCastWidgets/`) instead of one file with multi-target
-  membership. This project uses `PBXFileSystemSynchronizedRootGroup` (each target's whole folder
-  syncs automatically, no per-file pbxproj entries needed for ordinary source changes), which
-  scopes a synced folder to one target; sharing one file across targets would mean hand-editing
-  `PBXFileSystemSynchronizedBuildFileExceptionSet` entries, which is exactly the kind of pbxproj
-  surgery most likely to quietly corrupt the project. ActivityKit and the App Group JSON only need
-  the types to be *structurally* identical Codable shapes across the process boundary, not the
-  literally same Swift type — so duplication with a comment pointing at the other copies is the
-  lower-risk trade. If these ever drift out of sync, that's a real bug to fix by hand, not
+- **`PushSharedStore` is a duplicated small Swift file, not real shared source** — near-identical
+  copies in `NozzleCast/` and `NozzleCastNSE/` instead of one file with multi-target membership.
+  This project uses `PBXFileSystemSynchronizedRootGroup` (each target's whole folder syncs
+  automatically, no per-file pbxproj entries needed for ordinary source changes), which scopes a
+  synced folder to one target; sharing one file across targets means hand-editing
+  `PBXFileSystemSynchronizedBuildFileExceptionSet` entries, real pbxproj surgery. The App Group
+  JSON this type serializes to only needs the two copies to stay *structurally* identical, not the
+  literally same Swift type, so duplication with a comment pointing at the other copy is the
+  lower-risk trade here. If these ever drift out of sync, that's a real bug to fix by hand, not
   something the compiler will catch across targets.
+- **`PrintActivityAttributes` is *not* duplicated the same way — it can't be.** It used to be,
+  identically to `PushSharedStore` above, on the same "structurally identical is enough" reasoning
+  — which turned out to be wrong for this specific type. `ActivityKit` identifies an
+  `ActivityAttributes` type by its *module-qualified* name, not just its shape: three structurally
+  identical `PrintActivityAttributes` compiled separately into three targets' own modules
+  (`NozzleCast.PrintActivityAttributes`, `NozzleCastNSE.PrintActivityAttributes`, ...) are three
+  *different* types as far as `Activity<PrintActivityAttributes>.activities` is concerned — an
+  activity started under one module's identity is invisible to a process compiled with a
+  different one. This was a real, confirmed bug (see Live Activities below), fixed by moving the
+  type into `NozzleCastShared`, a local Swift package all three targets depend on, so there is
+  really only one compiled `PrintActivityAttributes` for ActivityKit to ever see.
 
 ## Live Activities
 
-- **Two image sources, not one.** `ContentState` carries both `coverImage` (the sliced-plate
-  render, fetched once by the app when a print starts — it's static for the whole job, so it's
-  cached via `PrintLiveActivityManager.hasCoverImage` and never re-fetched) and `liveSnapshot`
-  (Bambuddy's live camera frame, meant to be pushed independently by the notification extension
-  whenever a photo-bearing event arrives). The widget prefers the live snapshot and falls back to
-  the cover render, so there's almost always a real image rather than a generic icon.
-  **Open question as of the push-to-start work below, not yet re-verified**: that extension-side
-  path goes through the same local `Activity.activities` lookup confirmed dead for every
-  push-to-start-created activity, so neither image may currently be reaching the Live Activity at
-  all — the relay's direct per-activity update pushes don't carry image data today. Worth checking
-  on the next real test print before assuming either image still shows.
-- **The `UIGraphicsImageRenderer` scale trap.** Both image downscale helpers pin
-  `format.scale = 1` explicitly. Without it, `UIGraphicsImageRenderer(size:)` defaults to the
+The Live Activity is entirely relay-driven today — [`nozzlecast-relay`](https://github.com/hibikipr/nozzlecast-relay),
+a small self-hosted Node.js service the user runs alongside Bambuddy (not a NozzleCast-operated
+service, matching this project's "no backend of NozzleCast's own" principle), starts it, updates
+it, and ends it, all via direct APNs pushes. The app's own local creation/update code
+(`PrintLiveActivityManager`) still exists and still works, but only ever runs when the app happens
+to be foregrounded — see "why local discovery doesn't work" below for why that can't be the
+primary mechanism for something that has to keep working with the phone locked.
+
+- **Neither the app nor the notification extension can *locally discover* a push-to-start-created
+  activity, ever.** Not a timing race — confirmed empty via both
+  `Activity<PrintActivityAttributes>.activities` and `.activityUpdates` across an entire real
+  print, even while the widget extension independently rendered that same activity correctly the
+  whole time. A process only "knows" about an activity it locally called `Activity.request()`
+  for; the widget extension is fed an already-resolved `ActivityViewContext` directly by the
+  system at render time, bypassing local discovery entirely, but no other process gets that.
+  Foregrounding the app briefly "adopts" the activity into that process's awareness — which is why
+  `PrintLiveActivityManager.sync()` (run on `scenePhase` changes) can still locally update/end an
+  activity while the app happens to be open — but that awareness doesn't survive being
+  backgrounded again, and the notification extension, a fresh OS process per push with nothing
+  carried over between invocations, can never adopt it at all. This is also why
+  `ActivityAuthorizationError.visibility` ("The app tried to start the Live Activity while it was
+  in the background") makes `Activity.request()` a non-starter for starting one while locked in
+  the first place.
+- **Starting**: the relay watches for a print-start event — either Bambuddy's ntfy topic via SSE,
+  or by polling Bambuddy's own `/api/v1/printers/` + `/status` directly and diffing raw
+  `gcode_state` transitions (`BambuddyPoller`/`printerStateClassifier.js`; this is the trigger
+  actually in use — ntfy detection still exists, gated by `NTFY_TRIGGER_ENABLED`, off by default)
+  — and sends a push-to-start APNs request straight to Apple, bypassing the app/NSE entirely.
+  `PushNotificationManager` observes `Activity<PrintActivityAttributes>.pushToStartTokenUpdates`
+  and POSTs each token to the relay's `/register` endpoint.
+- **Updating and ending**: since local discovery is a dead end, these also go straight through
+  APNs, per-activity, bypassing the app and extension. Apple's docs promise the system wakes the
+  app specifically to deliver a fresh per-activity `pushToken` when an activity starts via
+  push-to-start, independent of whether the app is resident. `PushNotificationManager` observes
+  every activity's own `pushTokenUpdates` (discovered via `.activityUpdates`, started once at
+  launch) and POSTs each token, keyed by `printerID`, to the relay's `/register-activity`
+  endpoint. The relay pushes `update`/`end` events directly to that token as Bambuddy's real state
+  changes — no local discovery needed on either side.
+- **Background wake is a secondary fallback, not the primary fix.** The app also registers its
+  plain APNs device token (`/register-device`); the relay sends it a `content-available` push
+  alongside every push-to-start, which runs `PrintLiveActivityManager.sync()` in the background —
+  this is what lets a locally-created/backgrounded activity stay in sync even without a
+  foreground, but the per-activity push path above is what actually carries the print end-to-end
+  while the phone stays locked and the app never runs at all.
+- **Content is real Bambuddy telemetry, not text parsed from a notification.** The relay calls
+  Bambuddy's own `GET /api/v1/printers/{id}/status` directly (`BambuddyClient`/
+  `bambuddyEnrichment.js`) for progress, layer count, nozzle/bed temps, job name, and remaining
+  time — the same API this app's own `BambuddyAPIClient` uses — rather than regex-parsing ntfy
+  alert text. Enrichment failures fail open independently *per field* (numeric telemetry,
+  `coverImage`, and `liveSnapshot` each get their own try/catch): a flaky camera endpoint costs
+  exactly that one image, never the whole update. `estimatedEndAt` specifically distrusts an
+  implausible `remaining_time` (Bambuddy reports `0`–`3`s at print start before it's computed a
+  real estimate, and for at least one test G-code file, seemingly never computes one at all) —
+  when rejected, the field is simply omitted rather than shown wrong; the widget's fallback
+  (below) renders cleanly either way.
+- **The issue badge mirrors Bambuddy's own HMS severity scale, confirmed from its frontend
+  source** (`HMSErrorModal.tsx`'s `getSeverityInfo`), not guessed: severity 1/2 (Fatal/Serious) →
+  `issueSeverity: "error"`, severity 3 (Warning) → `"warning"`, severity 4/anything else (Info) →
+  no badge at all. This last case is load-bearing, not incidental: a persistent "Developer Mode
+  not enabled" advisory on this deployment is genuine severity 5, and briefly shipped as a
+  Live-Activity-wide false "Error" before the severity floor (and Bambuddy's own `hms_errors`
+  presence-flakiness, needing a debounce) were both accounted for. `AppStore.mapState` computes
+  the app's *own* printer-list status the same way, independently, for the same reason —
+  see below.
+- **A printer only shows as `Error` (app) or gets a "Failed" label (relay) when a real qualifying
+  HMS issue is actually attached — not just because the raw state string says `FAILED`.**
+  Confirmed against Bambuddy's own frontend (`classifyPrinterStatus`, `PrintersPage.tsx`): "FAILED
+  without an active HMS error is the printer's terminal state after any unsuccessful end —
+  including user-cancellations. Treat the same as FINISH... only escalate to error when an HMS
+  code is actually attached." Before this, `AppStore.mapState` mapped raw `FAILED` straight to
+  `.error` unconditionally, so a printer sitting idle after any stopped print showed "Error"
+  forever. The relay applies the same principle to the Live Activity's terminal `stateLabel`:
+  "Failed" only when a real issue was confirmed active going into the transition
+  (`priorIssueSeverity`, captured from the poll *before* the FAILED tick — Bambuddy resets
+  `progress`/`layer_num` to 0 the instant `gcode_state` becomes `FAILED`, so both the label
+  decision and the final progress shown use the last-good pre-transition snapshot, not a fresh,
+  already-reset query); otherwise it says "Stopped" — deliberately not "Complete" (implies
+  success, wrong for a print the user manually ended) and not "Failed" (implies a fault that
+  isn't confirmed).
+- **The widget shows the actual reported progress, not a time-interpolated estimate — and a
+  clock time, not a countdown.** A locally interpolated `elapsed / (estimatedEndAt - startedAt)`
+  fraction drifts from the real percentage whenever print speed isn't linear (a slow first layer,
+  say), and — separately — a Live Activity's rendering only guarantees continuous on-device
+  refresh for a specific short list of primitives (date-styled `Text`, `ProgressView(timerInterval:)`);
+  an arbitrary `TimelineView`, which is what the interpolation used, isn't reliably re-evaluated
+  between pushes in that context, so it likely wasn't buying the smoothness it was written for
+  either. The progress bar and percentage both read `state.progress` directly now. The former
+  countdown-timer display is a localized "Est. finish" clock time instead
+  (`Text(_:style: .time)`, a stopwatch icon in place of a text label), which is both more useful
+  and, being date-styled, one of the primitives that *does* refresh live.
+- **Corrections happen on a fixed interval, not on Bambuddy's own progress milestones.** The
+  relay's poll trigger only reacts to real `gcode_state` transitions (start/pause/resume/
+  finish/failed) and a new HMS issue — "progress crossed 50%" isn't one of those. A periodic
+  correction (`LIVE_ACTIVITY_CORRECTION_INTERVAL_MS`, currently 1 minute — a short print can
+  finish well inside the old 10-minute default, during which nothing but a state-change event
+  would ever refresh the display) re-fetches and re-pushes fresh telemetry to any active print
+  with no other event, filling the gap between real transitions.
+- **The `UIGraphicsImageRenderer` scale trap** (relevant to the app's own local downscale
+  helpers, which the relay's separate `sharp`-based downscale — see the relay's own docs — doesn't
+  share the same failure mode for but does replicate the same output caps for). Both pin
+  `format.scale = 1` explicitly: without it, `UIGraphicsImageRenderer(size:)` defaults to the
   device's screen scale (2x/3x), so a "40pt" thumbnail was actually rasterizing at up to 9x the
   intended pixel count — no amount of JPEG quality reduction could compress that back down under
-  budget, and every real photo was silently rejected by the size guard. This was chased through
-  three rounds of "raise the byte cap" before the actual cause was found by instrumenting the
-  compression loop live against a real image on-device; the byte caps that remain now have real
-  headroom rather than being load-bearing.
+  budget, and every real photo was silently rejected by the size guard.
 - **Why the images are capped so small (under ~1.3KB each).** ActivityKit's real budget for the
   *whole* serialized `ContentState` is close to 4KB, and a `Data` field costs ~33% more once
-  base64-encoded into that JSON on top of it. An earlier, looser cap (3KB for one image) blew that
-  budget and the system ended the Live Activity outright rather than just dropping the update —
-  so the guard fails closed: if compression can't hit the target, no image is sent for that update
-  rather than risking the activity.
+  base64-encoded into that JSON on top of it. Blowing that budget doesn't fail gracefully — the
+  system ends the Live Activity outright rather than just dropping the update — so every guard
+  here fails closed: if compression can't hit the target, no image is sent for that field rather
+  than risking the activity.
 - **`await`, never a bare `Task { }`, for `activity.update()`/`.end()`.** Two real, confirmed bugs
   came from this: in the app, `AppStore.refresh()` returning before an un-awaited update Task
-  finished meant the update could be dropped if the app was backgrounded moments later (exactly
-  the common "glance at the app, then lock the phone to check the Lock Screen" flow); in the
+  finished meant the update could be dropped if the app was backgrounded moments later; in the
   extension, it was close to guaranteed to fail, since the extension process is liable to be
-  terminated shortly after `deliver(content)` is called, and a bare `Task { }` there had no
-  guarantee of running to completion before that happened. Both `PrintLiveActivityManager.sync()`
+  terminated shortly after `deliver(content)` is called. Both `PrintLiveActivityManager.sync()`
   and the extension's `updateLiveActivity()` are `async` specifically so their callers can await
   them fully before returning.
-- **The extension used to be what actually ended a finished Live Activity, back when the app
-  created every activity itself.** Bambuddy's completion/failure/stop pushes arrive via APNs
-  regardless of app state, so the extension detects them by title (substring-matching
-  "complete"/"fail"/"cancel"/"stop" — the only titles confirmed against live traffic are the
-  "complete" family; the others are inferred from Bambuddy's own event-flag names) and calls
-  `activity.end(...)` itself. That logic is still in place and still correct *if* it can find a
-  matching activity — but see the push-to-start entry below: every activity today is
-  push-to-start-created, and this extension can never locally find one of those, so in practice
-  this path doesn't fire anymore. Ending now happens via the relay's direct per-activity push
-  instead. Kept in place as a working fallback for any activity the app *does* create locally,
-  not removed outright.
-- **Printer matching by normalized name text, not an ID.** ntfy messages carry no printer
-  identifier, only a name embedded in the title/body — and inconsistently, sometimes the display
-  name ("Vic H2C") and sometimes the printer's raw slug ("vic-h2c"). Both the extension's activity
-  matching and its terminal-state detection strip everything but letters/digits before comparing,
-  which matches either form.
-- **A locked phone needs the relay for everything — starting, updating, *and* ending — not just
-  starting.** ActivityKit only allows `Activity.request` (starting a *new* activity) to succeed
-  while the containing app is in the foreground, confirmed via `ActivityAuthorizationError.visibility`
-  ("The app tried to start the Live Activity while it was in the background"). That much was
-  expected going in. What wasn't expected, and cost a full debugging session to pin down: **neither
-  the app nor the notification extension can *locally discover* a push-to-start-created activity at
-  all**, ever — not a timing race, confirmed empty via both `Activity<PrintActivityAttributes>.activities`
-  and `.activityUpdates` across an entire real print (0%, 50%, 75%, and the final "Print Completed"
-  event all saw an empty list in the extension), even while the widget was independently rendering
-  that same activity correctly the whole time. A process only "knows" about a `PrintActivityAttributes`
-  activity it locally called `Activity.request()` for; a push-to-start activity was never created by
-  any local call, so nothing populates that snapshot for the app or the extension — only the widget
-  extension, which the system feeds an already-resolved `ActivityViewContext` directly at render
-  time, bypassing local discovery entirely. Opening the app to the foreground briefly "adopts" the
-  activity into *that process's* awareness (confirmed: cover image and real progress appeared the
-  moment the app was foregrounded) — but that awareness doesn't survive being backgrounded again,
-  and the extension, being a fresh OS process per push with nothing carried over between pushes,
-  can never adopt it at all.
-
-  The actual fix has two halves, and both are required — one alone doesn't cover the whole flow:
-
-  1. **Starting**: [`nozzlecast-relay`](https://github.com/hibikipr/nozzlecast-relay), a small,
-     self-hosted Node.js service the user runs alongside Bambuddy/ntfy (not a NozzleCast-operated
-     service, matching this project's "no backend of NozzleCast's own" principle), subscribes to
-     Bambuddy's ntfy topic directly via SSE and sends a push-to-start APNs request (`"event": "start"`
-     plus `attributes-type`/`attributes`/`content-state`/`alert`) straight to Apple on a "print
-     started" event — bypassing the app/NSE entirely. `PushNotificationManager` observes
-     `Activity<PrintActivityAttributes>.pushToStartTokenUpdates` and POSTs each token to the relay's
-     `/register` endpoint.
-  2. **Updating and ending**: since local discovery is a dead end, updates/ends also go straight
-     through APNs, per-activity, bypassing the app and extension the same way. Apple's docs promise
-     the system wakes the app specifically to deliver a fresh per-activity `pushToken` when an
-     activity starts via push-to-start — a system-guaranteed wake, independent of whether the app
-     happens to be resident. `PushNotificationManager` observes every activity's own
-     `pushTokenUpdates` (discovered via `Activity<PrintActivityAttributes>.activityUpdates`, started
-     once at launch so it's already listening before the next print begins) and POSTs each token,
-     keyed by `printerID`, to the relay's `/register-activity` endpoint. From there the relay pushes
-     `update`/`end` events directly to that token on every subsequent Bambuddy event — no local
-     discovery needed on either side.
-
-  Confirmed working end-to-end on a real device, phone locked, through a full print: start →
-  progress updates → completion.
+- **The extension's own local end/update logic is a harmless, effectively-dead fallback today.**
+  It's still correct *if* it can find a matching activity, but per the local-discovery finding
+  above, it never can for any current (push-to-start-created) activity — real ending happens via
+  the relay's per-activity push instead. Kept in place as a base for any activity a local process
+  *did* create itself, not removed outright.
+- **Printer matching by normalized name text, not an ID, on both sides of the relay boundary.**
+  ntfy/Bambuddy carry no printer identifier usable across process/service boundaries, only a name
+  — and inconsistently, sometimes the display name ("Vic H2C") and sometimes the printer's raw
+  slug ("vic-h2c"). `PrintActivityAttributes.normalizedID` strips everything but letters/digits
+  before comparing; the relay's own `normalizedID()` (`parsing.js`) does the same thing
+  independently, so a name computed on either side of the process boundary matches.
 
   `RelayConfigStore`/`RelayConnectionSheet` hold the relay's URL and auth secret, entered once in
-  Settings. `NotificationService.updateLiveActivity`'s own text-parsing update/end logic is kept in
-  place as a harmless fallback for any activity a local process *did* create itself, but with every
-  current activity being push-to-start-created, it's effectively dead code today — left in rather
-  than deleted, as a base to build on rather than something to re-derive from scratch.
+  Settings.
 
 ## AMS and inventory
 
