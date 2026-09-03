@@ -78,24 +78,18 @@ private func telemetryChips(_ state: PrintActivityAttributes.ContentState) -> so
     }
 }
 
-/// A percentage that tracks the same date-interval interpolation as `progressView`'s bar,
-/// rather than the raw `state.progress` snapshot — otherwise the two visibly disagree between
-/// refreshes, since the bar keeps animating on-device while the number only updates when
-/// `AppStore.refresh()` runs (there's no continuous polling).
+/// The printer's actual last-reported progress — deliberately not locally interpolated from
+/// elapsed time. A time-based estimate drifts from the real percentage whenever print speed
+/// isn't perfectly linear (e.g. a slow first layer), and a Live Activity's rendering only
+/// guarantees continuous on-device refresh for a few specific primitives (date-styled `Text`,
+/// `ProgressView(timerInterval:)`) — an arbitrary `TimelineView` like the one this used to use
+/// isn't reliably re-evaluated between pushes in a Live Activity, so it wasn't even buying the
+/// smoothness it was written for.
 private struct LiveProgressText: View {
     var state: PrintActivityAttributes.ContentState
 
     var body: some View {
-        if let end = state.estimatedEndAt, end > state.startedAt {
-            TimelineView(.periodic(from: state.startedAt, by: 1)) { context in
-                let total = end.timeIntervalSince(state.startedAt)
-                let elapsed = context.date.timeIntervalSince(state.startedAt)
-                let fraction = min(max(elapsed / total, 0), 1)
-                Text(fraction, format: .percent.precision(.fractionLength(0)))
-            }
-        } else {
-            Text(state.progress, format: .percent.precision(.fractionLength(0)))
-        }
+        Text(state.progress, format: .percent.precision(.fractionLength(0)))
     }
 }
 
@@ -149,17 +143,9 @@ struct PrintActivityWidget: Widget {
 
 @ViewBuilder
 private func progressView(state: PrintActivityAttributes.ContentState) -> some View {
-    if let end = state.estimatedEndAt, end > state.startedAt {
-        ProgressView(timerInterval: state.startedAt...end, countsDown: false) {
-            EmptyView()
-        } currentValueLabel: {
-            EmptyView()
-        }
+    // The actual reported percentage, not a time-interpolated estimate — see LiveProgressText.
+    ProgressView(value: state.progress)
         .tint(accent)
-    } else {
-        ProgressView(value: state.progress)
-            .tint(accent)
-    }
 }
 
 private struct LockScreenView: View {
@@ -208,7 +194,9 @@ private struct LockScreenView: View {
                     LiveProgressText(state: state)
                     Spacer()
                     if let end = state.estimatedEndAt {
-                        Text(end, style: .timer)
+                        // `.time` renders a localized clock time (respects the device's current
+                        // timezone/locale automatically) rather than a countdown duration.
+                        Text("Est. finish ") + Text(end, style: .time)
                     }
                 }
                 .font(.caption2)
