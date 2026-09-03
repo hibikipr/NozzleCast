@@ -216,13 +216,20 @@ final class AppStore {
         var smartPlug: (info: BambuddySmartPlugSummaryDTO, status: BambuddySmartPlugStatusDTO)?
     }
 
-    private static func mapState(_ dto: BambuddyStatusDTO?) -> PrinterState {
+    /// `hasQualifyingHMSError` mirrors Bambuddy's own `classifyPrinterStatus` (confirmed against
+    /// its frontend source, `frontend/src/pages/PrintersPage.tsx`): a bare `FAILED` gcode_state
+    /// with no real HMS error attached is the printer's terminal state after *any* unsuccessful
+    /// end — including a plain user cancellation — and Bambuddy explicitly treats that the same
+    /// as `FINISH`, not as an error. Only an actual qualifying HMS code escalates to `.error`.
+    /// Without this, a printer sat idle after a stopped/failed print with no real fault showed
+    /// "Error" indefinitely, contradicting Bambuddy's own dashboard showing it as fine.
+    private static func mapState(_ dto: BambuddyStatusDTO?, hasQualifyingHMSError: Bool) -> PrinterState {
         guard let dto else { return .offline }
         if !dto.connected { return .offline }
+        if hasQualifyingHMSError { return .error }
         switch dto.state.uppercased() {
         case "RUNNING", "PRINTING", "PREPARE", "SLICING": return .printing
         case "PAUSE", "PAUSED": return .paused
-        case "FAILED", "ERROR": return .error
         default: return .idle
         }
     }
@@ -230,7 +237,14 @@ final class AppStore {
     private static func mapPrinter(_ dto: BambuddyPrinterDTO, extras: PrinterExtras, obico: BambuddyObicoStatusDTO?, assignmentsByPrinterSlot: [String: BambuddyAssignmentDTO]) -> Printer {
         let id = "bb-\(dto.id)"
         let status = extras.status
-        let state = mapState(status)
+        let hmsErrors: [HMSError] = (status?.hmsErrors ?? []).map { hms in
+            HMSError(fullCode: hms.fullCode, severity: hms.severity, description: hms.description)
+        }
+        // Severity <=3 (Bambuddy's own Fatal/Serious/Warning) qualifies as a real issue; severity
+        // 4/Info (e.g. a "Developer Mode not enabled" advisory) does not — same threshold used
+        // for the Live Activity's issue badge, so the two surfaces agree on what counts as an
+        // actual problem worth surfacing versus routine chatter.
+        let state = mapState(status, hasQualifyingHMSError: hmsErrors.contains { $0.severity <= 3 })
         let temps = status?.temperatures
 
         func reading(current: Double?, target: Double?) -> TemperatureReading {
@@ -285,10 +299,6 @@ final class AppStore {
                 rawColorHex: tray.trayColor.flatMap { $0.isEmpty ? nil : "#" + $0.prefix(6).uppercased() },
                 rawMaterialLabel: tray.trayType?.isEmpty == false ? tray.trayType : nil
             )
-        }
-
-        let hmsErrors: [HMSError] = (status?.hmsErrors ?? []).map { hms in
-            HMSError(fullCode: hms.fullCode, severity: hms.severity, description: hms.description)
         }
 
         let nozzles: [NozzleInfo] = (status?.nozzles ?? []).enumerated().map { index, n in
