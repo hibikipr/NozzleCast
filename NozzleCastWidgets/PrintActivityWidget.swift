@@ -194,9 +194,12 @@ private struct LockScreenView: View {
                     LiveProgressText(state: state)
                     Spacer()
                     if let end = state.estimatedEndAt {
-                        // `.time` renders a localized clock time (respects the device's current
-                        // timezone/locale automatically) rather than a countdown duration.
-                        Text("Est. finish ") + Text(end, style: .time)
+                        HStack(spacing: 3) {
+                            Image(systemName: "stopwatch")
+                            // `.time` renders a localized clock time (respects the device's
+                            // current timezone/locale automatically) rather than a countdown.
+                            Text(end, style: .time)
+                        }
                     }
                 }
                 .font(.caption2)
