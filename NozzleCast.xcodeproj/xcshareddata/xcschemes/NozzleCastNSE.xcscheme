@@ -58,8 +58,12 @@
       allowLocationSimulation = "YES"
       launchAutomaticallySubstyle = "2"
       queueDebuggingEnabled = "No">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <RemoteRunnable
+         runnableDebuggingMode = "0"
+         BundleIdentifier = "com.victormanuel.NozzleCast"
+         RemotePath = "/var/containers/Bundle/Application/DC0AE089-44E2-4081-B7A3-72DAA098EB0C/NozzleCast.app">
+      </RemoteRunnable>
+      <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "000000000000000100000000"
@@ -67,7 +71,7 @@
             BlueprintName = "NozzleCast"
             ReferencedContainer = "container:NozzleCast.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
