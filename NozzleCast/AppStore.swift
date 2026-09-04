@@ -18,6 +18,16 @@ final class AppStore {
     var grantedPermissions: Set<String> = []
     var isRefreshing = false
 
+    /// Set once resolved (see `resolvePendingDeepLink()`) — `MonitorView` observes this to push
+    /// straight to that printer's detail screen instead of leaving people on the printer list.
+    /// Apple's Live Activity guidance: "Take people directly to related details and actions —
+    /// don't make them navigate to find relevant information."
+    var pendingDeepLinkPrinterID: String?
+    /// Set by `handleDeepLink` when the link arrives before `printers` is populated yet — a cold
+    /// launch straight from the Live Activity hits this every time, since the deep link and the
+    /// first refresh race. Re-resolved after every `printers` assignment below.
+    private var pendingDeepLinkNormalizedID: String?
+
     private var locationNames: [Int: String] = [:]
 
     init(config: BambuddyConfig) {
@@ -63,6 +73,7 @@ final class AppStore {
     func loadMockData() {
         printers = MockData.makePrinters()
         spools = MockData.makeSpools()
+        resolvePendingDeepLink()
     }
 
     func printer(_ id: String) -> Printer? { printers.first { $0.id == id } }
@@ -160,6 +171,7 @@ final class AppStore {
             printers = printerList.map { dto in
                 Self.mapPrinter(dto, extras: extras[dto.id] ?? PrinterExtras(status: nil, maintenance: nil, smartPlug: nil), obico: obico, assignmentsByPrinterSlot: assignmentsByPrinterSlot)
             }
+            resolvePendingDeepLink()
 
             // The cover render is static for the whole print, so only fetch it once per job
             // rather than on every refresh — the Live Activity manager tells us who already has one.
@@ -568,6 +580,24 @@ final class AppStore {
     func webCameraURL(printerID: String) -> URL? {
         guard let serverURL = config.serverURL, let bbID = bambuddyID(printerID) else { return nil }
         return serverURL.appendingPathComponent("camera/\(bbID)")
+    }
+
+    // MARK: - Deep linking
+
+    /// Resolves the Live Activity's `nozzlecast://printer/<normalized-name>` link (see
+    /// `PrintActivityAttributes.normalizedID`, the same key the widget and NSE use) to an actual
+    /// printer and stashes it for `MonitorView` to push to.
+    func handleDeepLink(printerNormalizedID: String) {
+        pendingDeepLinkNormalizedID = printerNormalizedID
+        resolvePendingDeepLink()
+    }
+
+    private func resolvePendingDeepLink() {
+        guard let normalizedID = pendingDeepLinkNormalizedID,
+              let printer = printers.first(where: { PrintActivityAttributes.normalizedID($0.name) == normalizedID })
+        else { return }
+        pendingDeepLinkPrinterID = printer.id
+        pendingDeepLinkNormalizedID = nil
     }
 
     // MARK: - AMS assignment
