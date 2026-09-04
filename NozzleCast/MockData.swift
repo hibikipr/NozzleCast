@@ -13,6 +13,9 @@ enum MockData {
     static let pureWhite = "mock-spool-pure-white"
     static let magentaPink = "mock-spool-magenta-pink"
     static let charcoalGrey = "mock-spool-charcoal-grey"
+    static let clearPETG = "mock-spool-clear-petg"
+    static let rainbowSilk = "mock-spool-rainbow-silk"
+    static let sparkleBlack = "mock-spool-sparkle-black"
 
     static func makeSpools() -> [Spool] {
         [
@@ -24,6 +27,9 @@ enum MockData {
             Spool(id: pureWhite, material: "ABS", colorName: "Pure White", colorHex: "#F2F2F2", brand: "Bambu Lab", remainingPercent: 60, netWeightGrams: 1000, location: .ams(printerID: officeP1S, amsIndex: 0, trayIndex: 2)),
             Spool(id: magentaPink, material: "TPU", colorName: "Magenta Pink", colorHex: "#C22A7A", brand: "Overture", remainingPercent: 55, netWeightGrams: 500, location: .storage(name: nil)),
             Spool(id: charcoalGrey, material: "PETG", colorName: "Charcoal Grey", colorHex: "#4A4A4A", brand: "Polymaker", remainingPercent: 20, netWeightGrams: 1000, location: .storage(name: nil)),
+            Spool(id: clearPETG, material: "PETG", colorName: "Clear", colorHex: "#D9E4E8", colorAlpha: 0.18, brand: "Bambu Lab", remainingPercent: 80, netWeightGrams: 1000, location: .storage(name: nil), effectType: "translucent"),
+            Spool(id: rainbowSilk, material: "PLA", colorName: "Silk Multicolor", colorHex: "#E8622C", extraColorHexes: ["#D9A426", "#2A5FCC", "#C22A7A"], brand: "eSun", remainingPercent: 65, netWeightGrams: 1000, location: .storage(name: nil), subtype: "Multicolor", effectType: "multicolor"),
+            Spool(id: sparkleBlack, material: "PLA", colorName: "Galaxy Black", colorHex: "#141414", brand: "Polymaker", remainingPercent: 40, netWeightGrams: 1000, location: .storage(name: nil), effectType: "sparkle"),
         ]
     }
 

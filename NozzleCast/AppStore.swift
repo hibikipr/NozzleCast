@@ -366,6 +366,15 @@ final class AppStore {
 
     /// "EC984C,#6CD4BC, a66eb9" -> ["#EC984C", "#6CD4BC", "#A66EB9"] — tolerant of the leading
     /// "#" being present or not and stray whitespace, since that's user-typed input.
+    /// Bambuddy's `rgba` field is 6 hex digits (opaque) or 8 (RRGGBB**AA** — the last byte is
+    /// alpha). Anything short of 8 digits is treated as fully opaque.
+    private static func parseAlpha(_ rgba: String?) -> Double {
+        guard let rgba else { return 1 }
+        let clean = rgba.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard clean.count >= 8, let value = UInt8(clean.suffix(2), radix: 16) else { return 1 }
+        return Double(value) / 255
+    }
+
     private static func parseExtraColors(_ raw: String?) -> [String] {
         guard let raw, !raw.isEmpty else { return [] }
         return raw.split(separator: ",").compactMap { part in
@@ -400,12 +409,14 @@ final class AppStore {
             material: dto.material,
             colorName: dto.colorName ?? dto.material,
             colorHex: "#" + (dto.rgba?.prefix(6).uppercased() ?? "808080"),
+            colorAlpha: Self.parseAlpha(dto.rgba),
             extraColorHexes: parseExtraColors(dto.extraColors),
             brand: dto.brand ?? "Unknown",
             remainingPercent: percentRemaining,
             netWeightGrams: dto.labelWeight ?? 1000,
             location: location,
             subtype: dto.subtype,
+            effectType: dto.effectType,
             slicerFilamentID: dto.slicerFilament,
             nozzleTempMin: dto.nozzleTempMin,
             nozzleTempMax: dto.nozzleTempMax,

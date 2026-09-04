@@ -160,9 +160,11 @@ struct PrinterCard: View {
                         FlowLayout(spacing: 6, rowSpacing: 6) {
                             ForEach(allTrays) { tray in
                                 let spool = store.spool(tray.spoolID)
-                                Circle()
-                                    .fill(spool.map { Color(hex: $0.colorHex) } ?? Color.white.opacity(0.08))
-                                    .frame(width: 11, height: 11)
+                                Group {
+                                    if let spool { spool.swatch.clipShape(Circle()) }
+                                    else { Circle().fill(Color.white.opacity(0.08)) }
+                                }
+                                .frame(width: 11, height: 11)
                             }
                         }
                     }
@@ -170,9 +172,11 @@ struct PrinterCard: View {
                     FlowLayout(spacing: 7, rowSpacing: 7) {
                         ForEach(allTrays) { tray in
                             let spool = store.spool(tray.spoolID)
-                            Circle()
-                                .fill(spool.map { Color(hex: $0.colorHex) } ?? Color.white.opacity(0.08))
-                                .frame(width: 15, height: 15)
+                            Group {
+                                if let spool { spool.swatch.clipShape(Circle()) }
+                                else { Circle().fill(Color.white.opacity(0.08)) }
+                            }
+                            .frame(width: 15, height: 15)
                         }
                     }
                 }

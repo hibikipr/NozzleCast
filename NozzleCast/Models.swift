@@ -212,6 +212,11 @@ struct Spool: Identifiable, Equatable {
     var material: String
     var colorName: String
     var colorHex: String
+    /// Alpha channel from Bambuddy's `rgba` field (the 4th RRGGBB**AA** byte), 0...1. Bambuddy
+    /// has no separate "is translucent" flag — a spool reads as translucent purely because this
+    /// is less than 1, which the swatch renders over a checkerboard so it actually looks clear
+    /// instead of a flat, muddy color. 1 for a fully opaque spool (the vast majority).
+    var colorAlpha: Double = 1
     /// Additional hex color stops beyond `colorHex` — a dual/multi-color or gradient-effect
     /// spool (Bambuddy's "Extra colors" field). Empty for a plain single-color spool.
     var extraColorHexes: [String] = []
@@ -220,8 +225,15 @@ struct Spool: Identifiable, Equatable {
     var netWeightGrams: Int
     var location: SpoolLocation
 
-    /// Sub-brand/profile name, e.g. "PLA Basic", "PETG HF" — Bambu's `tray_sub_brands`.
+    /// Sub-brand/profile name, e.g. "PLA Basic", "PETG HF" — Bambu's `tray_sub_brands`. Also
+    /// doubles as Bambuddy's multi-color marker: a value of "Multicolor" means `extraColorHexes`
+    /// should render as a pie wheel rather than a blended gradient.
     var subtype: String? = nil
+    /// Bambuddy's finish/effect label for the swatch overlay — "sparkle", "silk", "matte",
+    /// "wood", "marble", "glow", "galaxy", "metal", "translucent", "rainbow", or nil for a plain
+    /// filament. Purely cosmetic; "translucent" itself paints nothing extra since the look
+    /// already comes from `colorAlpha` — it's a categorical label only.
+    var effectType: String? = nil
     /// Bambu's short filament preset id, e.g. "GFL05" — what `configure` calls `tray_info_idx`.
     /// Not editable via a catalog search yet (that's a large separate undertaking); shown/edited
     /// as a raw code for now.

@@ -223,7 +223,7 @@ struct SpoolCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
-                Rectangle().fill(spool.swatchFill)
+                spool.swatch
                 Text(spool.material)
                     .ncFont(size: 11, weight: .bold, relativeTo: .caption2)
                     .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black.opacity(0.7) : .white)
@@ -275,9 +275,9 @@ struct SpoolListRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(spool.swatchFill)
+            spool.swatch
                 .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay {
                     Text(spool.material)
                         .ncFont(size: 9, weight: .bold, relativeTo: .caption2)

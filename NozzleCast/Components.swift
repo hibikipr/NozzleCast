@@ -242,8 +242,7 @@ struct AMSSlotCard: View {
         VStack(spacing: 6) {
             ZStack {
                 if let spool {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(spool.swatchFill)
+                    spool.swatch
                     Text(spool.material)
                         .ncFont(size: 10, weight: .bold, relativeTo: .caption2)
                         .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black : .white)

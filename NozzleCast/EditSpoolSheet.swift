@@ -122,15 +122,15 @@ struct EditSpoolSheet: View {
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
 
                 if !extraColorHexes.isEmpty {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: ([colorHex] + extraColorHexes).map { Color(hex: $0) },
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(height: 28)
+                    FilamentSwatchView(
+                        colorHex: colorHex,
+                        alpha: spool.colorAlpha,
+                        extraColorHexes: extraColorHexes,
+                        subtype: subtype.isEmpty ? nil : subtype,
+                        effectType: spool.effectType
+                    )
+                    .frame(height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
 
                 Text("For a dual/multi-color or gradient-effect spool. Leave blank for a plain single color.")

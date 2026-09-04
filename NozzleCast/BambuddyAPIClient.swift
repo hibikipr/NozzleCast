@@ -152,6 +152,8 @@ struct BambuddySpoolDTO: Codable {
     var note: String?
     /// Comma-separated hex stops, e.g. "EC984C,6CD4BC,A66EB9" — a dual/multi-color spool.
     var extraColors: String?
+    /// Swatch finish, e.g. "silk", "sparkle", "matte", "translucent". Nil for a plain filament.
+    var effectType: String?
 }
 
 /// Partial update for a spool — only non-nil fields are sent, matching Bambuddy's PATCH

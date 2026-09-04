@@ -78,7 +78,7 @@ struct AMSAssignSheet: View {
 
                 if let occupant {
                     HStack(spacing: 8) {
-                        Circle().fill(Color(hex: occupant.colorHex)).frame(width: 22, height: 22)
+                        occupant.swatch.frame(width: 22, height: 22).clipShape(Circle())
                         Text("\(occupant.material) · \(occupant.colorName)")
                             .ncFont(size: 14, relativeTo: .subheadline)
                             .foregroundStyle(NCColor.textSecondary)
@@ -187,9 +187,9 @@ private struct SpoolRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(spool.swatchFill)
+            spool.swatch
                 .frame(width: 34, height: 34)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(spool.material) · \(spool.colorName)")
