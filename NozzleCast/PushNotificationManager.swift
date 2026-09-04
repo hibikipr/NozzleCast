@@ -133,7 +133,14 @@ final class PushNotificationManager: NSObject {
     /// One task per printer's activity, not a single shared one: each activity has its own
     /// independent `pushTokenUpdates` stream and can rotate its token separately.
     func startObservingActivityPushTokensIfConfigured() {
-        guard activityDiscoveryTask == nil, RelayConfigStore.isConfigured else { return }
+        guard activityDiscoveryTask == nil, RelayConfigStore.isConfigured else {
+            // Previously silent on both branches — indistinguishable in the console from this
+            // task simply not having been called yet vs. having been skipped for a real reason.
+            NSLog("NCDEBUG activity discovery not started: alreadyRunning=%d relayConfigured=%d",
+                  activityDiscoveryTask != nil, RelayConfigStore.isConfigured)
+            return
+        }
+        NSLog("NCDEBUG activity discovery starting")
         activityDiscoveryTask = Task {
             for await activity in Activity<PrintActivityAttributes>.activityUpdates {
                 guard activityPushTokenTasks[activity.id] == nil else { continue }
@@ -144,8 +151,15 @@ final class PushNotificationManager: NSObject {
                         NSLog("NCDEBUG activity push token received for printerID=%@ (%d bytes)", printerID, tokenData.count)
                         await self.registerActivityPushToken(tokenData, printerID: printerID)
                     }
+                    NSLog("NCDEBUG activity pushTokenUpdates stream ended for printerID=%@", printerID)
                 }
             }
+            // If this ever logs, the whole discovery mechanism is dead for the rest of the
+            // process's life — `activityDiscoveryTask` stays non-nil, so the guard above never
+            // lets it restart. `Activity<T>.activityUpdates` isn't documented to finish on its
+            // own, but there's no other way here to tell "never started" apart from "started,
+            // then silently died" without this.
+            NSLog("NCDEBUG activityUpdates stream ended — activity discovery is now dead until relaunch")
         }
     }
 

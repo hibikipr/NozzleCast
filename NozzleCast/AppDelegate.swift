@@ -22,8 +22,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // rotated token would silently stop the relay's wake push from ever reaching this device.
         Task {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
+            NSLog("NCDEBUG launch notification authorizationStatus=%ld", settings.authorizationStatus.rawValue)
             if settings.authorizationStatus == .authorized {
                 await MainActor.run { application.registerForRemoteNotifications() }
+            } else {
+                // Silent before this: if permission was ever revoked (or never granted) after an
+                // earlier launch, this branch skips `registerForRemoteNotifications()` every time
+                // — the plain APNs device token `/register-device` needs never gets requested
+                // again, with nothing in the logs showing why. Distinct from Live Activities
+                // itself, which has its own separate iOS permission and keeps working regardless.
+                NSLog("NCDEBUG skipping registerForRemoteNotifications: not authorized")
             }
         }
         return true
@@ -35,7 +43,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         // No user-facing surface for this — push simply stays unavailable until the next
-        // successful registration attempt (e.g. after the user re-grants permission).
+        // successful registration attempt (e.g. after the user re-grants permission). Previously
+        // had no logging at all, so this failure path was completely invisible — if
+        // `registerForRemoteNotifications()` fails, `handleAPNsToken`/`/register-device` never
+        // fires and there was no trace of why.
+        NSLog("NCDEBUG registerForRemoteNotifications failed: %@", String(describing: error))
     }
 
     /// Handles the relay's `content-available` background wake push (see
