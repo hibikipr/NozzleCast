@@ -76,18 +76,4 @@ enum PushSharedStore {
     static func deleteHistoryImage(id: String) {
         try? FileManager.default.removeItem(at: historyImageURL(id: id))
     }
-
-    // MARK: - Live Activity preferences (mirrors NozzleCast/PushSharedStore.swift — keep in sync)
-
-    private static var sharedDefaults: UserDefaults { UserDefaults(suiteName: appGroup)! }
-
-    static var liveActivitiesEnabled: Bool {
-        get { sharedDefaults.object(forKey: "liveActivitiesEnabled") as? Bool ?? true }
-        set { sharedDefaults.set(newValue, forKey: "liveActivitiesEnabled") }
-    }
-
-    static var liveActivityCameraPreviewEnabled: Bool {
-        get { sharedDefaults.object(forKey: "liveActivityCameraPreviewEnabled") as? Bool ?? true }
-        set { sharedDefaults.set(newValue, forKey: "liveActivityCameraPreviewEnabled") }
-    }
 }
