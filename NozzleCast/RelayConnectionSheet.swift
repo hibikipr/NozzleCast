@@ -86,6 +86,7 @@ struct RelayConnectionSheet: View {
             _ = try RelayConfigStore.save(urlString: urlString, authSecret: authSecret)
             saveError = nil
             pushManager.startObservingPushToStartTokenIfConfigured()
+            pushManager.startObservingActivityPushTokensIfConfigured()
             dismiss()
         } catch {
             saveError = error.localizedDescription

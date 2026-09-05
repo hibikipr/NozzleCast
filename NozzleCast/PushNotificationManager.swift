@@ -132,6 +132,13 @@ final class PushNotificationManager: NSObject {
     ///
     /// One task per printer's activity, not a single shared one: each activity has its own
     /// independent `pushTokenUpdates` stream and can rotate its token separately.
+    ///
+    /// Like `startObservingPushToStartTokenIfConfigured()`, call again after the relay config
+    /// changes so a config saved after launch starts observing too — `activityDiscoveryTask`'s
+    /// `== nil` guard means missing that call leaves activity discovery permanently dead for the
+    /// rest of the process's life. Confirmed live: `RelayConnectionSheet.save()` re-armed only the
+    /// push-to-start observer, not this one, so /register-activity never fired on any process
+    /// whose first `configureFirebaseIfNeeded()` ran before the relay was configured.
     func startObservingActivityPushTokensIfConfigured() {
         guard activityDiscoveryTask == nil, RelayConfigStore.isConfigured else {
             // Previously silent on both branches — indistinguishable in the console from this
