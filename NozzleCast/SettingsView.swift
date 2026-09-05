@@ -55,8 +55,6 @@ struct SettingsView: View {
     @State private var importError: String?
     @State private var pushManager = PushNotificationManager.shared
     @State private var selectedIcon: AppIconOption = AppIconOption.allCases.first { $0.alternateIconName == UIApplication.shared.alternateIconName } ?? .default
-    @State private var liveActivitiesEnabled = PushSharedStore.liveActivitiesEnabled
-    @State private var liveActivityCameraPreviewEnabled = PushSharedStore.liveActivityCameraPreviewEnabled
 
     var body: some View {
         NavigationStack {
@@ -170,36 +168,6 @@ struct SettingsView: View {
                             }
                         }
                     }
-                }
-
-                Section {
-                    HStack {
-                        Text("Live Activities").foregroundStyle(.white)
-                        Spacer()
-                        Toggle("", isOn: $liveActivitiesEnabled)
-                            .labelsHidden()
-                            .tint(NCColor.accent)
-                            .onChange(of: liveActivitiesEnabled) { _, enabled in
-                                PushSharedStore.liveActivitiesEnabled = enabled
-                                Task { await PrintLiveActivityManager.shared.sync(printers: store.printers) }
-                            }
-                    }
-                    if liveActivitiesEnabled {
-                        HStack {
-                            Text("Camera Preview on Lock Screen").foregroundStyle(.white)
-                            Spacer()
-                            Toggle("", isOn: $liveActivityCameraPreviewEnabled)
-                                .labelsHidden()
-                                .tint(NCColor.accent)
-                                .onChange(of: liveActivityCameraPreviewEnabled) { _, enabled in
-                                    PushSharedStore.liveActivityCameraPreviewEnabled = enabled
-                                }
-                        }
-                    }
-                } header: {
-                    Text("Live Activities")
-                } footer: {
-                    Text("Shows a printer's progress on the Lock Screen and in the Dynamic Island while it prints. Camera Preview shows the printer's live camera frame there too — turn it off if you don't want that visible to anyone who picks up your phone.")
                 }
 
                 Section("App Icon") {

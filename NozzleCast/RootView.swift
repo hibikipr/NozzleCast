@@ -5,7 +5,6 @@ enum RootTab: Hashable {
 }
 
 struct RootView: View {
-    @Environment(AppStore.self) private var store
     @State private var selectedTab: RootTab = .monitor
 
     var body: some View {
@@ -28,11 +27,6 @@ struct RootView: View {
         }
         .tint(NCColor.accent)
         .preferredColorScheme(.dark)
-        // Tapping the Live Activity can land here from any tab — jump to Monitor first;
-        // `MonitorView` itself pushes to the specific printer once its printer list is loaded.
-        .onChange(of: store.pendingDeepLinkPrinterID) { _, id in
-            if id != nil { selectedTab = .monitor }
-        }
     }
 }
 

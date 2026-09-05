@@ -5,14 +5,13 @@ struct MonitorView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showNotifications = false
     @State private var unreadCount = 0
-    @State private var path: [String] = []
 
     private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
 
     private var isConnecting: Bool { store.isLoadingPrinters }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top) {
@@ -87,11 +86,6 @@ struct MonitorView: View {
                 }
             }
             .onAppear { refreshUnreadCount() }
-            .onChange(of: store.pendingDeepLinkPrinterID) { _, id in
-                guard let id else { return }
-                path = [id]
-                store.pendingDeepLinkPrinterID = nil
-            }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 refreshUnreadCount()

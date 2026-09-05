@@ -183,11 +183,6 @@ final class NotificationService: UNNotificationServiceExtension {
     /// directly to that token via APNs — no local discovery needed on either side. Confirmed working
     /// end-to-end (start → progress → completion, all while locked) as of this writing.
     private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?) async {
-        // Per Apple's guidance ("make it easy for people to turn them off in your app"), Settings
-        // exposes this toggle. Turning it off here just stops this push-driven path from touching
-        // activities further — `PrintLiveActivityManager.sync()` (the main app, on its next
-        // refresh) is what actually ends any that are already running.
-        guard PushSharedStore.liveActivitiesEnabled else { return }
         let haystack = PrintActivityAttributes.normalizedID((message.title ?? "") + " " + (message.message ?? ""))
         let terminalLabel = terminalStateLabel(forTitle: message.title ?? "")
         let progress = progressFraction(forTitle: message.title ?? "")
@@ -208,11 +203,7 @@ final class NotificationService: UNNotificationServiceExtension {
             }
             NSLog("NCDEBUG NSE matched activity id=%@ printerID=%@", activity.id, activity.attributes.printerID)
             var state = activity.content.state
-            // A live camera frame on the Lock Screen is visible to anyone who picks up the phone
-            // — Apple's guidance calls out letting people configure whether sensitive content
-            // like this shows there. Skips assignment entirely rather than clearing an existing
-            // frame, matching how `coverImage` is already left alone when a fresh one isn't sent.
-            if let thumbnail, PushSharedStore.liveActivityCameraPreviewEnabled { state.liveSnapshot = thumbnail }
+            if let thumbnail { state.liveSnapshot = thumbnail }
 
             // Awaited, not fired as an unstructured Task: the extension process is liable to be
             // terminated shortly after this method returns and `deliver(content)` is called, so

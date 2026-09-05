@@ -111,28 +111,4 @@ enum PushSharedStore {
     static func deleteHistoryImage(id: String) {
         try? FileManager.default.removeItem(at: historyImageURL(id: id))
     }
-
-    // MARK: - Live Activity preferences (read by both the main app and the NSE, which can also
-    // start/update/end activities on its own from a push — see NotificationService.swift)
-
-    private static var sharedDefaults: UserDefaults { UserDefaults(suiteName: appGroup)! }
-
-    /// Master on/off switch exposed in Settings, per Apple's Live Activity guidance: "make it
-    /// easy for people to turn them off in your app" rather than only via the system Settings
-    /// app. Defaults to on since that's the existing behavior for everyone before this setting
-    /// existed.
-    static var liveActivitiesEnabled: Bool {
-        get { sharedDefaults.object(forKey: "liveActivitiesEnabled") as? Bool ?? true }
-        set { sharedDefaults.set(newValue, forKey: "liveActivitiesEnabled") }
-    }
-
-    /// Whether the printer's live camera frame is shown on the Lock Screen Live Activity.
-    /// Defaults to on (existing behavior), but per Apple's guidance to "let people configure
-    /// whether to show sensitive data," a live camera feed of someone's workshop is exactly the
-    /// kind of thing worth an explicit opt-out for — the Lock Screen is visible to anyone who
-    /// picks up the phone.
-    static var liveActivityCameraPreviewEnabled: Bool {
-        get { sharedDefaults.object(forKey: "liveActivityCameraPreviewEnabled") as? Bool ?? true }
-        set { sharedDefaults.set(newValue, forKey: "liveActivityCameraPreviewEnabled") }
-    }
 }
