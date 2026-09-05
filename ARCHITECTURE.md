@@ -130,10 +130,16 @@ primary mechanism for something that has to keep working with the phone locked.
   APNs, per-activity, bypassing the app and extension. Apple's docs promise the system wakes the
   app specifically to deliver a fresh per-activity `pushToken` when an activity starts via
   push-to-start, independent of whether the app is resident. `PushNotificationManager` observes
-  every activity's own `pushTokenUpdates` (discovered via `.activityUpdates`, started once at
-  launch) and POSTs each token, keyed by `printerID`, to the relay's `/register-activity`
-  endpoint. The relay pushes `update`/`end` events directly to that token as Bambuddy's real state
-  changes — no local discovery needed on either side.
+  every activity's own `pushTokenUpdates` (discovered via `.activityUpdates`) and POSTs each
+  token, keyed by `printerID`, to the relay's `/register-activity` endpoint. The relay pushes
+  `update`/`end` events directly to that token as Bambuddy's real state changes — no local
+  discovery needed on either side. This observation starts from `configureFirebaseIfNeeded()` at
+  launch (gated on `RelayConfigStore.isConfigured`) and is re-armed from `RelayConnectionSheet`
+  when the relay is configured post-launch — **confirmed live 2026-09-05: the re-arm call was
+  missing for this specific observer** (only the push-to-start observer was re-armed), so
+  `/register-activity` never fired at all on any process whose first `configureFirebaseIfNeeded()`
+  ran before the relay was configured, with no way to recover short of a full relaunch. Fixed by
+  adding the matching call in `RelayConnectionSheet.save()`.
 - **Background wake is a secondary fallback, not the primary fix.** The app also registers its
   plain APNs device token (`/register-device`); the relay sends it a `content-available` push
   alongside every push-to-start, which runs `PrintLiveActivityManager.sync()` in the background —
