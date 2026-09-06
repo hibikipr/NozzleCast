@@ -91,6 +91,18 @@ final class PrintLiveActivityManager {
             return
         }
 
+        // Settings' "Live Activities" toggle — Apple's guidance says to make this easy to turn
+        // off in-app rather than only through the system Settings app. This is the one path
+        // guaranteed to run periodically (every foreground refresh), so it's what actually tears
+        // down anything already running when someone flips the toggle off.
+        guard PushSharedStore.liveActivitiesEnabled else {
+            for activity in Activity<PrintActivityAttributes>.activities where activity.activityState == .active {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+            lastFingerprints.removeAll()
+            return
+        }
+
         let printingByID = Dictionary(uniqueKeysWithValues: printers.filter { $0.state == .printing }.map { (PrintActivityAttributes.normalizedID($0.name), $0) })
         NSLog("NCDEBUG sync: printingCount=%d activeActivities=%d", printingByID.count, Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }.count)
 
