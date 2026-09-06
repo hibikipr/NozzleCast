@@ -12,6 +12,12 @@ struct MyApp: App {
         WindowGroup {
             RootView()
                 .environment(appDelegate.store)
+                // Live Activity tap target — see `PrintActivityWidget`'s `.widgetURL` and
+                // `AppStore.handleDeepLink`. Scheme registered in Info.plist's CFBundleURLTypes.
+                .onOpenURL { url in
+                    guard url.scheme == "nozzlecast", url.host == "printer" else { return }
+                    appDelegate.store.handleDeepLink(printerNormalizedID: url.lastPathComponent)
+                }
         }
     }
 }

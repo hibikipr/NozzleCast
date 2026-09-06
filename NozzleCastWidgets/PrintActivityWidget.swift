@@ -108,12 +108,22 @@ private struct LiveProgressText: View {
     }
 }
 
+/// Opens the printer's own detail screen rather than leaving people on the printer list — Apple's
+/// Live Activity guidance: "Take people directly to related details and actions." One URL for the
+/// whole activity (Lock Screen, compact, minimal, and expanded all tap through to it, since none
+/// of the Dynamic Island regions below override it with their own `Link`), which also satisfies
+/// "ensure both leading and trailing elements link to the same screen" — there's only one link.
+private func deepLinkURL(for attributes: PrintActivityAttributes) -> URL {
+    URL(string: "nozzlecast://printer/\(attributes.printerID)")!
+}
+
 struct PrintActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PrintActivityAttributes.self) { context in
             LockScreenView(attributes: context.attributes, state: context.state)
                 .activityBackgroundTint(Color(red: 0x1a / 255, green: 0x1a / 255, blue: 0x1a / 255))
                 .activitySystemActionForegroundColor(.white)
+                .widgetURL(deepLinkURL(for: context.attributes))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
