@@ -1,7 +1,8 @@
 import ActivityKit
 import WidgetKit
 import SwiftUI
-import UIKit
+import CoreGraphics
+import ImageIO
 import NozzleCastShared
 
 private let accent = Color(red: 0x2A / 255, green: 0x5F / 255, blue: 0xCC / 255)
@@ -11,8 +12,10 @@ private let accent = Color(red: 0x2A / 255, green: 0x5F / 255, blue: 0xCC / 255)
 /// before that fetch completes) a plain printer icon.
 @ViewBuilder
 private func thumbnailView(_ data: Data?, size: CGFloat) -> some View {
-    if let data, let uiImage = UIImage(data: data) {
-        Image(uiImage: uiImage)
+    if let data,
+       let source = CGImageSourceCreateWithData(data as CFData, nil),
+       let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+        Image(decorative: cgImage, scale: 1.0)
             .resizable()
             .aspectRatio(contentMode: .fill)
             .frame(width: size, height: size)

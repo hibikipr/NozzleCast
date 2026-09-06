@@ -86,7 +86,29 @@ struct MonitorView: View {
                 }
             }
             .onAppear { refreshUnreadCount() }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(30))
+                    guard !Task.isCancelled else { break }
+                    if case .connected = store.connectionStatus, !store.isRefreshing {
+                        NSLog("NCDEBUG poll: foreground refresh tick")
+                        await store.refresh()
+                    } else if case .failed = store.connectionStatus {
+                        // 421 / transient network errors drop connectionStatus to .failed;
+                        // rather than waiting for the next foreground event, reconnect here.
+                        NSLog("NCDEBUG poll: reconnect attempt after failed state")
+                        await store.testConnectionAndRefresh()
+                    }
+                }
+            }
             .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .active: NSLog("NCDEBUG scenePhase -> active (connectionStatus=%@)", String(describing: store.connectionStatus))
+                case .inactive: NSLog("NCDEBUG scenePhase -> inactive")
+                case .background: NSLog("NCDEBUG scenePhase -> background")
+                @unknown default: break
+                }
                 guard phase == .active else { return }
                 refreshUnreadCount()
                 // ActivityKit only allows starting a *new* Live Activity while the app is
@@ -99,6 +121,12 @@ struct MonitorView: View {
                 // there showing no Live Activity until manually pulled-to-refresh.
                 if store.isLive {
                     Task { await store.refresh() }
+                } else if case .failed = store.connectionStatus {
+                    // A transient launch failure (e.g. network not yet routed) leaves
+                    // connectionStatus as .failed, which makes isLive false and blocks
+                    // the refresh above — so the app stays stuck on mock data forever
+                    // without a pull-to-refresh. Retry the full connection here instead.
+                    Task { await store.testConnectionAndRefresh() }
                 }
             }
         }

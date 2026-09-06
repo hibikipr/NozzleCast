@@ -465,6 +465,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NozzleCast/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NozzleCast;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSCameraUsageDescription = "NozzleCast uses the camera to scan filament barcodes and labels.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
@@ -516,6 +517,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NozzleCast/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NozzleCast;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSCameraUsageDescription = "NozzleCast uses the camera to scan filament barcodes and labels.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;

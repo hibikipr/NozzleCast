@@ -153,6 +153,12 @@ final class PushNotificationManager: NSObject {
                 guard activityPushTokenTasks[activity.id] == nil else { continue }
                 let printerID = activity.attributes.printerID
                 NSLog("NCDEBUG activityUpdates discovered activity id=%@ printerID=%@", activity.id, printerID)
+                // Register the token immediately if iOS has already generated it — pushTokenUpdates
+                // may never fire if the activity ends before the async stream delivers its first value.
+                if let tokenData = activity.pushToken {
+                    NSLog("NCDEBUG activity push token immediately available for printerID=%@ (%d bytes)", printerID, tokenData.count)
+                    await registerActivityPushToken(tokenData, printerID: printerID)
+                }
                 activityPushTokenTasks[activity.id] = Task {
                     for await tokenData in activity.pushTokenUpdates {
                         NSLog("NCDEBUG activity push token received for printerID=%@ (%d bytes)", printerID, tokenData.count)
@@ -188,15 +194,32 @@ final class PushNotificationManager: NSObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONEncoder().encode(["token": token, "printerID": printerID, "environment": environment])
 
+        NSLog("NCDEBUG activity push token registration POST to %@ for printerID=%@", config.url.appendingPathComponent("register-activity").absoluteString, printerID)
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                NSLog("NCDEBUG activity push token registration failed with unexpected response: %@", String(describing: response))
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            NSLog("NCDEBUG activity push token registration HTTP %d for printerID=%@", status, printerID)
+            guard (200..<300).contains(status) else {
+                NSLog("NCDEBUG activity push token registration body: %@", String(data: data, encoding: .utf8) ?? "(non-UTF8)")
                 return
             }
             NSLog("NCDEBUG activity push token registration succeeded for printerID=%@", printerID)
         } catch {
             NSLog("NCDEBUG activity push token registration failed: %@", String(describing: error))
+        }
+    }
+
+    /// Scans all currently active Live Activities for an immediately-available push token and
+    /// registers any found with the relay. Call after every background sync — `pushTokenUpdates`
+    /// may not deliver while the app is suspended, so the token can arrive between wakeups without
+    /// the async stream firing; this catches it via the synchronous `pushToken` property instead.
+    func recheckActivityTokens() async {
+        guard RelayConfigStore.isConfigured else { return }
+        for activity in Activity<PrintActivityAttributes>.activities where activity.activityState == .active {
+            guard let tokenData = activity.pushToken else { continue }
+            let printerID = activity.attributes.printerID
+            NSLog("NCDEBUG recheckActivityTokens: token available for printerID=%@ (%d bytes)", printerID, tokenData.count)
+            await registerActivityPushToken(tokenData, printerID: printerID)
         }
     }
 
@@ -216,6 +239,7 @@ final class PushNotificationManager: NSObject {
     }
 
     func handleAPNsToken(_ deviceToken: Data) {
+        NSLog("NCDEBUG APNS device token received (%d bytes)", deviceToken.count)
         Messaging.messaging().apnsToken = deviceToken
         Task { await registerDeviceToken(deviceToken) }
     }
@@ -281,7 +305,26 @@ final class PushNotificationManager: NSObject {
 }
 
 extension PushNotificationManager: MessagingDelegate {
+    // Fires when Firebase finally has a valid FCM token — which may be later than the initial
+    // `configureFirebaseIfNeeded()` call if the APNS token wasn't yet available (the most common
+    // case on a cold launch: `registerForRemoteNotifications()` is async and `subscribe()` is
+    // called before it completes, causing "No APNS token specified" and a failed subscription).
+    // Re-subscribing here ensures the topic subscription actually lands even if the first attempt
+    // was dropped.
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-        // No server-side device registry to update — subscriptions are purely topic-based.
+        // Firebase swizzles didRegisterForRemoteNotificationsWithDeviceToken and may not call
+        // through to AppDelegate's implementation, so the APNS token never reaches handleAPNsToken
+        // via that path. By the time this callback fires Firebase holds both the APNS and FCM
+        // tokens, so grab the APNS token here as the guaranteed fallback.
+        if let apnsToken = messaging.apnsToken {
+            NSLog("NCDEBUG FCM callback: APNS token available (%d bytes), registering device with relay", apnsToken.count)
+            Task { await registerDeviceToken(apnsToken) }
+        } else {
+            NSLog("NCDEBUG FCM callback: no APNS token available yet")
+        }
+
+        guard let config = PushSharedStore.loadNtfyConfig() else { return }
+        NSLog("NCDEBUG FCM token received, re-subscribing to ntfy topic")
+        subscribe(server: config.server, topic: config.topic, authToken: config.authToken)
     }
 }

@@ -1,6 +1,7 @@
 import ActivityKit
 import Foundation
 import UIKit
+import UserNotifications
 import NozzleCastShared
 
 /// Keeps one Live Activity per actively-printing printer in sync with `AppStore`'s latest
@@ -61,9 +62,13 @@ final class PrintLiveActivityManager {
     /// the activity's existing cover image as-is rather than clearing it, since it's fetched
     /// once at print start and doesn't change.
     func sync(printers: [Printer], coverImages: [String: Data] = [:]) async {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            NSLog("NCDEBUG sync skipped: areActivitiesEnabled=false")
+            return
+        }
 
         let printingByID = Dictionary(uniqueKeysWithValues: printers.filter { $0.state == .printing }.map { (PrintActivityAttributes.normalizedID($0.name), $0) })
+        NSLog("NCDEBUG sync: printingCount=%d activeActivities=%d", printingByID.count, Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }.count)
 
         // Awaited rather than fired as unstructured Tasks: an un-awaited `Task { await
         // activity.update(...) }` can get cut off before it completes if the app is backgrounded
@@ -77,7 +82,7 @@ final class PrintLiveActivityManager {
 
         for activity in activeActivities {
             guard let printer = printingByID[activity.attributes.printerID] else {
-                await activity.end(nil, dismissalPolicy: .after(.now.addingTimeInterval(30)))
+                await activity.end(nil, dismissalPolicy: .after(.now.addingTimeInterval(1800)))
                 continue
             }
             let existing = activity.content.state
@@ -90,11 +95,52 @@ final class PrintLiveActivityManager {
         }
 
         let activePrinterIDs = Set(activeActivities.map(\.attributes.printerID))
-        for printer in printingByID.values where !activePrinterIDs.contains(PrintActivityAttributes.normalizedID(printer.name)) {
+        let newPrinters = printingByID.values.filter { !activePrinterIDs.contains(PrintActivityAttributes.normalizedID($0.name)) }
+        guard !newPrinters.isEmpty else { return }
+
+        let appState = await UIApplication.shared.applicationState
+        NSLog("NCDEBUG sync: attempting Activity.request for %d printer(s) (state=%d)", newPrinters.count, appState.rawValue)
+
+        var needsOpenAppPrompt = false
+        for printer in newPrinters {
             let id = PrintActivityAttributes.normalizedID(printer.name)
             let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
             let state = Self.contentState(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
-            _ = try? Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
+            do {
+                _ = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
+                NSLog("NCDEBUG Activity.request succeeded for printerID=%@", id)
+            } catch {
+                NSLog("NCDEBUG Activity.request failed for printerID=%@: %@", id, String(describing: error))
+                if String(describing: error).contains("visibility") {
+                    needsOpenAppPrompt = true
+                }
+            }
+        }
+        if needsOpenAppPrompt {
+            await scheduleOpenAppNotification(for: newPrinters.map(\.name))
+        }
+    }
+
+    /// Posts a local notification when the app is in the background and can't create a Live
+    /// Activity directly (ActivityKit's `.visibility` gate). The notification prompts the user to
+    /// foreground the app so the next sync can call `Activity.request()` successfully.
+    private func scheduleOpenAppNotification(for printerNames: [String]) async {
+        let content = UNMutableNotificationContent()
+        content.title = printerNames.count == 1
+            ? "\(printerNames[0]) started printing"
+            : "\(printerNames.count) printers started printing"
+        content.body = "Open NozzleCast to start the Live Activity."
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "com.victormanuel.NozzleCast.liveactivity-prompt",
+            content: content,
+            trigger: nil
+        )
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            NSLog("NCDEBUG scheduled open-app notification for %d printer(s)", printerNames.count)
+        } catch {
+            NSLog("NCDEBUG failed to schedule open-app notification: %@", String(describing: error))
         }
     }
 

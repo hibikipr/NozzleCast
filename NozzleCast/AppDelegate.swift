@@ -1,5 +1,6 @@
 import UIKit
 import UserNotifications
+import FirebaseMessaging
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     /// Owned here, not as a SwiftUI `@State` in `MyApp`: `UIApplicationDelegateAdaptor` guarantees
@@ -62,9 +63,26 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
         NSLog("NCDEBUG AppDelegate received remote notification, waking store to sync")
+        // Required when FirebaseAppDelegateProxyEnabled = false — Firebase won't see FCM messages
+        // otherwise, and the ntfy topic subscription (routed via FCM) would stop delivering.
+        Messaging.messaging().appDidReceiveMessage(userInfo)
         Task {
             await store.refresh()
-            NSLog("NCDEBUG AppDelegate background sync complete")
+            var printingCount = store.printers.filter { $0.state == .printing }.count
+            NSLog("NCDEBUG AppDelegate background sync complete (printingCount=%d)", printingCount)
+
+            // Bambuddy's REST API lags 5-10s behind the print-start event that triggered
+            // this push. Retry twice so the Bambuddy API has time to catch up before we
+            // give up and leave the push-to-start activity without a registered token.
+            for attempt in 1...2 where printingCount == 0 {
+                try? await Task.sleep(for: .seconds(5))
+                await store.refresh()
+                printingCount = store.printers.filter { $0.state == .printing }.count
+                NSLog("NCDEBUG AppDelegate background sync retry %d (printingCount=%d)", attempt, printingCount)
+            }
+            // pushTokenUpdates may not fire while the app is suspended — poll the synchronous
+            // pushToken property on every wakeup so we catch the token as soon as iOS generates it.
+            await PushNotificationManager.shared.recheckActivityTokens()
             completionHandler(.newData)
         }
     }

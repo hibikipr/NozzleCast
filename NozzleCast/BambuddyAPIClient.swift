@@ -283,6 +283,21 @@ struct BambuddyAPIClient {
     private func send(_ req: URLRequest) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw BambuddyAPIError.invalidResponse }
+        if http.statusCode == 421 {
+            // HTTP/2 connection coalescing: iOS reused a stale channel for a different hostname
+            // and the server (openresty/nginx) rejected it. RFC 9113 says the client SHOULD retry
+            // with a fresh connection — URLSession.shared doesn't do this automatically, so we
+            // open an ephemeral session that forces a new TCP+TLS handshake.
+            NSLog("NCDEBUG 421 Misdirected Request, retrying with fresh session")
+            let fresh = URLSession(configuration: .ephemeral)
+            defer { fresh.finishTasksAndInvalidate() }
+            let (data2, response2) = try await fresh.data(for: req)
+            guard let http2 = response2 as? HTTPURLResponse else { throw BambuddyAPIError.invalidResponse }
+            guard (200..<300).contains(http2.statusCode) else {
+                throw BambuddyAPIError.http(http2.statusCode, String(data: data2, encoding: .utf8) ?? "")
+            }
+            return data2
+        }
         guard (200..<300).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? ""
             throw BambuddyAPIError.http(http.statusCode, message)

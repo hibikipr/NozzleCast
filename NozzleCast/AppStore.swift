@@ -89,7 +89,9 @@ final class AppStore {
             await refresh()
             return true
         } catch {
-            connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            NSLog("NCDEBUG Bambuddy connection failed: %@", msg)
+            connectionStatus = .failed(msg)
             loadMockData()
             return false
         }
@@ -186,7 +188,9 @@ final class AppStore {
                 .filter { $0.archivedAt == nil }
                 .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames) }
         } catch {
-            connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
+            connectionStatus = .failed(msg)
         }
     }
 
