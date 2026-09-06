@@ -7,6 +7,18 @@ import NozzleCastShared
 
 private let accent = Color(red: 0x2A / 255, green: 0x5F / 255, blue: 0xCC / 255)
 
+/// Evaluates its content at init time; if construction throws the section renders as
+/// EmptyView so every other section in the widget can still appear.
+private struct SafeSection: View {
+    private let _body: AnyView
+
+    init<Content: View>(@ViewBuilder _ content: () throws -> Content) {
+        _body = (try? AnyView(content())) ?? AnyView(EmptyView())
+    }
+
+    var body: some View { _body }
+}
+
 /// Renders the printer's live camera snapshot when Bambuddy has sent one, falling back to the
 /// sliced-plate cover render fetched at print start, and only as a last resort (the brief window
 /// before that fetch completes) a plain printer icon.
@@ -105,40 +117,54 @@ struct PrintActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    thumbnailView(context.state.preferredThumbnail, size: 36)
-                        .overlay(alignment: .topTrailing) {
-                            issueBadge(context.state).padding(-3)
-                        }
+                    SafeSection {
+                        thumbnailView(context.state.preferredThumbnail, size: 36)
+                            .overlay(alignment: .topTrailing) {
+                                issueBadge(context.state).padding(-3)
+                            }
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    LiveProgressText(state: context.state)
-                        .foregroundStyle(.white)
+                    SafeSection {
+                        LiveProgressText(state: context.state)
+                            .foregroundStyle(.white)
+                    }
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    Text(context.attributes.printerName)
-                        .font(.headline)
-                        .foregroundStyle(.white)
+                    SafeSection {
+                        Text(context.attributes.printerName)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let job = context.state.jobName {
-                            Text(job)
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.7))
-                                .lineLimit(1)
+                    SafeSection {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if let job = context.state.jobName {
+                                Text(job)
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .lineLimit(1)
+                            }
+                            progressView(state: context.state)
+                            telemetryChips(context.state)
                         }
-                        progressView(state: context.state)
-                        telemetryChips(context.state)
                     }
                 }
             } compactLeading: {
-                thumbnailView(context.state.preferredThumbnail, size: 20)
+                SafeSection {
+                    thumbnailView(context.state.preferredThumbnail, size: 20)
+                }
             } compactTrailing: {
-                LiveProgressText(state: context.state)
-                    .font(.caption2)
-                    .foregroundStyle(.white)
+                SafeSection {
+                    LiveProgressText(state: context.state)
+                        .font(.caption2)
+                        .foregroundStyle(.white)
+                }
             } minimal: {
-                thumbnailView(context.state.preferredThumbnail, size: 16)
+                SafeSection {
+                    thumbnailView(context.state.preferredThumbnail, size: 16)
+                }
             }
         }
     }
@@ -157,57 +183,69 @@ private struct LockScreenView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            thumbnailView(state.preferredThumbnail, size: 56)
-                .overlay(alignment: .topLeading) {
-                    if state.liveSnapshot != nil {
-                        HStack(spacing: 3) {
-                            Circle().fill(Color(hex: "#22C55E")).frame(width: 4, height: 4)
-                            Text("LIVE").font(.system(size: 6, weight: .bold))
+            SafeSection {
+                thumbnailView(state.preferredThumbnail, size: 56)
+                    .overlay(alignment: .topLeading) {
+                        if state.liveSnapshot != nil {
+                            HStack(spacing: 3) {
+                                Circle().fill(Color(hex: "#22C55E")).frame(width: 4, height: 4)
+                                Text("LIVE").font(.system(size: 6, weight: .bold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.black.opacity(0.55)))
+                            .padding(3)
                         }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.black.opacity(0.55)))
-                        .padding(3)
                     }
-                }
-                .overlay(alignment: .topTrailing) {
-                    issueBadge(state).padding(-3)
-                }
+                    .overlay(alignment: .topTrailing) {
+                        issueBadge(state).padding(-3)
+                    }
+            }
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(attributes.printerName)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    Spacer()
-                    Text(state.stateLabel)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.6))
-                }
-                if let job = state.jobName {
-                    Text(job)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                progressView(state: state)
-                HStack {
-                    LiveProgressText(state: state)
-                    Spacer()
-                    if let end = state.estimatedEndAt {
-                        HStack(spacing: 3) {
-                            Image(systemName: "stopwatch")
-                            // `.time` renders a localized clock time (respects the device's
-                            // current timezone/locale automatically) rather than a countdown.
-                            Text(end, style: .time)
-                        }
+                SafeSection {
+                    HStack {
+                        Text(attributes.printerName)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Spacer()
+                        Text(state.stateLabel)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.6))
                     }
                 }
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.6))
-                telemetryChips(state)
+                SafeSection {
+                    if let job = state.jobName {
+                        Text(job)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                SafeSection {
+                    progressView(state: state)
+                }
+                SafeSection {
+                    HStack {
+                        LiveProgressText(state: state)
+                        Spacer()
+                        if let end = state.estimatedEndAt {
+                            HStack(spacing: 3) {
+                                Image(systemName: "stopwatch")
+                                // `.time` renders a localized clock time (respects the device's
+                                // current timezone/locale automatically) rather than a countdown.
+                                Text(end, style: .time)
+                            }
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.6))
+                }
+                SafeSection {
+                    telemetryChips(state)
+                }
             }
         }
         .padding()

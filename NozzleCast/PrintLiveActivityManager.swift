@@ -99,9 +99,17 @@ final class PrintLiveActivityManager {
         guard !newPrinters.isEmpty else { return }
 
         let appState = UIApplication.shared.applicationState
-        NSLog("NCDEBUG sync: attempting Activity.request for %d printer(s) (state=%d)", newPrinters.count, appState.rawValue)
 
-        var needsOpenAppPrompt = false
+        // Activity.request() always throws a visibility error from the background — it can only
+        // be called from the foreground. When backgrounded, rely on the push-to-start token that
+        // was already registered with the relay, and prompt the user to foreground as a fallback.
+        guard appState == .active || appState == .inactive else {
+            NSLog("NCDEBUG sync: skipping Activity.request in background (state=%d), scheduling open-app prompt", appState.rawValue)
+            await scheduleOpenAppNotification(for: newPrinters.map(\.name))
+            return
+        }
+
+        NSLog("NCDEBUG sync: attempting Activity.request for %d printer(s) (state=%d)", newPrinters.count, appState.rawValue)
         for printer in newPrinters {
             let id = PrintActivityAttributes.normalizedID(printer.name)
             let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
@@ -111,13 +119,7 @@ final class PrintLiveActivityManager {
                 NSLog("NCDEBUG Activity.request succeeded for printerID=%@", id)
             } catch {
                 NSLog("NCDEBUG Activity.request failed for printerID=%@: %@", id, String(describing: error))
-                if String(describing: error).contains("visibility") {
-                    needsOpenAppPrompt = true
-                }
             }
-        }
-        if needsOpenAppPrompt {
-            await scheduleOpenAppNotification(for: newPrinters.map(\.name))
         }
     }
 
