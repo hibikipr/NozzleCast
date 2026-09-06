@@ -159,7 +159,14 @@ final class PrintLiveActivityManager {
             let state = Self.contentState(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
             lastFingerprints[id] = Self.fingerprint(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
             do {
-                _ = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
+                // pushType: .token requests a per-activity push token for this activity, same as
+                // one started via push-to-start gets automatically -- per Apple's docs, an
+                // activity created without it never gets a push channel at all, regardless of any
+                // later observation of `pushTokenUpdates`. This path only runs while the app is
+                // foregrounded, but the relay (PushNotificationManager.startObservingActivityPushTokensIfConfigured)
+                // is meant to drive every activity's update/end via APNs once backgrounded -- an
+                // activity started here without this would have no push channel to fall back on.
+                _ = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil), pushType: .token)
                 NSLog("NCDEBUG Activity.request succeeded for printerID=%@", id)
             } catch {
                 NSLog("NCDEBUG Activity.request failed for printerID=%@: %@", id, String(describing: error))
