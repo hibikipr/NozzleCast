@@ -18,6 +18,30 @@ final class PrintLiveActivityManager {
 
     private init() {}
 
+    /// The subset of a printer's state that actually changes what's on screen, keyed by
+    /// `PrintActivityAttributes.printerID`. `ContentState.startedAt`/`estimatedEndAt` are
+    /// re-derived from `Date()` on every call (see `contentState(for:...)`), so they drift by
+    /// fractions of a second even when nothing real changed — comparing the full `ContentState`
+    /// for equality would never skip a single update. Comparing this instead is what actually
+    /// lets a no-op refresh skip the push, per Apple's "update only when new content is
+    /// available" Live Activity guidance.
+    private struct SyncFingerprint: Equatable {
+        var progress: Double
+        var stateLabel: String
+        var jobName: String?
+        var etaMinutesRemaining: Int?
+        var currentLayer: Int?
+        var totalLayers: Int?
+        var nozzleTempC: Int?
+        var bedTempC: Int?
+        var issueSeverity: String?
+        var issueCount: Int?
+        var coverImage: Data?
+        var liveSnapshot: Data?
+    }
+
+    private var lastFingerprints: [String: SyncFingerprint] = [:]
+
     /// Whether a printer's activity already has a cover image cached, so callers can skip
     /// re-fetching it (it's static for the whole print, unlike `liveSnapshot`).
     func hasCoverImage(printerName: String) -> Bool {
@@ -86,13 +110,20 @@ final class PrintLiveActivityManager {
                 continue
             }
             let existing = activity.content.state
-            let state = Self.contentState(
-                for: printer,
-                coverImage: coverImages[activity.attributes.printerID] ?? existing.coverImage,
-                liveSnapshot: existing.liveSnapshot
-            )
+            let coverImage = coverImages[activity.attributes.printerID] ?? existing.coverImage
+            let fingerprint = Self.fingerprint(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot)
+            // Apple's Live Activity guidance: "Update a Live Activity only when new content is
+            // available." `ContentState.startedAt`/`estimatedEndAt` are re-derived from `Date()`
+            // below on every call and drift by fractions of a second regardless, so comparing
+            // those (or the whole `ContentState`) would never actually skip anything — this
+            // fingerprint deliberately excludes them.
+            guard lastFingerprints[activity.attributes.printerID] != fingerprint else { continue }
+            lastFingerprints[activity.attributes.printerID] = fingerprint
+            let state = Self.contentState(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot)
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
+
+        lastFingerprints = lastFingerprints.filter { printingByID[$0.key] != nil }
 
         let activePrinterIDs = Set(activeActivities.map(\.attributes.printerID))
         let newPrinters = printingByID.values.filter { !activePrinterIDs.contains(PrintActivityAttributes.normalizedID($0.name)) }
@@ -114,6 +145,7 @@ final class PrintLiveActivityManager {
             let id = PrintActivityAttributes.normalizedID(printer.name)
             let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
             let state = Self.contentState(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
+            lastFingerprints[id] = Self.fingerprint(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
             do {
                 _ = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
                 NSLog("NCDEBUG Activity.request succeeded for printerID=%@", id)
@@ -146,6 +178,31 @@ final class PrintLiveActivityManager {
         }
     }
 
+    private static func issueInfo(for printer: Printer) -> (severity: String?, count: Int?) {
+        let qualifyingSeverities = printer.hmsErrors.map(\.severity).filter { $0 <= 3 }
+        guard !qualifyingSeverities.isEmpty else { return (nil, nil) }
+        let severity = qualifyingSeverities.contains { $0 <= 2 } ? "error" : "warning"
+        return (severity, qualifyingSeverities.count)
+    }
+
+    private static func fingerprint(for printer: Printer, coverImage: Data?, liveSnapshot: Data?) -> SyncFingerprint {
+        let issue = issueInfo(for: printer)
+        return SyncFingerprint(
+            progress: printer.progress ?? 0,
+            stateLabel: printer.state.label,
+            jobName: printer.jobFileName,
+            etaMinutesRemaining: printer.etaMinutesRemaining,
+            currentLayer: printer.currentLayer,
+            totalLayers: printer.totalLayers,
+            nozzleTempC: printer.nozzle.current,
+            bedTempC: printer.bed.current,
+            issueSeverity: issue.severity,
+            issueCount: issue.count,
+            coverImage: coverImage,
+            liveSnapshot: liveSnapshot
+        )
+    }
+
     private static func contentState(for printer: Printer, coverImage: Data?, liveSnapshot: Data?) -> PrintActivityAttributes.ContentState {
         let progress = printer.progress ?? 0
         let now = Date()
@@ -161,8 +218,7 @@ final class PrintLiveActivityManager {
             startedAt = now
         }
 
-        let qualifyingSeverities = printer.hmsErrors.map(\.severity).filter { $0 <= 3 }
-        let issueSeverity: String? = qualifyingSeverities.isEmpty ? nil : (qualifyingSeverities.contains { $0 <= 2 } ? "error" : "warning")
+        let issue = issueInfo(for: printer)
 
         return .init(
             progress: progress,
@@ -176,8 +232,8 @@ final class PrintLiveActivityManager {
             bedTempC: printer.bed.current,
             coverImage: coverImage,
             liveSnapshot: liveSnapshot,
-            issueSeverity: issueSeverity,
-            issueCount: qualifyingSeverities.isEmpty ? nil : qualifyingSeverities.count
+            issueSeverity: issue.severity,
+            issueCount: issue.count
         )
     }
 }
