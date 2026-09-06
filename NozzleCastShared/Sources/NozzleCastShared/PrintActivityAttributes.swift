@@ -8,7 +8,7 @@ import Foundation
 /// is concerned — an activity started by one target is invisible to another. All three targets
 /// (app, NSE, widget extension) must depend on this one compiled definition.
 public struct PrintActivityAttributes: ActivityAttributes {
-    public struct ContentState: Codable, Hashable {
+    public struct ContentState: Codable, Hashable, Sendable {
         public var progress: Double
         public var stateLabel: String
         public var jobName: String?

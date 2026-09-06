@@ -1,4 +1,4 @@
-import ActivityKit
+@preconcurrency import ActivityKit
 import Foundation
 import UIKit
 import UserNotifications
@@ -98,7 +98,7 @@ final class PrintLiveActivityManager {
         let newPrinters = printingByID.values.filter { !activePrinterIDs.contains(PrintActivityAttributes.normalizedID($0.name)) }
         guard !newPrinters.isEmpty else { return }
 
-        let appState = await UIApplication.shared.applicationState
+        let appState = UIApplication.shared.applicationState
         NSLog("NCDEBUG sync: attempting Activity.request for %d printer(s) (state=%d)", newPrinters.count, appState.rawValue)
 
         var needsOpenAppPrompt = false

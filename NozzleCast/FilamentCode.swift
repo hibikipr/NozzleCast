@@ -1,8 +1,15 @@
 import Foundation
 
-enum FilamentCodeKind {
+enum FilamentCodeKind: Equatable, Sendable {
     case gtin
     case sku
+
+    nonisolated static func == (lhs: FilamentCodeKind, rhs: FilamentCodeKind) -> Bool {
+        switch (lhs, rhs) {
+        case (.gtin, .gtin), (.sku, .sku): true
+        default: false
+        }
+    }
 }
 
 /// Fields recovered from a filament database hit (OFD or SpoolmanDB-Community share this shape).

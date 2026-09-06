@@ -10,7 +10,7 @@ import NozzleCastShared
 /// use: title/body/priority/attachment. Bambuddy attaches a live camera snapshot to most print
 /// events (confirmed against real message history), so this also attaches that photo to the
 /// visible notification and pushes a small thumbnail into the matching printer's Live Activity.
-final class NotificationService: UNNotificationServiceExtension {
+final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestAttemptContent: UNMutableNotificationContent?
 
@@ -27,6 +27,7 @@ final class NotificationService: UNNotificationServiceExtension {
         }
 
         Task {
+            guard let content = bestAttemptContent else { return }
             switch message.event {
             case "poll_request":
                 await handlePollRequest(message, content: content)
