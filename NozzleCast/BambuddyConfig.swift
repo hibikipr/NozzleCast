@@ -8,12 +8,26 @@ final class BambuddyConfig {
     private static let serverKeychainKey = "bambuddy.serverURL"
     private static let apiKeyKeychainKey = "bambuddy.apiKey"
 
+    /// Guards the `didSet` persistence below during `init()` — the Keychain items are stored
+    /// `kSecAttrAccessibleAfterFirstUnlock`, so a background launch (e.g. a push wake) right
+    /// after a device restart, before the phone has been unlocked even once, reads `nil` for
+    /// credentials that are genuinely still there. Without this guard, that transient read
+    /// failure would flow straight into `didSet` and permanently overwrite the real Keychain
+    /// value with an empty string — this is what caused credentials to go blank after a restart.
+    private var isInitializing = true
+
     var serverURLString: String {
-        didSet { KeychainStore.set(serverURLString, forKey: Self.serverKeychainKey) }
+        didSet {
+            guard !isInitializing else { return }
+            KeychainStore.set(serverURLString, forKey: Self.serverKeychainKey)
+        }
     }
 
     var apiKey: String {
-        didSet { KeychainStore.set(apiKey, forKey: Self.apiKeyKeychainKey) }
+        didSet {
+            guard !isInitializing else { return }
+            KeychainStore.set(apiKey, forKey: Self.apiKeyKeychainKey)
+        }
     }
 
     init() {
@@ -29,6 +43,7 @@ final class BambuddyConfig {
             serverURLString = ""
         }
         apiKey = KeychainStore.get(Self.apiKeyKeychainKey) ?? ""
+        isInitializing = false
     }
 
     var serverURL: URL? {
