@@ -148,8 +148,14 @@ final class AppStore {
 
             let (printerList, spoolList, assignmentList, locationList) = try await (printerDTOs, spoolDTOs, assignmentDTOs, locationDTOs)
             let obico = await obicoTask
-            if let fetchedCatalog = await colorCatalogTask, !fetchedCatalog.isEmpty {
-                colorCatalog = fetchedCatalog
+            // `try?` above swallows a decoding-shape mismatch (a mismatched response schema)
+            // with zero signal beyond an empty result -- exactly what happened when this method
+            // decoded the wrong envelope shape and silently left every spool's color-name
+            // fallback dead for an entire release. Logged unconditionally (not just on failure)
+            // so "it's just always 0" is visible in the device log instead of invisible.
+            if let fetchedCatalog = await colorCatalogTask {
+                if !fetchedCatalog.isEmpty { colorCatalog = fetchedCatalog }
+                NSLog("NCDEBUG color catalog fetch: %d entries (cached total now %d)", fetchedCatalog.count, colorCatalog.count)
             }
 
             locationNames = Dictionary(uniqueKeysWithValues: locationList.map { ($0.id, $0.name) })

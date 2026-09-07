@@ -371,8 +371,22 @@ struct BambuddyAPIClient {
     /// presentable, falling back to the color's hex instead. Fetched once and cached by the
     /// caller (`AppStore`): it's small, curated data that essentially never changes mid-session,
     /// so re-fetching it on every 30s refresh tick would be pure waste.
+    ///
+    /// The response body is `{"colors": {hex: name, ...}}`, NOT a bare map at the top level —
+    /// confirmed against the route's actual `return` statement and against Bambuddy's own React
+    /// client (`api.getColorNameMap()` types this exact endpoint as `{ colors: Record<string,
+    /// string> }` and unwraps `.colors`). A previous version of this method decoded straight into
+    /// `[String: String]`, going only by the route's docstring ("Compact `{hex: name}` map")
+    /// without checking the literal `return` line beneath it — a real, envelope-shaped response
+    /// decoded as a bare dictionary throws a type-mismatch `DecodingError`, which the caller's
+    /// `try?` swallows with zero signal, leaving `colorCatalog` permanently empty. That silently
+    /// broke every spool whose `color_name` needed this catalog to resolve at all: not a partial
+    /// miss, a 100% failure, confirmed live (spool 38 "Rose Gold" kept showing "PLA" after this
+    /// exact fallback shipped).
     func colorCatalogMap() async throws -> [String: String] {
-        try await get("/api/v1/inventory/colors/map")
+        struct Response: Decodable { var colors: [String: String] }
+        let response: Response = try await get("/api/v1/inventory/colors/map")
+        return response.colors
     }
 
     func notificationProviders() async throws -> [BambuddyNotificationProviderDTO] {
