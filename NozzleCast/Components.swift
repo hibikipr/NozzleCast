@@ -277,7 +277,8 @@ struct AMSSlotCard: View {
             )
             .ncFont(size: 9, weight: .semibold, relativeTo: .caption2)
             .foregroundStyle(needsAssignment ? NCColor.statusWarning : NCColor.textSecondary)
-            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
             .frame(width: 62)
         }
         .padding(6)

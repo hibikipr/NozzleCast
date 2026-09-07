@@ -21,6 +21,9 @@ public struct PrintActivityAttributes: ActivityAttributes {
         public var currentLayer: Int?
         public var totalLayers: Int?
         public var nozzleTempC: Int?
+        /// Right/second nozzle temperature on dual-nozzle printers (H2C, X2C). Nil on
+        /// single-nozzle printers.
+        public var rightNozzleTempC: Int?
         public var bedTempC: Int?
 
         /// Bambuddy's own HMS severity scale collapsed to two tiers for the badge: "error"
@@ -67,6 +70,7 @@ public struct PrintActivityAttributes: ActivityAttributes {
             currentLayer: Int? = nil,
             totalLayers: Int? = nil,
             nozzleTempC: Int? = nil,
+            rightNozzleTempC: Int? = nil,
             bedTempC: Int? = nil,
             coverImage: Data? = nil,
             liveSnapshot: Data? = nil,
@@ -82,6 +86,7 @@ public struct PrintActivityAttributes: ActivityAttributes {
             self.currentLayer = currentLayer
             self.totalLayers = totalLayers
             self.nozzleTempC = nozzleTempC
+            self.rightNozzleTempC = rightNozzleTempC
             self.bedTempC = bedTempC
             self.coverImage = coverImage
             self.liveSnapshot = liveSnapshot

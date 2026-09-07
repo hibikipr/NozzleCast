@@ -33,6 +33,7 @@ final class PrintLiveActivityManager {
         var currentLayer: Int?
         var totalLayers: Int?
         var nozzleTempC: Int?
+        var rightNozzleTempC: Int?
         var bedTempC: Int?
         var issueSeverity: String?
         var issueCount: Int?
@@ -215,6 +216,7 @@ final class PrintLiveActivityManager {
             currentLayer: printer.currentLayer,
             totalLayers: printer.totalLayers,
             nozzleTempC: printer.nozzle.current,
+            rightNozzleTempC: printer.rightNozzle?.current,
             bedTempC: printer.bed.current,
             issueSeverity: issue.severity,
             issueCount: issue.count,
@@ -250,6 +252,7 @@ final class PrintLiveActivityManager {
             currentLayer: printer.currentLayer,
             totalLayers: printer.totalLayers,
             nozzleTempC: printer.nozzle.current,
+            rightNozzleTempC: printer.rightNozzle?.current,
             bedTempC: printer.bed.current,
             coverImage: coverImage,
             liveSnapshot: liveSnapshot,

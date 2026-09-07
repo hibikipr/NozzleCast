@@ -84,7 +84,10 @@ private func telemetryChips(_ state: PrintActivityAttributes.ContentState) -> so
         if let current = state.currentLayer, let total = state.totalLayers {
             TelemetryChip(icon: "square.3.layers.3d", text: "Layer \(current)/\(total)")
         }
-        if let nozzle = state.nozzleTempC {
+        if let left = state.nozzleTempC, let right = state.rightNozzleTempC {
+            TelemetryChip(icon: "flame.fill", text: "L \(left)°")
+            TelemetryChip(icon: "flame.fill", text: "R \(right)°")
+        } else if let nozzle = state.nozzleTempC {
             TelemetryChip(icon: "flame.fill", text: "\(nozzle)°")
         }
         if let bed = state.bedTempC {
@@ -333,6 +336,18 @@ private extension Color {
         totalLayers: 128,
         nozzleTempC: 245,
         bedTempC: 60
+    )
+    PrintActivityAttributes.ContentState(
+        progress: 0.48,
+        stateLabel: "Printing",
+        jobName: "Dual_Extrusion_Part.mf",
+        startedAt: .now - 2700,
+        estimatedEndAt: .now + 5400,
+        currentLayer: 61,
+        totalLayers: 128,
+        nozzleTempC: 240,
+        rightNozzleTempC: 220,
+        bedTempC: 55
     )
 }
 
