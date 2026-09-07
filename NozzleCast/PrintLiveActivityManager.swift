@@ -164,8 +164,8 @@ final class PrintLiveActivityManager {
                 // activity created without it never gets a push channel at all, regardless of any
                 // later observation of `pushTokenUpdates`. This path only runs while the app is
                 // foregrounded, but the relay (PushNotificationManager.startObservingActivityPushTokensIfConfigured)
-                // is meant to drive every activity's update/end via APNs once backgrounded -- an
-                // activity started here without this would have no push channel to fall back on.
+                // drives every activity's update/end via APNs once backgrounded -- an activity
+                // started here without this would have no push channel to fall back on.
                 _ = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil), pushType: .token)
                 NSLog("NCDEBUG Activity.request succeeded for printerID=%@", id)
             } catch {

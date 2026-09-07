@@ -101,24 +101,35 @@ a small self-hosted Node.js service the user runs alongside Bambuddy (not a Nozz
 service, matching this project's "no backend of NozzleCast's own" principle), starts it, updates
 it, and ends it, all via direct APNs pushes. The app's own local creation/update code
 (`PrintLiveActivityManager`) still exists and still works, but only ever runs when the app happens
-to be foregrounded — see "why local discovery doesn't work" below for why that can't be the
-primary mechanism for something that has to keep working with the phone locked.
+to be foregrounded — which is why it can't be the primary mechanism for something that has to
+keep working with the phone locked.
 
-- **Neither the app nor the notification extension can *locally discover* a push-to-start-created
-  activity, ever.** Not a timing race — confirmed empty via both
-  `Activity<PrintActivityAttributes>.activities` and `.activityUpdates` across an entire real
-  print, even while the widget extension independently rendered that same activity correctly the
-  whole time. A process only "knows" about an activity it locally called `Activity.request()`
-  for; the widget extension is fed an already-resolved `ActivityViewContext` directly by the
-  system at render time, bypassing local discovery entirely, but no other process gets that.
-  Foregrounding the app briefly "adopts" the activity into that process's awareness — which is why
-  `PrintLiveActivityManager.sync()` (run on `scenePhase` changes) can still locally update/end an
-  activity while the app happens to be open — but that awareness doesn't survive being
-  backgrounded again, and the notification extension, a fresh OS process per push with nothing
-  carried over between invocations, can never adopt it at all. This is also why
+- **Local discovery of a push-to-start-created activity does work — an earlier version of this
+  document said the opposite, and was wrong.** It previously asserted, as confirmed fact, that
+  neither the app nor the notification extension could *ever* locally discover such an activity:
+  "not a timing race — confirmed empty via both `Activity<PrintActivityAttributes>.activities`
+  and `.activityUpdates` across an entire real print." That observation was real, but the
+  explanation was not. Push-to-start was silently broken at the time (the relay sent a
+  module-qualified `attributes-type`, which APNs accepts with a 200 and iOS drops on the device
+  with no error anywhere but `liveactivitiesd`'s log), so **no activity was ever being created**.
+  Discovery found nothing because there was nothing to find.
+
+  Confirmed 2026-09-07, once `attributes-type` was corrected to the bare
+  `PrintActivityAttributes`: `.activityUpdates` delivered the push-to-start-created activity to
+  the app, and `/register-activity` registered its per-activity token ~3.5s after print start.
+  See nozzlecast-relay's ARCHITECTURE.md for the relay-side timeline.
+
+  What *is* still true and unrelated to any of this:
   `ActivityAuthorizationError.visibility` ("The app tried to start the Live Activity while it was
-  in the background") makes `Activity.request()` a non-starter for starting one while locked in
-  the first place.
+  in the background") makes `Activity.request()` a non-starter for *starting* an activity while
+  locked — which is why push-to-start exists at all. And the widget extension is fed an
+  already-resolved `ActivityViewContext` by the system at render time, so it renders correctly
+  regardless of what any other process can see.
+
+  **The relay architecture below is unchanged and is still the right design** — pushing
+  `update`/`end` straight through APNs does not depend on any local process running, which is
+  more robust than local discovery either way. Only the stated justification was wrong, not the
+  decision. Treat "local discovery is impossible" as retracted; do not reason from it.
 - **Starting**: the relay watches for a print-start event — either Bambuddy's ntfy topic via SSE,
   or by polling Bambuddy's own `/api/v1/printers/` + `/status` directly and diffing raw
   `gcode_state` transitions (`BambuddyPoller`/`printerStateClassifier.js`; this is the trigger
@@ -126,8 +137,10 @@ primary mechanism for something that has to keep working with the phone locked.
   — and sends a push-to-start APNs request straight to Apple, bypassing the app/NSE entirely.
   `PushNotificationManager` observes `Activity<PrintActivityAttributes>.pushToStartTokenUpdates`
   and POSTs each token to the relay's `/register` endpoint.
-- **Updating and ending**: since local discovery is a dead end, these also go straight through
-  APNs, per-activity, bypassing the app and extension. Apple's docs promise the system wakes the
+- **Updating and ending**: these go straight through APNs, per-activity, bypassing the app and
+  extension — not because local discovery is impossible (see the retraction above), but because a
+  path that needs no local process running at all is strictly more robust for something that has
+  to keep working with the phone locked. Apple's docs promise the system wakes the
   app specifically to deliver a fresh per-activity `pushToken` when an activity starts via
   push-to-start, independent of whether the app is resident. `PushNotificationManager` observes
   every activity's own `pushTokenUpdates` (discovered via `.activityUpdates`) and POSTs each
@@ -219,11 +232,13 @@ primary mechanism for something that has to keep working with the phone locked.
   terminated shortly after `deliver(content)` is called. Both `PrintLiveActivityManager.sync()`
   and the extension's `updateLiveActivity()` are `async` specifically so their callers can await
   them fully before returning.
-- **The extension's own local end/update logic is a harmless, effectively-dead fallback today.**
-  It's still correct *if* it can find a matching activity, but per the local-discovery finding
-  above, it never can for any current (push-to-start-created) activity — real ending happens via
-  the relay's per-activity push instead. Kept in place as a base for any activity a local process
-  *did* create itself, not removed outright.
+- **The extension's own local end/update logic is a rarely-exercised fallback.** It's correct if
+  it finds a matching activity, and real ending happens via the relay's per-activity push
+  regardless. How often it actually matches a push-to-start-created activity is now an open
+  question rather than a settled "never": the claim that it could never find one rested on the
+  retracted local-discovery finding above. The extension is still a fresh OS process per push
+  with no state carried between invocations, so it plausibly still finds nothing — but that has
+  not been re-measured since push-to-start started working. Kept in place either way.
 - **Printer matching by normalized name text, not an ID, on both sides of the relay boundary.**
   ntfy/Bambuddy carry no printer identifier usable across process/service boundaries, only a name
   — and inconsistently, sometimes the display name ("Vic H2C") and sometimes the printer's raw
