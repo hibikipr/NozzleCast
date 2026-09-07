@@ -511,6 +511,7 @@ final class AppStore {
             let unitSnapshots = printer.amsUnits.enumerated().map { position, unit in
                 AMSUnitSnapshot(
                     displayName: unit.displayName(position: position),
+                    isHighTemp: unit.isHT,
                     trays: unit.trays.map { tray in
                         let key = "\(printer.id)-\(tray.amsIndex)-\(tray.trayIndex)"
                         if let spool = spoolBySlot[key] {
