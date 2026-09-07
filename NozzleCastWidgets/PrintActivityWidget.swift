@@ -160,6 +160,12 @@ struct PrintActivityWidget: Widget {
                                     .foregroundStyle(.white.opacity(0.7))
                                     .lineLimit(1)
                             }
+                            if let stageDetail = context.state.stageDetail {
+                                Text(stageDetail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.white.opacity(0.55))
+                                    .lineLimit(1)
+                            }
                             progressView(state: context.state)
                             telemetryChips(context.state)
                         }
@@ -236,6 +242,17 @@ private struct LockScreenView: View {
                             .foregroundStyle(.white.opacity(0.6))
                             .lineLimit(1)
                             .truncationMode(.middle)
+                    }
+                }
+                SafeSection {
+                    // Extra detail beyond stateLabel — e.g. "Purifying the chamber air" during
+                    // the post-print purification window where progress reads 100% but the
+                    // activity hasn't ended yet. Nil almost always.
+                    if let stageDetail = state.stageDetail {
+                        Text(stageDetail)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.5))
+                            .lineLimit(1)
                     }
                 }
                 SafeSection {

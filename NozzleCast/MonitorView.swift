@@ -64,6 +64,7 @@ struct MonitorView: View {
                                     jobFileName: printer.jobFileName,
                                     progress: printer.progress,
                                     etaDescription: printer.etaDescription,
+                                    stageDetail: printer.stageDetail,
                                     allTrays: printer.allTrays,
                                     imageAssetName: printer.imageAssetName
                                 )
@@ -153,6 +154,9 @@ struct PrinterCard: View {
     var jobFileName: String?
     var progress: Double?
     var etaDescription: String?
+    /// Extra detail beyond `state.label` — e.g. "Purifying the chamber air" during a print's
+    /// post-completion chamber-purification cycle. Nil most of the time.
+    var stageDetail: String?
     var allTrays: [AMSTray]
     var imageAssetName: String?
     @Environment(AppStore.self) private var store
@@ -190,6 +194,12 @@ struct PrinterCard: View {
                     }
                     .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
+                    if let stageDetail {
+                        Text(stageDetail)
+                            .ncFont(size: 11.5, relativeTo: .caption2)
+                            .foregroundStyle(NCColor.textTertiary)
+                            .lineLimit(1)
+                    }
                     if !allTrays.isEmpty {
                         FlowLayout(spacing: 6, rowSpacing: 6) {
                             ForEach(allTrays) { tray in

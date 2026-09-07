@@ -124,6 +124,12 @@ struct Printer: Identifiable, Equatable {
     var etaMinutesRemaining: Int?
     var currentLayer: Int? = nil
     var totalLayers: Int? = nil
+    /// Extra detail about what the printer is actually doing right now, beyond `state` — e.g.
+    /// "Purifying the chamber air" during the post-print chamber-purification cycle that runs
+    /// after progress hits 100% but before `state` leaves `.printing`. Nil whenever there's
+    /// nothing more specific to say than `state.label` already does. See `mapPrinter` for how
+    /// this is derived and filtered from Bambuddy's `stg_cur_name`.
+    var stageDetail: String? = nil
     var nozzle: TemperatureReading
     /// Second nozzle's reading on a dual-nozzle printer (e.g. the H2C); nil everywhere else.
     var rightNozzle: TemperatureReading? = nil

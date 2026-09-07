@@ -30,6 +30,14 @@ final class AppStore {
 
     private var locationNames: [Int: String] = [:]
 
+    /// Bambuddy's curated hex->name color catalog, used to resolve a spool's display name when
+    /// its own `color_name` is missing or unpresentable — see `mapSpool`. Fetched once (guarded
+    /// by emptiness, not a one-shot flag) rather than on every refresh: it's curated, essentially
+    /// static data, and re-fetching a small never-changing map every 30s would be pure waste. The
+    /// emptiness check also means a first attempt that failed (offline, still connecting) is
+    /// retried on the next refresh instead of being stuck cacheless for the rest of the session.
+    private var colorCatalog: [String: String] = [:]
+
     init(config: BambuddyConfig) {
         self.config = config
         if config.isConfigured {
@@ -135,9 +143,14 @@ final class AppStore {
             // Account-wide, optional, and not part of a printer's own status - fetched
             // separately and allowed to fail without affecting anything else in the refresh.
             async let obicoTask: BambuddyObicoStatusDTO? = try? client.obicoStatus()
+            // Same best-effort shape, but only actually fetched once — see colorCatalog's doc.
+            async let colorCatalogTask: [String: String]? = colorCatalog.isEmpty ? try? client.colorCatalogMap() : nil
 
             let (printerList, spoolList, assignmentList, locationList) = try await (printerDTOs, spoolDTOs, assignmentDTOs, locationDTOs)
             let obico = await obicoTask
+            if let fetchedCatalog = await colorCatalogTask, !fetchedCatalog.isEmpty {
+                colorCatalog = fetchedCatalog
+            }
 
             locationNames = Dictionary(uniqueKeysWithValues: locationList.map { ($0.id, $0.name) })
 
@@ -198,7 +211,7 @@ final class AppStore {
 
             spools = spoolList
                 .filter { $0.archivedAt == nil }
-                .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames) }
+                .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog) }
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
@@ -248,6 +261,16 @@ final class AppStore {
         case "PAUSE", "PAUSED": return .paused
         default: return .idle
         }
+    }
+
+    /// Filters Bambuddy's `stg_cur_name` down to detail actually worth showing alongside
+    /// `state.label`: nil input passes through, and a value that just repeats the state label
+    /// (e.g. stage 0's "Printing" while `state` is already `.printing`) is suppressed rather than
+    /// shown as a redundant subtitle. Everything else — "Purifying the chamber air", "Heating
+    /// chamber", "Cooling heatbed", etc. — passes through as real, non-obvious detail.
+    private static func stageDetail(_ stgCurName: String?, stateLabel: String) -> String? {
+        guard let stgCurName, stgCurName != stateLabel else { return nil }
+        return stgCurName
     }
 
     private static func mapPrinter(_ dto: BambuddyPrinterDTO, extras: PrinterExtras, obico: BambuddyObicoStatusDTO?, assignmentsByPrinterSlot: [String: BambuddyAssignmentDTO]) -> Printer {
@@ -356,6 +379,7 @@ final class AppStore {
             etaMinutesRemaining: (state == .printing || state == .paused) ? remaining : nil,
             currentLayer: (state == .printing || state == .paused) ? status?.layerNum : nil,
             totalLayers: (state == .printing || state == .paused) ? status?.totalLayers : nil,
+            stageDetail: (state == .printing || state == .paused) ? Self.stageDetail(status?.stgCurName, stateLabel: state.label) : nil,
             nozzle: reading(current: temps?.nozzle, target: temps?.nozzleTarget),
             rightNozzle: rightNozzle,
             bed: reading(current: temps?.bed, target: temps?.bedTarget),
@@ -405,7 +429,27 @@ final class AppStore {
         return cleaned.isEmpty ? nil : cleaned.joined(separator: ",")
     }
 
-    private static func mapSpool(_ dto: BambuddySpoolDTO, assignment: BambuddyAssignmentDTO?, locationNames: [Int: String]) -> Spool {
+    /// Resolves a spool's display color name the same way Bambuddy's own web frontend does
+    /// (`resolveSpoolColorName` in its `colors.ts`): prefer `color_name` when it reads as an
+    /// actual name, fall back to a hex lookup in Bambuddy's curated color catalog otherwise, nil
+    /// if neither resolves anything. A spool scanned by RFID sometimes gets a decoded `rgba` with
+    /// no matching `color_name` at all, or one that's a raw internal Bambu code like "A06-D0"
+    /// (not globally unique across material families, so it's not safe to show as-is) — either
+    /// way the hex is still real, and the catalog usually knows a name for it. Bambuddy's web UI
+    /// shows "-" when even that fails; callers here fall back further to the material name, since
+    /// an empty label reads as more broken in a spool card than a slightly redundant one.
+    private static func resolveSpoolColorName(colorName: String?, rgba: String?, catalog: [String: String]) -> String? {
+        if let colorName, !colorName.isEmpty, colorName.range(of: #"^[A-Z]\d+-[A-Z]\d+$"#, options: .regularExpression) == nil {
+            return colorName
+        }
+        guard let rgba else { return nil }
+        let clean = rgba.trimmingCharacters(in: CharacterSet(charactersIn: "#")).lowercased()
+        guard clean.count >= 6 else { return nil }
+        if clean.count == 8, clean.suffix(2) == "00" { return "Clear" }
+        return catalog[String(clean.prefix(6))]
+    }
+
+    private static func mapSpool(_ dto: BambuddySpoolDTO, assignment: BambuddyAssignmentDTO?, locationNames: [Int: String], colorCatalog: [String: String]) -> Spool {
         let percentRemaining: Int
         if let used = dto.weightUsed, let label = dto.labelWeight, label > 0 {
             percentRemaining = max(0, min(100, Int((100.0 * (1 - used / Double(label))).rounded())))
@@ -423,7 +467,7 @@ final class AppStore {
         return Spool(
             id: "bb-\(dto.id)",
             material: dto.material,
-            colorName: dto.colorName ?? dto.material,
+            colorName: resolveSpoolColorName(colorName: dto.colorName, rgba: dto.rgba, catalog: colorCatalog) ?? dto.material,
             colorHex: "#" + (dto.rgba?.prefix(6).uppercased() ?? "808080"),
             colorAlpha: Self.parseAlpha(dto.rgba),
             extraColorHexes: parseExtraColors(dto.extraColors),

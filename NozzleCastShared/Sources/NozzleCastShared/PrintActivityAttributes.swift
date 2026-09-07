@@ -35,6 +35,16 @@ public struct PrintActivityAttributes: ActivityAttributes {
         /// Count of currently active issues at `issueSeverity`'s tier or worse (severity <= 3).
         public var issueCount: Int?
 
+        /// Extra detail about what the printer is actually doing right now, beyond `stateLabel`
+        /// — Bambuddy's `stg_cur_name` (e.g. "Purifying the chamber air", "Heating chamber"),
+        /// filtered down to cases that say something `stateLabel` doesn't already. In particular
+        /// this is what's actually happening during the window after a print reaches 100% but
+        /// before the printer moves off its running state to run post-print chamber
+        /// purification — otherwise invisible from progress/stateLabel alone. Nil most of the
+        /// time. Short by construction (Bambuddy's stage names top out well under 40 characters),
+        /// so it costs little of the ~4KB content-state budget.
+        public var stageDetail: String?
+
         /// The sliced-plate cover render, fetched once by the app when the print starts (it
         /// doesn't change during the print). Shown until a live snapshot arrives, and as the
         /// fallback whenever one hasn't.
@@ -61,7 +71,8 @@ public struct PrintActivityAttributes: ActivityAttributes {
             coverImage: Data? = nil,
             liveSnapshot: Data? = nil,
             issueSeverity: String? = nil,
-            issueCount: Int? = nil
+            issueCount: Int? = nil,
+            stageDetail: String? = nil
         ) {
             self.progress = progress
             self.stateLabel = stateLabel
@@ -76,6 +87,7 @@ public struct PrintActivityAttributes: ActivityAttributes {
             self.liveSnapshot = liveSnapshot
             self.issueSeverity = issueSeverity
             self.issueCount = issueCount
+            self.stageDetail = stageDetail
         }
     }
 
