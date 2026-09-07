@@ -538,3 +538,66 @@ struct ProgressBar: View {
         .frame(height: height)
     }
 }
+
+#Preview("AMSSlotCard") {
+    let spools = MockData.makeSpools()
+    HStack(spacing: 8) {
+        AMSSlotCard(spool: spools[0], slotIndex: 0, isActive: true)
+        AMSSlotCard(spool: spools[1], slotIndex: 1)
+        AMSSlotCard(spool: nil, slotIndex: 2)
+        AMSSlotCard(
+            spool: nil, slotIndex: 3,
+            tray: AMSTray(amsIndex: 0, trayIndex: 3, spoolID: nil, isLoaded: true,
+                          rawColorHex: "#FF5733", rawMaterialLabel: "PLA")
+        )
+    }
+    .padding()
+    .background(.black)
+    .environment(AppStore(config: BambuddyConfig()))
+}
+
+#Preview("StatusDot") {
+    HStack(spacing: 16) {
+        ForEach(PrinterState.allCases, id: \.self) { state in
+            VStack(spacing: 6) {
+                StatusDot(state: state, size: 10)
+                Text(state.rawValue)
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+            }
+        }
+    }
+    .padding()
+    .background(.black)
+}
+
+#Preview("InfoPill") {
+    HStack {
+        InfoPill(icon: "wifi", text: "-62 dBm")
+        InfoPill(icon: "clock", text: "1h 12m")
+        InfoPill(icon: "exclamationmark.triangle", text: "2 warnings", tint: .yellow)
+    }
+    .padding()
+    .background(.black)
+}
+
+#Preview("ControlButton") {
+    HStack(spacing: 20) {
+        ControlButton(systemName: "pause.fill", label: "Pause", action: {})
+        ControlButton(systemName: "stop.fill", label: "Stop", isDestructiveHint: true, action: {})
+        ControlButton(systemName: "lightbulb.fill", label: "Light", isActive: true, action: {})
+    }
+    .padding()
+    .background(.black)
+}
+
+#Preview("ProgressBar") {
+    VStack(spacing: 12) {
+        ProgressBar(progress: 0.64)
+        ProgressBar(progress: 0.31)
+        ProgressBar(progress: 1.0)
+    }
+    .padding()
+    .frame(width: 300)
+    .background(.black)
+}

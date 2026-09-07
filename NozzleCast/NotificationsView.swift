@@ -64,3 +64,8 @@ struct NotificationsView: View {
         }
     }
 }
+
+#Preview {
+    NotificationsView()
+        .preferredColorScheme(.dark)
+}

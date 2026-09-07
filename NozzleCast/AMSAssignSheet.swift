@@ -210,3 +210,9 @@ private struct SpoolRow: View {
         .padding(.vertical, 12)
     }
 }
+
+#Preview {
+    AMSAssignSheet(printerID: MockData.workshopX1C, amsIndex: 0, trayIndex: 0)
+        .environment(AppStore(config: BambuddyConfig()))
+        .preferredColorScheme(.dark)
+}

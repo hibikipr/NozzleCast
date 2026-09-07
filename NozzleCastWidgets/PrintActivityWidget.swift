@@ -292,3 +292,60 @@ private extension Color {
         self.init(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
     }
 }
+
+#Preview("Lock Screen", as: .content, using: PrintActivityAttributes(printerID: "mock-workshop-x1c", printerName: "Workshop X1C")) {
+    PrintActivityWidget()
+} contentStates: {
+    PrintActivityAttributes.ContentState(
+        progress: 0.64,
+        stateLabel: "Printing",
+        jobName: "Articulated_Dragon_v2.3.mf",
+        startedAt: .now - 3600,
+        estimatedEndAt: .now + 4320,
+        currentLayer: 82,
+        totalLayers: 128,
+        nozzleTempC: 245,
+        bedTempC: 60
+    )
+    PrintActivityAttributes.ContentState(
+        progress: 0.31,
+        stateLabel: "Paused",
+        jobName: "Vase_Mode_Twist.mf",
+        startedAt: .now - 1800,
+        estimatedEndAt: .now + 8700,
+        nozzleTempC: 220,
+        bedTempC: 55,
+        issueSeverity: "warning",
+        issueCount: 1
+    )
+}
+
+#Preview("Dynamic Island – Expanded", as: .dynamicIsland(.expanded), using: PrintActivityAttributes(printerID: "mock-workshop-x1c", printerName: "Workshop X1C")) {
+    PrintActivityWidget()
+} contentStates: {
+    PrintActivityAttributes.ContentState(
+        progress: 0.64,
+        stateLabel: "Printing",
+        jobName: "Articulated_Dragon_v2.3.mf",
+        startedAt: .now - 3600,
+        estimatedEndAt: .now + 4320,
+        currentLayer: 82,
+        totalLayers: 128,
+        nozzleTempC: 245,
+        bedTempC: 60
+    )
+}
+
+#Preview("Dynamic Island – Compact", as: .dynamicIsland(.compact), using: PrintActivityAttributes(printerID: "mock-workshop-x1c", printerName: "Workshop X1C")) {
+    PrintActivityWidget()
+} contentStates: {
+    PrintActivityAttributes.ContentState(
+        progress: 0.64,
+        stateLabel: "Printing",
+        jobName: "Articulated_Dragon_v2.3.mf",
+        startedAt: .now - 3600,
+        estimatedEndAt: .now + 4320,
+        nozzleTempC: 245,
+        bedTempC: 60
+    )
+}

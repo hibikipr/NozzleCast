@@ -205,6 +205,9 @@
     "Camera Issue" : {
 
     },
+    "Camera Preview on Lock Screen" : {
+
+    },
     "Camera scanning needs a real device" : {
 
     },
@@ -403,6 +406,9 @@
       "comment" : "Printer control button"
     },
     "LIVE" : {
+
+    },
+    "Live Activities" : {
 
     },
     "Loading your inventory…" : {
@@ -661,6 +667,9 @@
     },
     "Showing demo data. Tap Server to connect to your Bambuddy instance." : {
       "comment" : "Settings footer: no server configured"
+    },
+    "Shows a printer's progress on the Lock Screen and in the Dynamic Island while it prints. Camera Preview shows the printer's live camera frame there too — turn it off if you don't want that visible to anyone who picks up your phone." : {
+
     },
     "Slot %lld" : {
       "comment" : "Fallback label for an empty AMS slot"

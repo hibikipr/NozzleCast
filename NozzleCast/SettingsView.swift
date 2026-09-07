@@ -368,3 +368,9 @@ struct SettingsView: View {
         }
     }
 }
+
+#Preview {
+    SettingsView()
+        .environment(AppStore(config: BambuddyConfig()))
+        .preferredColorScheme(.dark)
+}

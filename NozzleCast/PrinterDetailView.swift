@@ -651,3 +651,19 @@ struct PrinterPowerSection: View {
         .glassCard()
     }
 }
+
+#Preview("Printing") {
+    NavigationStack {
+        PrinterDetailView(printerID: MockData.workshopX1C)
+    }
+    .environment(AppStore(config: BambuddyConfig()))
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Paused") {
+    NavigationStack {
+        PrinterDetailView(printerID: MockData.officeP1S)
+    }
+    .environment(AppStore(config: BambuddyConfig()))
+    .preferredColorScheme(.dark)
+}

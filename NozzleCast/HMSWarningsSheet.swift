@@ -92,3 +92,14 @@ private struct HMSWarningRow: View {
         }
     }
 }
+
+#Preview {
+    HMSWarningsSheet(
+        printerName: "Workshop X1C",
+        errors: [
+            HMSError(fullCode: "0500050000000007", severity: 1, description: "The build plate is not detected."),
+            HMSError(fullCode: "0701010003000001", severity: 2, description: nil),
+        ]
+    )
+    .preferredColorScheme(.dark)
+}

@@ -256,3 +256,9 @@ struct EditSpoolSheet: View {
         dismiss()
     }
 }
+
+#Preview {
+    EditSpoolSheet(spool: MockData.makeSpools()[0])
+        .environment(AppStore(config: BambuddyConfig()))
+        .preferredColorScheme(.dark)
+}

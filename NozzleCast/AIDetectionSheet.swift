@@ -66,3 +66,13 @@ struct AIDetectionSheet: View {
         .presentationDragIndicator(.hidden)
     }
 }
+
+#Preview("Monitoring active") {
+    AIDetectionSheet(printerName: "Workshop X1C", isMonitoring: true, lastError: nil)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("With error") {
+    AIDetectionSheet(printerName: "Workshop X1C", isMonitoring: false, lastError: "Spaghetti detected — print paused automatically.")
+        .preferredColorScheme(.dark)
+}

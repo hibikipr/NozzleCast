@@ -262,3 +262,9 @@ struct PrinterCard: View {
         }
     }
 }
+
+#Preview {
+    MonitorView()
+        .environment(AppStore(config: BambuddyConfig()))
+        .preferredColorScheme(.dark)
+}

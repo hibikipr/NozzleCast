@@ -318,3 +318,9 @@ struct SpoolListRow: View {
         .glassCard(cornerRadius: 14)
     }
 }
+
+#Preview {
+    InventoryView(selectedTab: .constant(.inventory))
+        .environment(AppStore(config: BambuddyConfig()))
+        .preferredColorScheme(.dark)
+}
