@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import WidgetKit
 import NozzleCastShared
 
 enum ConnectionStatus: Equatable {
@@ -82,6 +83,8 @@ final class AppStore {
         printers = MockData.makePrinters()
         spools = MockData.makeSpools()
         resolvePendingDeepLink()
+        AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
+        WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
     }
 
     func printer(_ id: String) -> Printer? { printers.first { $0.id == id } }
@@ -218,6 +221,9 @@ final class AppStore {
             spools = spoolList
                 .filter { $0.archivedAt == nil }
                 .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog) }
+
+            AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
+            WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
@@ -490,6 +496,47 @@ final class AppStore {
             category: dto.category,
             note: dto.note
         )
+    }
+
+    static func makeAMSSnapshots(printers: [Printer], spools: [Spool]) -> [PrinterAMSSnapshot] {
+        var spoolBySlot: [String: Spool] = [:]
+        for spool in spools {
+            if case .ams(let printerID, let amsIndex, let trayIndex) = spool.location {
+                spoolBySlot["\(printerID)-\(amsIndex)-\(trayIndex)"] = spool
+            }
+        }
+
+        return printers.compactMap { printer in
+            guard !printer.amsUnits.isEmpty else { return nil }
+            let unitSnapshots = printer.amsUnits.enumerated().map { position, unit in
+                AMSUnitSnapshot(
+                    displayName: unit.displayName(position: position),
+                    trays: unit.trays.map { tray in
+                        let key = "\(printer.id)-\(tray.amsIndex)-\(tray.trayIndex)"
+                        if let spool = spoolBySlot[key] {
+                            return AMSTraySnapshot(
+                                colorHex: spool.colorHex,
+                                colorAlpha: spool.colorAlpha,
+                                extraColorHexes: spool.extraColorHexes,
+                                subtype: spool.subtype,
+                                effectType: spool.effectType,
+                                materialLabel: spool.material
+                            )
+                        } else if tray.isLoaded {
+                            return AMSTraySnapshot(colorHex: tray.rawColorHex, materialLabel: tray.rawMaterialLabel)
+                        } else {
+                            return AMSTraySnapshot(colorHex: nil, materialLabel: nil)
+                        }
+                    }
+                )
+            }
+            return PrinterAMSSnapshot(
+                printerName: printer.name,
+                stateLabel: printer.state.label,
+                isPrinting: printer.state == .printing,
+                amsUnits: unitSnapshots
+            )
+        }
     }
 
     private func bambuddyID(_ localID: String) -> Int? {

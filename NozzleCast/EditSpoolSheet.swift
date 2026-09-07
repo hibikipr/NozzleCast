@@ -1,4 +1,5 @@
 import SwiftUI
+import NozzleCastShared
 
 /// Edits a spool's own inventory record — material, color, brand, weight, cost, notes. This is
 /// bookkeeping only (same PATCH Bambuddy's own edit screen uses); it doesn't push anything to

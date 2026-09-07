@@ -5,5 +5,6 @@ import SwiftUI
 struct NozzleCastWidgetsBundle: WidgetBundle {
     var body: some Widget {
         PrintActivityWidget()
+        AMSWidget()
     }
 }
