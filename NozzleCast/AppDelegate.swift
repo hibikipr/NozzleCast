@@ -14,6 +14,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         PushNotificationManager.shared.configureFirebaseIfNeeded()
+        // Separate call, and deliberately not inside configureFirebaseIfNeeded(): ActivityKit
+        // token observation has nothing to do with Firebase, and living behind that method's
+        // early-return guards meant it silently never started when no Firebase config file had
+        // been imported — leaving a fully-configured relay with no push-to-start token to push to.
+        PushNotificationManager.shared.startObservingActivityKitTokens()
         UNUserNotificationCenter.current().delegate = self
 
         // Re-registering on every launch (not just the one time the user tapped "enable" in
