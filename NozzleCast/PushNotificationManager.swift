@@ -46,7 +46,28 @@ final class PushNotificationManager: NSObject {
         super.init()
     }
 
+    /// Arms both ActivityKit token observers. Call once at every app launch, unconditionally.
+    ///
+    /// Deliberately NOT part of `configureFirebaseIfNeeded()`, where these two calls used to
+    /// live: ActivityKit and Firebase share nothing. The push-to-start and per-activity push
+    /// tokens come from ActivityKit and go straight to the relay over plain URLSession — Firebase
+    /// is only ever involved in the separate ntfy/FCM alert path. Sitting behind that method's
+    /// early-return guards meant observation silently never started on two real launch paths:
+    /// when no Firebase config file has been imported (the first `guard` returns), and on any
+    /// repeat call once `isFirebaseConfigured` was already true. In both cases the relay could be
+    /// fully configured and the app would still never observe a single push-to-start token, with
+    /// the only recovery being for the user to happen to re-save the relay sheet.
+    ///
+    /// Both callees keep their own `RelayConfigStore.isConfigured` guard and their own
+    /// already-running guard, so this stays safe to call repeatedly.
+    func startObservingActivityKitTokens() {
+        startObservingPushToStartTokenIfConfigured()
+        startObservingActivityPushTokensIfConfigured()
+    }
+
     /// Call once at app launch, after Firebase's own config file (if any) has been imported.
+    /// Only concerns the ntfy/FCM alert path — see `startObservingActivityKitTokens()` for the
+    /// ActivityKit side, which must not be gated on any of this.
     func configureFirebaseIfNeeded() {
         guard !isFirebaseConfigured, let path = FirebaseConfigStore.configuredFileURL?.path else { return }
         guard let options = FirebaseOptions(contentsOfFile: path) else { return }
@@ -59,9 +80,6 @@ final class PushNotificationManager: NSObject {
         if let config = PushSharedStore.loadNtfyConfig() {
             subscribe(server: config.server, topic: config.topic)
         }
-
-        startObservingPushToStartTokenIfConfigured()
-        startObservingActivityPushTokensIfConfigured()
     }
 
     /// Starts (once) an app-lifetime task that registers every push-to-start token ActivityKit
