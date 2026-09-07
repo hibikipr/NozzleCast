@@ -621,6 +621,7 @@
 			buildSettings = {
 				APPLETVOS_DEPLOYMENT_TARGET = 26.0;
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NozzleCastWidgets/NozzleCastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -652,6 +653,7 @@
 			buildSettings = {
 				APPLETVOS_DEPLOYMENT_TARGET = 26.0;
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NozzleCastWidgets/NozzleCastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
