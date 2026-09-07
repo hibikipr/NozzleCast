@@ -27,11 +27,23 @@ public struct AMSTraySnapshot: Codable, Sendable {
 
 public struct AMSUnitSnapshot: Codable, Sendable {
     public var displayName: String
+    /// Mirrors `AMSUnit.isHT` — Bambu's high-temperature unit is tagged and styled separately
+    /// from numbered AMS units rather than counted alongside them.
+    public var isHighTemp: Bool
     public var trays: [AMSTraySnapshot]
 
-    public init(displayName: String, trays: [AMSTraySnapshot]) {
+    public init(displayName: String, isHighTemp: Bool = false, trays: [AMSTraySnapshot]) {
         self.displayName = displayName
+        self.isHighTemp = isHighTemp
         self.trays = trays
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        displayName = try c.decode(String.self, forKey: .displayName)
+        // Tolerate snapshots cached by a previous app version that predates this field.
+        isHighTemp = try c.decodeIfPresent(Bool.self, forKey: .isHighTemp) ?? false
+        trays = try c.decode([AMSTraySnapshot].self, forKey: .trays)
     }
 }
 
@@ -52,16 +64,23 @@ public struct PrinterAMSSnapshot: Codable, Sendable {
 public enum AMSWidgetStore {
     private static let appGroup = "group.com.victormanuel.NozzleCast"
     private static let key = "amsWidgetSnapshot"
+    private static let savedAtKey = "amsWidgetSnapshotSavedAt"
 
     private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
 
     public static func save(_ snapshots: [PrinterAMSSnapshot]) {
         guard let data = try? JSONEncoder().encode(snapshots) else { return }
         defaults?.set(data, forKey: key)
+        defaults?.set(Date(), forKey: savedAtKey)
     }
 
     public static func load() -> [PrinterAMSSnapshot] {
         guard let data = defaults?.data(forKey: key) else { return [] }
         return (try? JSONDecoder().decode([PrinterAMSSnapshot].self, from: data)) ?? []
+    }
+
+    /// When the app last wrote a snapshot — drives the widget's "Updated Xm ago" staleness stamp.
+    public static var lastSavedAt: Date? {
+        defaults?.object(forKey: savedAtKey) as? Date
     }
 }
