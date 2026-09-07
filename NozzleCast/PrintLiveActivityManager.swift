@@ -36,6 +36,7 @@ final class PrintLiveActivityManager {
         var bedTempC: Int?
         var issueSeverity: String?
         var issueCount: Int?
+        var stageDetail: String?
         var coverImage: Data?
         var liveSnapshot: Data?
     }
@@ -217,6 +218,7 @@ final class PrintLiveActivityManager {
             bedTempC: printer.bed.current,
             issueSeverity: issue.severity,
             issueCount: issue.count,
+            stageDetail: printer.stageDetail,
             coverImage: coverImage,
             liveSnapshot: liveSnapshot
         )
@@ -252,7 +254,8 @@ final class PrintLiveActivityManager {
             coverImage: coverImage,
             liveSnapshot: liveSnapshot,
             issueSeverity: issue.severity,
-            issueCount: issue.count
+            issueCount: issue.count,
+            stageDetail: printer.stageDetail
         )
     }
 }

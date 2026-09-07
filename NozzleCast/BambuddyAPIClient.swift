@@ -92,6 +92,14 @@ struct BambuddyStatusDTO: Codable {
     var bigFan2Speed: Int?
     var chamberLight: Bool?
     var awaitingPlateClear: Bool?
+    /// Human-readable name for the printer's current internal stage (Bambuddy's `stg_cur`
+    /// resolved server-side), e.g. "Purifying the chamber air", "Heating chamber", "Cooling
+    /// heatbed" — detail beyond the coarse RUNNING/PAUSE/FINISH `state`. In particular this is
+    /// what's actually happening during the awkward window after a print reaches 100% but before
+    /// `gcode_state` moves off RUNNING, where the printer is auto-running its post-print chamber
+    /// purification. Nil when there's no derived stage worth naming (idle, or a plain "Printing"
+    /// that would only repeat what `state` already says).
+    var stgCurName: String?
 }
 
 struct BambuddyMaintenanceSummaryDTO: Codable {
@@ -355,6 +363,16 @@ struct BambuddyAPIClient {
 
     func locations() async throws -> [BambuddyLocationDTO] {
         try await get("/api/v1/inventory/locations")
+    }
+
+    /// Compact `{hex(lowercase, 6 chars, no '#'): color name}` map from Bambuddy's own curated
+    /// color catalog — the same one its own web UI loads to resolve a spool's display name when
+    /// `color_name` is missing or is a raw internal code (e.g. "A06-D0") rather than something
+    /// presentable, falling back to the color's hex instead. Fetched once and cached by the
+    /// caller (`AppStore`): it's small, curated data that essentially never changes mid-session,
+    /// so re-fetching it on every 30s refresh tick would be pure waste.
+    func colorCatalogMap() async throws -> [String: String] {
+        try await get("/api/v1/inventory/colors/map")
     }
 
     func notificationProviders() async throws -> [BambuddyNotificationProviderDTO] {
