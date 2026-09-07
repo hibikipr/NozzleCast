@@ -27,8 +27,15 @@ private func thumbnailView(_ data: Data?, size: CGFloat) -> some View {
     if let data,
        let source = CGImageSourceCreateWithData(data as CFData, nil),
        let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+        // The relay downscales this source image to ~40px to stay inside ActivityKit's
+        // content-state byte budget (see nozzlecast-relay's index.js MAX_DIMENSION constants),
+        // then this view stretches it back up to `size` -- often 2-3x on a Retina lock screen.
+        // `.interpolation(.high)` doesn't recover detail that was never captured, but it resamples
+        // the upscale smoothly instead of the default `.medium` filter's visible blockiness, which
+        // is what actually reads as "pixelated" at this scale factor.
         Image(decorative: cgImage, scale: 1.0)
             .resizable()
+            .interpolation(.high)
             .aspectRatio(contentMode: .fill)
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.25, style: .continuous))
