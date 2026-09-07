@@ -167,16 +167,20 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
     /// activity any of the three creates or updates is found correctly by the others.
     ///
     /// Only ever *updates* or *ends* an existing activity — never starts one, for the same
-    /// foreground-only restriction documented on the app side. But there's a harder limitation on
-    /// top of that, confirmed live across a full print: `Activity<PrintActivityAttributes>.activities`
-    /// (and `.activityUpdates`) never surfaced a push-to-start-created activity to this extension at
-    /// all — not a timing race, empty at 0%, 50%, 75%, and even at the final "Print Completed"
-    /// event. This extension is a fresh OS process per push with no local state carried over, and a
-    /// push-to-start activity was never created by any call to `Activity.request()` in any local
-    /// process, so nothing here can ever discover it. The loop below only ever matches an activity
-    /// this extension's own process already happens to know about — which in practice, now that
-    /// every activity is push-to-start-created, is effectively never. It's kept as a harmless,
-    /// possibly-useful-again-later fallback rather than removed outright.
+    /// foreground-only restriction documented on the app side.
+    ///
+    /// An earlier version of this comment stated as confirmed fact that this extension could
+    /// never discover a push-to-start-created activity at all, citing
+    /// `Activity<PrintActivityAttributes>.activities` staying empty at 0%, 50%, 75% and at
+    /// "Print Completed" across a full print. That observation was real; the explanation was not.
+    /// Push-to-start was silently broken at the time (the relay sent a module-qualified
+    /// `attributes-type`), so no activity existed to be found. With that fixed, the app process
+    /// does now discover these activities via `.activityUpdates` (confirmed 2026-09-07).
+    ///
+    /// Whether *this* extension does is untested. It's still a fresh OS process per push with no
+    /// state carried between invocations, so it plausibly still finds nothing — but "never" is no
+    /// longer an established fact, just an untested guess. Either way the relay's per-activity
+    /// push is what actually carries update/end, so this path is a fallback, not the mechanism.
     ///
     /// The real fix for push-to-start-created activities is `PushNotificationManager`'s per-activity
     /// push token registration: each activity's own `pushTokenUpdates` token is sent to

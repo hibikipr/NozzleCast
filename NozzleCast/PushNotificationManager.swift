@@ -101,22 +101,17 @@ final class PushNotificationManager: NSObject {
         }
     }
 
-    /// POSTs a push-to-start token to the relay's `/register` endpoint. `environment` mirrors
-    /// which APNs environment this build's `aps-environment` entitlement actually uses — Xcode
-    /// sets that from the provisioning profile at build time (development for a local/Debug
-    /// build, production for a distribution/Release build), so `#if DEBUG` tracks it closely
-    /// enough without parsing the embedded provisioning profile.
+    /// POSTs a push-to-start token to the relay's `/register` endpoint. `environment` is read
+    /// from the embedded provisioning profile's actual `aps-environment` entitlement — see
+    /// `APNSEnvironment` for why inferring it from `#if DEBUG` was wrong for one real build
+    /// configuration.
     private func registerPushToStartToken(_ tokenData: Data) async {
         guard let config = RelayConfigStore.load() else {
             NSLog("NCDEBUG push-to-start token registration skipped: no relay configured")
             return
         }
         let token = tokenData.map { String(format: "%02x", $0) }.joined()
-        #if DEBUG
-        let environment = "sandbox"
-        #else
-        let environment = "production"
-        #endif
+        let environment = APNSEnvironment.current
 
         var request = URLRequest(url: config.url.appendingPathComponent("register"))
         request.httpMethod = "POST"
@@ -138,15 +133,21 @@ final class PushNotificationManager: NSObject {
     }
 
     /// Registers every activity's own per-activity ActivityKit push token with the relay, so it
-    /// can push `update`/`end` events directly to that activity via APNs — bypassing local device
-    /// discovery entirely, which is the real fix for a hard limitation confirmed live: neither this
-    /// app's own process nor the notification extension can ever find a push-to-start-created
-    /// activity via `Activity<PrintActivityAttributes>.activities` or `.activityUpdates` (both
-    /// stayed empty across an entire print, including at its "Print Completed" event — the
-    /// activity was still showing "Printing" afterward because nothing local could ever locate it
-    /// to end it). Apple's docs promise the system wakes the app specifically to deliver a fresh
-    /// push token when it starts an activity via push-to-start, independent of the relay's own
-    /// best-effort `content-available` wake — `activityUpdates` is that channel.
+    /// can push `update`/`end` events directly to that activity via APNs, with no dependence on
+    /// any local process being alive to find that activity first.
+    ///
+    /// An earlier version of this comment claimed a push-to-start-created activity could *never*
+    /// be found locally via `Activity<PrintActivityAttributes>.activities` or `.activityUpdates`,
+    /// citing both staying empty across an entire print. That observation was real but the
+    /// explanation was wrong: push-to-start was silently broken at the time (the relay sent a
+    /// module-qualified `attributes-type`), so no activity was ever created and there was nothing
+    /// to discover. Confirmed 2026-09-07, with `attributes-type` fixed: `activityUpdates` below
+    /// delivers the activity and this method registers its token ~3.5s after print start.
+    ///
+    /// The design is unchanged regardless — Apple's docs promise the system wakes the app
+    /// specifically to deliver a fresh push token when it starts an activity via push-to-start,
+    /// independent of the relay's own best-effort `content-available` wake, and `activityUpdates`
+    /// is that channel.
     ///
     /// One task per printer's activity, not a single shared one: each activity has its own
     /// independent `pushTokenUpdates` stream and can rotate its token separately.
@@ -200,11 +201,7 @@ final class PushNotificationManager: NSObject {
     private func registerActivityPushToken(_ tokenData: Data, printerID: String) async {
         guard let config = RelayConfigStore.load() else { return }
         let token = tokenData.map { String(format: "%02x", $0) }.joined()
-        #if DEBUG
-        let environment = "sandbox"
-        #else
-        let environment = "production"
-        #endif
+        let environment = APNSEnvironment.current
 
         var request = URLRequest(url: config.url.appendingPathComponent("register-activity"))
         request.httpMethod = "POST"
@@ -274,11 +271,7 @@ final class PushNotificationManager: NSObject {
             return
         }
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
-        #if DEBUG
-        let environment = "sandbox"
-        #else
-        let environment = "production"
-        #endif
+        let environment = APNSEnvironment.current
 
         var request = URLRequest(url: config.url.appendingPathComponent("register-device"))
         request.httpMethod = "POST"
