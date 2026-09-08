@@ -119,6 +119,17 @@ struct Printer: Identifiable, Equatable {
     var model: String
     var imageAssetName: String?
     var state: PrinterState
+    /// Whether Bambuddy reports this printer is in a job right now -- running OR paused,
+    /// regardless of any HMS badge. Deliberately separate from `state`, which collapses all of
+    /// that into one value: `mapState` returns `.error` for a qualifying HMS issue and `.offline`
+    /// for an unreachable printer *before* it ever looks at the gcode state, so a printer that is
+    /// mid-print with a warning attached is indistinguishable from an idle one there.
+    ///
+    /// Three-valued on purpose. `nil` means "no usable reading" (offline, or the `/status` fetch
+    /// failed) and is NOT the same as `false` ("reachable, and reports no job") -- see
+    /// `ActivityTeardown`, which only tears a Live Activity down on the latter. Conflating the two
+    /// is what let a single unreachable poll kill a live print's Live Activity.
+    var isActiveJob: Bool? = nil
     var jobFileName: String?
     var progress: Double?
     var etaMinutesRemaining: Int?

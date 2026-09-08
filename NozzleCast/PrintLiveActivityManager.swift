@@ -3,6 +3,7 @@ import Foundation
 import UIKit
 import UserNotifications
 import NozzleCastShared
+import ActivityTeardownPolicy
 
 /// Keeps one Live Activity per actively-printing printer in sync with `AppStore`'s latest
 /// refresh. There's no push channel driving most of this state between refreshes (Bambuddy's
@@ -43,6 +44,13 @@ final class PrintLiveActivityManager {
     }
 
     private var lastFingerprints: [String: SyncFingerprint] = [:]
+
+    /// Per printer, when it was first seen in a confirmed-terminal state while its Live Activity
+    /// was still live — the clock `ActivityTeardown` measures its grace window against. See that
+    /// type for why teardown hangs off a positive "this job is over" signal rather than off the
+    /// absence of a "still printing" one. In-memory only: losing it on relaunch just restarts the
+    /// window, which errs toward keeping an activity alive, the safe direction.
+    private var teardownAnchors: [String: Date] = [:]
 
     /// Whether a printer's activity already has a cover image cached, so callers can skip
     /// re-fetching it (it's static for the whole print, unlike `liveSnapshot`).
@@ -102,10 +110,22 @@ final class PrintLiveActivityManager {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
             lastFingerprints.removeAll()
+            teardownAnchors.removeAll()
             return
         }
 
-        let printingByID = Dictionary(uniqueKeysWithValues: printers.filter { $0.state == .printing }.map { (PrintActivityAttributes.normalizedID($0.name), $0) })
+        // Keyed by the same normalized id the relay uses, so an activity it created is matched
+        // here. Every printer, not just the printing ones: a printer's *absence* from this map is
+        // itself meaningful ("no reading"), and must not be confused with "reports no job".
+        // `uniquingKeysWith`, not `uniqueKeysWithValues`: normalizedID is lossy (it strips
+        // everything but letters/digits), so two printers named "Vic H2C" and "vic-h2c" collide —
+        // and the trapping initializer would crash the app on a refresh rather than just picking
+        // one. Previously this only mapped the printing subset, where a collision was unlikely;
+        // over every printer it is a real possibility worth failing soft on.
+        let byID = Dictionary(printers.map { (PrintActivityAttributes.normalizedID($0.name), $0) }, uniquingKeysWith: { first, _ in first })
+        // Only genuinely-printing printers get an activity *created* locally — unchanged. Keeping
+        // an existing one alive is a separate, broader question answered by `isActiveJob` below.
+        let printingByID = byID.filter { $0.value.state == .printing }
         NSLog("NCDEBUG sync: printingCount=%d activeActivities=%d", printingByID.count, Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }.count)
 
         // Awaited rather than fired as unstructured Tasks: an un-awaited `Task { await
@@ -118,11 +138,34 @@ final class PrintLiveActivityManager {
         // "already has an activity" and never get a fresh one.
         let activeActivities = Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }
 
+        let now = Date()
         for activity in activeActivities {
-            guard let printer = printingByID[activity.attributes.printerID] else {
+            let id = activity.attributes.printerID
+            let printer = byID[id]
+
+            // The relay owns ending this activity (it pushes `end` on finish/stopped/failed);
+            // this is only the backstop for a relay that never does. Previously this line ended
+            // any activity whose printer wasn't reporting `.printing` at that instant, which
+            // meant Bambuddy's 5-10s REST lag right after push-to-start, a pause, a mid-print HMS
+            // warning, or one failed /status fetch each killed a live print's activity outright —
+            // and because it ended with a 30-minute dismissal window rather than immediately, the
+            // result looked exactly like an activity that had simply stopped updating.
+            let decision = ActivityTeardown.evaluate(isActiveJob: printer?.isActiveJob ?? nil, anchor: teardownAnchors[id], now: now)
+            teardownAnchors[id] = decision.anchor
+            if decision.shouldEnd {
+                NSLog("NCDEBUG sync: ending activity for printerID=%@ (Bambuddy confirmed no job for the full grace window)", id)
                 await activity.end(nil, dismissalPolicy: .after(.now.addingTimeInterval(1800)))
                 continue
             }
+
+            // Deliberately NARROWER than the keep-alive condition above. Keeping an activity is
+            // driven by `isActiveJob`, which stays true through an HMS badge or a disconnect;
+            // locally *writing* to it is not, because `mapPrinter` nils out `progress`/
+            // `etaMinutesRemaining` for any state that isn't `.printing`/`.paused`. Updating from
+            // an `.error`-state printer would therefore push `progress: 0` and no ETA over
+            // whatever the relay last sent — worse than not writing at all. The relay pushes real
+            // telemetry for those printers on its own correction interval regardless.
+            guard let printer, printer.state == .printing || printer.state == .paused else { continue }
             let existing = activity.content.state
             let coverImage = coverImages[activity.attributes.printerID] ?? existing.coverImage
             let fingerprint = Self.fingerprint(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot)
@@ -137,9 +180,12 @@ final class PrintLiveActivityManager {
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
 
-        lastFingerprints = lastFingerprints.filter { printingByID[$0.key] != nil }
-
         let activePrinterIDs = Set(activeActivities.map(\.attributes.printerID))
+        // Pruned against activities that still exist, not against "is printing" — a paused print
+        // keeps both its activity and the state we track for it.
+        lastFingerprints = lastFingerprints.filter { activePrinterIDs.contains($0.key) }
+        teardownAnchors = teardownAnchors.filter { activePrinterIDs.contains($0.key) }
+
         let newPrinters = printingByID.values.filter { !activePrinterIDs.contains(PrintActivityAttributes.normalizedID($0.name)) }
         guard !newPrinters.isEmpty else { return }
 

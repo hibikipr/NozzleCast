@@ -1,3 +1,12 @@
+// ActivityKit's types are unavailable on macOS, so this whole file compiles away there. That
+// matters because the package's ActivityTeardownPolicy target is tested with plain `swift test`
+// on a Mac, and SwiftPM builds every target in the package to do it -- without this guard the
+// shared target fails to compile and takes the test run down with it. A no-op on iOS, where
+// every target that uses this type lives.
+//
+// `os(iOS)`, not `canImport(ActivityKit)`: the module DOES import on macOS, it's the types
+// inside it that are marked unavailable, so canImport lets the file through and it fails anyway.
+#if os(iOS)
 import ActivityKit
 import Foundation
 
@@ -116,3 +125,5 @@ extension PrintActivityAttributes {
         printerName.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 }
+
+#endif
