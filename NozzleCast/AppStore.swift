@@ -275,6 +275,20 @@ final class AppStore {
         }
     }
 
+    /// Whether Bambuddy reports an in-progress job, read straight off the raw `gcode_state` and
+    /// deliberately blind to the HMS/offline overlays `mapState` applies. Nil when there is no
+    /// usable reading at all, which callers must not treat as "no job" -- see `Printer.isActiveJob`.
+    ///
+    /// `PAUSE` counts as active: a paused print is still a print, and its Live Activity should
+    /// stay up. The relay agrees -- it pushes a "Paused" stateLabel rather than an `end`.
+    private static func mapIsActiveJob(_ dto: BambuddyStatusDTO?) -> Bool? {
+        guard let dto, dto.connected else { return nil }
+        switch dto.state.uppercased() {
+        case "RUNNING", "PRINTING", "PREPARE", "SLICING", "PAUSE", "PAUSED": return true
+        default: return false
+        }
+    }
+
     /// Filters Bambuddy's `stg_cur_name` down to detail actually worth showing alongside
     /// `state.label`: nil input passes through, and a value that just repeats the state label
     /// (e.g. stage 0's "Printing" while `state` is already `.printing`) is suppressed rather than
@@ -386,6 +400,7 @@ final class AppStore {
             model: dto.model,
             imageAssetName: assetName(forModel: dto.model),
             state: state,
+            isActiveJob: mapIsActiveJob(status),
             jobFileName: (job?.isEmpty == false) ? job : nil,
             progress: (state == .printing || state == .paused) ? progress : nil,
             etaMinutesRemaining: (state == .printing || state == .paused) ? remaining : nil,
