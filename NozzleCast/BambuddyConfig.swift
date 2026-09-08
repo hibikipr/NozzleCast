@@ -30,20 +30,66 @@ final class BambuddyConfig {
         }
     }
 
+    /// True when the last load couldn't read the Keychain (rather than finding it empty), so the
+    /// in-memory values are meaningless and must not be shown to the user or acted on as "not
+    /// configured". See `reloadIfStorageWasUnavailable()`.
+    private(set) var storageWasUnavailable = false
+
     init() {
-        if let stored = KeychainStore.get(Self.serverKeychainKey) {
+        serverURLString = ""
+        apiKey = ""
+        loadFromStorage()
+    }
+
+    /// Re-reads credentials if — and only if — the previous read was *blocked* rather than empty.
+    ///
+    /// Confirmed live on an iPad: after a power cycle, the app launched in the background before
+    /// the device's first unlock, every Keychain read returned nothing, and the app then showed
+    /// blank Bambuddy settings for the rest of that process's life. The credentials were never
+    /// gone — force-quitting and relaunching while unlocked brought them straight back. A single
+    /// read at `init()` with no retry is what turned a few seconds of unreadability into an
+    /// apparently-unconfigured app.
+    ///
+    /// Call whenever the device may have become unlocked since the last attempt — app foreground
+    /// is the reliable one, since being foreground means the device is unlocked by definition.
+    func reloadIfStorageWasUnavailable() {
+        guard storageWasUnavailable else { return }
+        NSLog("NCDEBUG BambuddyConfig retrying a previously-blocked keychain read")
+        loadFromStorage()
+    }
+
+    private func loadFromStorage() {
+        // Guards the `didSet` persistence below for the whole load, not just `init()` — a reload
+        // assigns these properties too, and writing a blocked read's empty string back over a
+        // good Keychain value is the corruption this flag has always existed to prevent.
+        isInitializing = true
+        defer { isInitializing = false }
+
+        let storedServer = KeychainStore.read(Self.serverKeychainKey)
+        let storedAPIKey = KeychainStore.read(Self.apiKeyKeychainKey)
+        storageWasUnavailable = storedServer.isUnavailable || storedAPIKey.isUnavailable
+
+        switch storedServer {
+        case .found(let stored):
             serverURLString = stored
-        } else if let legacy = UserDefaults.standard.string(forKey: Self.legacyServerDefaultsKey), !legacy.isEmpty {
-            // First launch after the server URL moved from UserDefaults to the Keychain:
-            // carry the existing value over so the user doesn't have to re-enter it.
-            serverURLString = legacy
-            KeychainStore.set(legacy, forKey: Self.serverKeychainKey)
-            UserDefaults.standard.removeObject(forKey: Self.legacyServerDefaultsKey)
-        } else {
+        case .notFound:
+            if let legacy = UserDefaults.standard.string(forKey: Self.legacyServerDefaultsKey), !legacy.isEmpty {
+                // First launch after the server URL moved from UserDefaults to the Keychain:
+                // carry the existing value over so the user doesn't have to re-enter it.
+                serverURLString = legacy
+                KeychainStore.set(legacy, forKey: Self.serverKeychainKey)
+                UserDefaults.standard.removeObject(forKey: Self.legacyServerDefaultsKey)
+            } else {
+                serverURLString = ""
+            }
+        case .unavailable:
+            // Deliberately NOT migrating from the legacy default here: a blocked read says
+            // nothing about whether a Keychain value exists, and treating it as absence could
+            // resurrect a stale UserDefaults URL over a newer one.
             serverURLString = ""
         }
-        apiKey = KeychainStore.get(Self.apiKeyKeychainKey) ?? ""
-        isInitializing = false
+
+        apiKey = storedAPIKey.value ?? ""
     }
 
     var serverURL: URL? {

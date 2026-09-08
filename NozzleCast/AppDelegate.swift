@@ -43,6 +43,25 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    /// Re-arms everything that can silently fail to start when the device is locked at launch.
+    ///
+    /// `didFinishLaunching` is not a safe place to do this once and be done: a launch before the
+    /// device's first unlock since boot — a background push wake right after a restart — cannot
+    /// read `RelayConfigStore`'s file (Application Support is protected until first unlock) or the
+    /// Keychain, so `startObservingActivityKitTokens()` sees `isConfigured == false` and quietly
+    /// arms neither token observer. The only other caller was `RelayConnectionSheet.save()`, so
+    /// for the rest of that process's life no push-to-start token was ever observed and no
+    /// activity token was ever registered — the relay went on pushing to a stale token, got a
+    /// genuine 200 for it, and no Live Activity was ever created.
+    ///
+    /// Being foreground means the device is unlocked, so this is the one moment both stores are
+    /// guaranteed readable. Both callees guard on their own already-running check, so re-arming
+    /// on every activation is idempotent.
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        store.config.reloadIfStorageWasUnavailable()
+        PushNotificationManager.shared.startObservingActivityKitTokens()
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         PushNotificationManager.shared.handleAPNsToken(deviceToken)
     }
@@ -71,6 +90,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // Required when FirebaseAppDelegateProxyEnabled = false — Firebase won't see FCM messages
         // otherwise, and the ntfy topic subscription (routed via FCM) would stop delivering.
         Messaging.messaging().appDidReceiveMessage(userInfo)
+        // Cheap, and the wake may be the first run since the device was unlocked — if launch
+        // happened while locked, this is the earliest chance to arm the observers that silently
+        // didn't start then. A no-op when they are already running or the device is still locked.
+        store.config.reloadIfStorageWasUnavailable()
+        PushNotificationManager.shared.startObservingActivityKitTokens()
+
         Task {
             await store.refresh()
             NSLog("NCDEBUG AppDelegate background sync complete (printingCount=%d)", store.printers.filter { $0.state == .printing }.count)
