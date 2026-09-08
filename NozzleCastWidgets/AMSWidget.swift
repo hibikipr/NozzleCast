@@ -157,6 +157,7 @@ private struct TraySwatch: View {
     var accessibilityPrefix: String
     var size: CGFloat
     var corner: CGFloat
+    var showsMaterialLabel: Bool = false
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: corner, style: .continuous) }
 
@@ -170,9 +171,19 @@ private struct TraySwatch: View {
                     subtype: tray.subtype,
                     effectType: tray.effectType
                 )
-                // Filament colour IS the content: keep it full-colour in tinted/accented mode
-                // instead of letting iOS 18 desaturate it to grey mush.
-                .widgetAccentedRenderingMode(.fullColor)
+                .overlay(alignment: .bottom) {
+                    if showsMaterialLabel, let material = tray.materialLabel {
+                        Text(material)
+                            .font(.system(size: 6.5, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1.5)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.black.opacity(0.45))
+                    }
+                }
                 .clipShape(shape)
                 .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
             } else {
@@ -201,6 +212,7 @@ private struct UnitRow: View {
     let corner: CGFloat
     /// Extra trailing detail for single-slot (HT) rows, where there's leftover row width.
     let showsHTDetail: Bool
+    var showsMaterialLabel: Bool = false
 
     private var trays: [AMSTraySnapshot] { Array(unit.trays.prefix(4)) }
 
@@ -235,7 +247,8 @@ private struct UnitRow: View {
                             tray: tray,
                             accessibilityPrefix: "\(shortTag) slot \(index + 1)",
                             size: swatchSize,
-                            corner: corner
+                            corner: corner,
+                            showsMaterialLabel: showsMaterialLabel
                         )
                         .frame(maxWidth: .infinity)
                     }
@@ -285,6 +298,7 @@ private struct PrinterUnits: View {
     let useLongTag: Bool
     let rowSpacing: CGFloat
     var showsHTDetail = true
+    var showsMaterialLabel = false
 
     private var units: [AMSUnitSnapshot] { Array(printer.amsUnits.prefix(maxUnitsPerPrinter)) }
     private var hiddenUnits: Int { max(0, printer.amsUnits.count - maxUnitsPerPrinter) }
@@ -300,7 +314,8 @@ private struct PrinterUnits: View {
                     useLongTag: useLongTag,
                     swatchSize: swatchSize,
                     corner: corner,
-                    showsHTDetail: showsHTDetail
+                    showsHTDetail: showsHTDetail,
+                    showsMaterialLabel: showsMaterialLabel
                 )
             }
             if hiddenUnits > 0 {
@@ -378,7 +393,7 @@ private struct AMSMediumView: View {
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         PrinterHeader(printer: printer, trailing: printer.stateLabel)
-                        PrinterUnits(printer: printer, swatchSize: 26, corner: 7, tagWidth: 14, useLongTag: false, rowSpacing: 6)
+                        PrinterUnits(printer: printer, swatchSize: 26, corner: 7, tagWidth: 14, useLongTag: false, rowSpacing: 6, showsMaterialLabel: true)
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -430,7 +445,7 @@ private struct AMSLargeView: View {
             ForEach(Array(shown.enumerated()), id: \.offset) { _, printer in
                 VStack(alignment: .leading, spacing: 8) {
                     PrinterHeader(printer: printer, trailing: "\(printer.stateLabel) · \(printer.loadedCount)/\(printer.slotCount) loaded")
-                    PrinterUnits(printer: printer, swatchSize: 31, corner: 9, tagWidth: 46, useLongTag: true, rowSpacing: 8)
+                    PrinterUnits(printer: printer, swatchSize: 31, corner: 9, tagWidth: 46, useLongTag: true, rowSpacing: 8, showsMaterialLabel: true)
                 }
                 .padding(10)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
