@@ -90,7 +90,12 @@ struct AMSProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: AMSWidgetIntent, in context: Context) async -> AMSEntry {
         let stored = filtered(AMSWidgetStore.load(), by: configuration)
-        return AMSEntry(date: .now, capturedAt: .now, printers: stored.isEmpty ? Self.mockPrinters() : stored)
+        // The mock fallback is deliberately given an age rather than `.now`. `Text(_:style:
+        // .relative)` renders two components, so a fresh timestamp reads "0 sec ago" and hides
+        // exactly the width that made the medium footer clip to "Updated 10 min, 46...". This is
+        // the reported case, and still a plausible age for a gallery preview.
+        let capturedAt = stored.isEmpty ? Date.now.addingTimeInterval(-646) : Date.now
+        return AMSEntry(date: .now, capturedAt: capturedAt, printers: stored.isEmpty ? Self.mockPrinters() : stored)
     }
 
     func timeline(for configuration: AMSWidgetIntent, in context: Context) async -> Timeline<AMSEntry> {
@@ -369,13 +374,27 @@ private struct PrinterUnits: View {
 
 private struct StaleStamp: View {
     let capturedAt: Date?
+    /// Drops the leading "Updated", for the medium footer where this shares a row with the slot
+    /// count and the full wording clipped to "Updated 10 min, 46...". "Updated" is the least
+    /// load-bearing word in the phrase -- "10 min, 46 sec ago" still reads as a staleness stamp.
+    var compact: Bool = false
 
     var body: some View {
         Group {
             // `Text(_:style:)` interpolation only exists on `LocalizedStringKey`, so the date
             // has to be interpolated directly into a `Text` literal rather than a plain String.
+            //
+            // `.relative` deliberately, despite being the widest option: it is the only form that
+            // keeps counting while the widget is on screen. A static format ("10 min ago") would
+            // fit trivially but freeze between timeline reloads, which are 30 minutes apart -- so
+            // a snapshot taken at reload time would still claim "0 min ago" nearly half an hour
+            // later. A staleness stamp that cannot go stale is worse than one that wraps awkwardly.
             if let capturedAt {
-                Text("Updated \(capturedAt, style: .relative) ago")
+                if compact {
+                    Text("\(capturedAt, style: .relative) ago")
+                } else {
+                    Text("Updated \(capturedAt, style: .relative) ago")
+                }
             } else {
                 Text("No data yet")
             }
@@ -383,6 +402,9 @@ private struct StaleStamp: View {
         .font(.caption2)
         .monospacedDigit()
         .lineLimit(1)
+        // Safety net for a value wider than either wording anticipates (a print left running
+        // overnight reads "14 hr, 22 min ago"). Shrinking slightly beats clipping mid-number.
+        .minimumScaleFactor(0.9)
         .foregroundStyle(Color.white.opacity(0.35))
     }
 }
@@ -436,7 +458,7 @@ private struct AMSMediumView: View {
             }
 
             HStack(spacing: 8) {
-                StaleStamp(capturedAt: capturedAt)
+                StaleStamp(capturedAt: capturedAt, compact: true)
                 Spacer(minLength: 0)
                 if hiddenPrinters > 0 {
                     Text("+\(hiddenPrinters) printer\(hiddenPrinters == 1 ? "" : "s")")
@@ -578,19 +600,25 @@ struct AMSWidget: Widget {
 #Preview("AMS – Small", as: .systemSmall) {
     AMSWidget()
 } timeline: {
-    AMSEntry(date: .now, capturedAt: .now.addingTimeInterval(-120), printers: AMSProvider.mockPrinters())
+    // -3599s is the widest `.relative` gets: below an hour it prints two components
+    // ("59 min, 59 sec ago"), above it collapses to the shorter "1 hr, 2 min ago".
+    AMSEntry(date: .now, capturedAt: .now.addingTimeInterval(-3599), printers: AMSProvider.mockPrinters())
 }
 
 #Preview("AMS – Medium", as: .systemMedium) {
     AMSWidget()
 } timeline: {
-    AMSEntry(date: .now, capturedAt: .now.addingTimeInterval(-120), printers: AMSProvider.mockPrinters())
+    // -3599s is the widest `.relative` gets: below an hour it prints two components
+    // ("59 min, 59 sec ago"), above it collapses to the shorter "1 hr, 2 min ago".
+    AMSEntry(date: .now, capturedAt: .now.addingTimeInterval(-3599), printers: AMSProvider.mockPrinters())
 }
 
 #Preview("AMS – Large", as: .systemLarge) {
     AMSWidget()
 } timeline: {
-    AMSEntry(date: .now, capturedAt: .now.addingTimeInterval(-120), printers: AMSProvider.mockPrinters())
+    // -3599s is the widest `.relative` gets: below an hour it prints two components
+    // ("59 min, 59 sec ago"), above it collapses to the shorter "1 hr, 2 min ago".
+    AMSEntry(date: .now, capturedAt: .now.addingTimeInterval(-3599), printers: AMSProvider.mockPrinters())
 }
 
 #Preview("AMS – Empty", as: .systemSmall) {
