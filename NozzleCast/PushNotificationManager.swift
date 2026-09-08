@@ -87,9 +87,12 @@ final class PushNotificationManager: NSObject {
     /// task is already running. Call again after the relay config changes (e.g. the user just
     /// saved a URL/secret in Settings) so a config saved after launch starts observing too.
     func startObservingPushToStartTokenIfConfigured() {
-        guard pushToStartObservationTask == nil, RelayConfigStore.isConfigured else {
-            NSLog("NCDEBUG push-to-start observation not started: alreadyRunning=%d relayConfigured=%d",
-                  pushToStartObservationTask != nil, RelayConfigStore.isConfigured)
+        // Already running is the overwhelmingly common case now that this is re-armed on every
+        // activation, and logging it would bury the device log during a debugging session. Only
+        // the actionable case -- armed too early to read the relay config -- is worth a line.
+        guard pushToStartObservationTask == nil else { return }
+        guard RelayConfigStore.isConfigured else {
+            NSLog("NCDEBUG push-to-start observation not started: relay config not readable yet")
             return
         }
         NSLog("NCDEBUG push-to-start observation starting")
@@ -159,11 +162,11 @@ final class PushNotificationManager: NSObject {
     /// push-to-start observer, not this one, so /register-activity never fired on any process
     /// whose first `configureFirebaseIfNeeded()` ran before the relay was configured.
     func startObservingActivityPushTokensIfConfigured() {
-        guard activityDiscoveryTask == nil, RelayConfigStore.isConfigured else {
-            // Previously silent on both branches — indistinguishable in the console from this
-            // task simply not having been called yet vs. having been skipped for a real reason.
-            NSLog("NCDEBUG activity discovery not started: alreadyRunning=%d relayConfigured=%d",
-                  activityDiscoveryTask != nil, RelayConfigStore.isConfigured)
+        guard activityDiscoveryTask == nil else { return }
+        guard RelayConfigStore.isConfigured else {
+            // Worth a line on its own: this is the state that used to be permanent for the life
+            // of the process, and is now expected to clear on the next activation.
+            NSLog("NCDEBUG activity discovery not started: relay config not readable yet")
             return
         }
         NSLog("NCDEBUG activity discovery starting")
