@@ -18,5 +18,9 @@ let package = Package(
         // plain `swift test` -- NozzleCastShared itself cannot, ActivityAttributes is iOS-only.
         .target(name: "ActivityTeardownPolicy"),
         .testTarget(name: "ActivityTeardownPolicyTests", dependencies: ["ActivityTeardownPolicy"]),
+        // NozzleCastShared itself is testable on macOS now that its one ActivityKit-dependent
+        // file is gated behind `os(iOS)` -- so the pure helpers here get real tests, not just a
+        // compile. Only those helpers are exercised; the SwiftUI views are not.
+        .testTarget(name: "NozzleCastSharedTests", dependencies: ["NozzleCastShared"]),
     ]
 )

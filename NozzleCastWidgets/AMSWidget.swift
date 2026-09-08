@@ -121,7 +121,10 @@ struct AMSProvider: AppIntentTimelineProvider {
                     ]),
                     AMSUnitSnapshot(displayName: "AMS 2", isHighTemp: false, trays: [
                         AMSTraySnapshot(colorHex: "#2A5FCC", materialLabel: "PLA"),
-                        AMSTraySnapshot(colorHex: "#F2F2F2", materialLabel: "PETG"),
+                        // The worst case for this row deliberately: the longest real material
+                        // name Bambu reports, on the lightest swatch. Exercises both the label
+                        // shortening and the light-swatch contrast tone in every preview.
+                        AMSTraySnapshot(colorHex: "#F2F2F2", materialLabel: "Support for PLA"),
                         AMSTraySnapshot(colorHex: nil, materialLabel: nil),
                         AMSTraySnapshot(colorHex: "#22C55E", materialLabel: "PLA"),
                     ]),
@@ -161,6 +164,30 @@ private struct TraySwatch: View {
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: corner, style: .continuous) }
 
+    /// Derived from the swatch rather than fixed. This was a hardcoded 6.5pt shared by medium and
+    /// large, but the large swatch has roughly twice the area of the medium one -- same absolute
+    /// label, half the relative size, which is exactly why large read as too small while medium
+    /// looked fine.
+    private var labelFontSize: CGFloat { max(7, size * 0.30) }
+
+    private var foreground: SwatchForeground {
+        SwatchContrast.preferredForeground(
+            colorHex: tray.colorHex,
+            alpha: tray.colorAlpha,
+            extraColorHexes: tray.extraColorHexes
+        )
+    }
+
+    /// Not pure black: full black on a mid-tone pill reads harsher than the swatch deserves, and
+    /// 0.85 still clears the contrast the tone was chosen for.
+    private var labelTone: Color { foreground == .dark ? Color.black.opacity(0.85) : .white }
+
+    /// A swatch can be a gradient, a multi-colour blend, or the support filament's checkerboard --
+    /// patterns with both light and dark regions, where no single text colour works everywhere.
+    /// A 1pt shadow in the opposite tone holds the text over those without reintroducing a band:
+    /// on a flat colour it is invisible.
+    private var labelShadowTone: Color { foreground == .dark ? .white : .black }
+
     var body: some View {
         Group {
             if let hex = tray.colorHex {
@@ -171,17 +198,23 @@ private struct TraySwatch: View {
                     subtype: tray.subtype,
                     effectType: tray.effectType
                 )
-                .overlay(alignment: .bottom) {
-                    if showsMaterialLabel, let material = tray.materialLabel {
+                // Centred on the pill with no backing band. The band used to hide the bottom
+                // quarter of a swatch whose colour is the entire point of this widget -- and on a
+                // black swatch, white over 45%-black over black was barely legible anyway. The
+                // tone is derived from the swatch instead, so the label sits on the colour with
+                // nothing between them.
+                .overlay {
+                    if showsMaterialLabel, let material = MaterialLabel.short(tray.materialLabel) {
                         Text(material)
-                            .font(.system(size: 6.5, weight: .bold))
+                            .font(.system(size: labelFontSize, weight: .bold))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1.5)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.black.opacity(0.45))
+                            // Was 0.6, which let "Support for PLA" shrink to ~3.9pt -- rendering
+                            // the one label in the row carrying real information as the smallest
+                            // text on screen. A long name now truncates instead of dissolving.
+                            .minimumScaleFactor(0.85)
+                            .foregroundStyle(labelTone)
+                            .shadow(color: labelShadowTone.opacity(0.5), radius: 1)
+                            .padding(.horizontal, 2)
                     }
                 }
                 .clipShape(shape)
@@ -196,6 +229,8 @@ private struct TraySwatch: View {
         }
         .frame(height: size)
         .accessibilityElement(children: .ignore)
+        // Deliberately the unshortened name: "Support for PLA" is clearer spoken than "PLA SUP".
+        // The shortening exists to fit a ~28-65pt box, a constraint VoiceOver does not have.
         .accessibilityLabel("\(accessibilityPrefix), \(tray.materialLabel ?? "empty")")
     }
 }
@@ -232,7 +267,7 @@ private struct UnitRow: View {
                 // row width on the material name instead of stretching it into a fake AMS.
                 TraySwatch(tray: trays[0], accessibilityPrefix: "\(longTag) slot 1", size: swatchSize, corner: corner)
                     .frame(width: swatchSize)
-                if showsHTDetail, let material = trays[0].materialLabel {
+                if showsHTDetail, let material = MaterialLabel.short(trays[0].materialLabel) {
                     Text(material)
                         .font(.caption2)
                         .lineLimit(1)
