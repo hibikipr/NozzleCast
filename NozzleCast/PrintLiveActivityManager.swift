@@ -124,7 +124,7 @@ final class PrintLiveActivityManager {
         // over every printer it is a real possibility worth failing soft on.
         let byID = Dictionary(printers.map { (PrintActivityAttributes.normalizedID($0.name), $0) }, uniquingKeysWith: { first, _ in first })
         // Only genuinely-printing printers get an activity *created* locally — unchanged. Keeping
-        // an existing one alive is a separate, broader question answered by `isActiveJob` below.
+        // an existing one alive is a separate, broader question answered by `jobPhase` below.
         let printingByID = byID.filter { $0.value.state == .printing }
         NSLog("NCDEBUG sync: printingCount=%d activeActivities=%d", printingByID.count, Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }.count)
 
@@ -150,7 +150,7 @@ final class PrintLiveActivityManager {
             // warning, or one failed /status fetch each killed a live print's activity outright —
             // and because it ended with a 30-minute dismissal window rather than immediately, the
             // result looked exactly like an activity that had simply stopped updating.
-            let decision = ActivityTeardown.evaluate(isActiveJob: printer?.isActiveJob ?? nil, anchor: teardownAnchors[id], now: now)
+            let decision = ActivityTeardown.evaluate(isActiveJob: printer?.jobPhase?.isActive, anchor: teardownAnchors[id], now: now)
             teardownAnchors[id] = decision.anchor
             if decision.shouldEnd {
                 NSLog("NCDEBUG sync: ending activity for printerID=%@ (Bambuddy confirmed no job for the full grace window)", id)
@@ -158,14 +158,22 @@ final class PrintLiveActivityManager {
                 continue
             }
 
-            // Deliberately NARROWER than the keep-alive condition above. Keeping an activity is
-            // driven by `isActiveJob`, which stays true through an HMS badge or a disconnect;
-            // locally *writing* to it is not, because `mapPrinter` nils out `progress`/
-            // `etaMinutesRemaining` for any state that isn't `.printing`/`.paused`. Updating from
-            // an `.error`-state printer would therefore push `progress: 0` and no ETA over
-            // whatever the relay last sent — worse than not writing at all. The relay pushes real
-            // telemetry for those printers on its own correction interval regardless.
-            guard let printer, printer.state == .printing || printer.state == .paused else { continue }
+            // The relay owns this activity's content whenever one is configured, and this is the
+            // only place the app would otherwise write to it.
+            //
+            // Both sides recompute the *entire* content state from the same Bambuddy API, so the
+            // app adds nothing the relay does not already have — but it derived some of it less
+            // carefully, and ActivityKit replaces content wholesale, so whichever wrote last won.
+            // Foregrounding the app during the window where Bambuddy has not yet computed a real
+            // remaining_time overwrote the relay's correctly-omitted estimate with a wrong one;
+            // the same shape applied to the issue badge and the state label. Making two writers
+            // agree on every field is a losing game, so there is one writer instead.
+            //
+            // With no relay configured the app is the sole writer and still updates normally —
+            // its own derivations are aligned with the relay's for exactly that path (see
+            // `RemainingTimeTrust`, `JobPhase.liveActivityLabel`).
+            guard !RelayConfigStore.isConfigured else { continue }
+            guard let printer, printer.jobPhase?.isActive == true else { continue }
             let existing = activity.content.state
             let coverImage = coverImages[activity.attributes.printerID] ?? existing.coverImage
             let fingerprint = Self.fingerprint(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot)
@@ -307,7 +315,12 @@ final class PrintLiveActivityManager {
 
         return .init(
             progress: progress,
-            stateLabel: printer.state.label,
+            // The job phase, not `state.label`: `mapState` collapses a qualifying HMS issue into
+            // `.error` before it looks at the gcode state, so a print with a warning attached
+            // would announce itself as "Error" while the relay calls the same print "Printing"
+            // and puts the issue on the badge. The badge is where an issue belongs; the label
+            // says what the printer is doing. Falls back for a printer with no usable reading.
+            stateLabel: printer.jobPhase?.liveActivityLabel ?? printer.state.label,
             jobName: printer.jobFileName,
             startedAt: startedAt,
             estimatedEndAt: estimatedEnd,

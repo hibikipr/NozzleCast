@@ -275,17 +275,19 @@ final class AppStore {
         }
     }
 
-    /// Whether Bambuddy reports an in-progress job, read straight off the raw `gcode_state` and
-    /// deliberately blind to the HMS/offline overlays `mapState` applies. Nil when there is no
-    /// usable reading at all, which callers must not treat as "no job" -- see `Printer.isActiveJob`.
+    /// Bambuddy's raw `gcode_state`, deliberately blind to the HMS/offline overlays `mapState`
+    /// applies. Nil when there is no usable reading at all, which callers must not treat as "no
+    /// job" -- see `Printer.jobPhase`.
     ///
-    /// `PAUSE` counts as active: a paused print is still a print, and its Live Activity should
-    /// stay up. The relay agrees -- it pushes a "Paused" stateLabel rather than an `end`.
-    private static func mapIsActiveJob(_ dto: BambuddyStatusDTO?) -> Bool? {
+    /// `PAUSE` is its own phase rather than folded into idle: a paused print is still a print, its
+    /// Live Activity should stay up, and the label should say so. The relay agrees -- it pushes a
+    /// "Paused" stateLabel rather than an `end`.
+    private static func mapJobPhase(_ dto: BambuddyStatusDTO?) -> JobPhase? {
         guard let dto, dto.connected else { return nil }
         switch dto.state.uppercased() {
-        case "RUNNING", "PRINTING", "PREPARE", "SLICING", "PAUSE", "PAUSED": return true
-        default: return false
+        case "RUNNING", "PRINTING", "PREPARE", "SLICING": return .printing
+        case "PAUSE", "PAUSED": return .paused
+        default: return .idle
         }
     }
 
@@ -391,7 +393,14 @@ final class AppStore {
         }
 
         let progress = (status?.progress).map { $0 / 100 }
-        let remaining = status?.remainingTime
+        // Bambuddy reports a near-zero remaining_time at print start before it has computed a real
+        // estimate, which renders as an "Est. finish" a couple of minutes out on a print with
+        // hours left. The relay has rejected these since it first saw one; this is the app side of
+        // the same rule, so the two cannot disagree about the same activity's estimate.
+        let rawRemaining = status?.remainingTime
+        let remaining: Int? = rawRemaining.flatMap { value in
+            RemainingTimeTrust.isTrustworthy(remainingMinutes: Double(value), progress: progress) ? value : nil
+        }
         let job = state == .printing || state == .paused ? status?.subtaskName : nil
 
         return Printer(
@@ -400,7 +409,7 @@ final class AppStore {
             model: dto.model,
             imageAssetName: assetName(forModel: dto.model),
             state: state,
-            isActiveJob: mapIsActiveJob(status),
+            jobPhase: mapJobPhase(status),
             jobFileName: (job?.isEmpty == false) ? job : nil,
             progress: (state == .printing || state == .paused) ? progress : nil,
             etaMinutesRemaining: (state == .printing || state == .paused) ? remaining : nil,

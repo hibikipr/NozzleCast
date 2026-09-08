@@ -4,6 +4,28 @@ enum PrinterState: String, CaseIterable {
     case printing, paused, idle, error, offline
 }
 
+/// Bambuddy's raw job state, before `PrinterState`'s error/offline overlays collapse it. Kept
+/// separate because two surfaces need the underlying phase back: the Live Activity's teardown
+/// rule (is there still a job?) and its `stateLabel` (a print with a warning attached is still
+/// printing -- the issue belongs on the badge, not in place of the phase).
+enum JobPhase: Equatable {
+    case printing
+    case paused
+    /// Reachable, and reporting no job. Distinct from a nil `jobPhase`, which means no reading.
+    case idle
+
+    var isActive: Bool { self != .idle }
+
+    /// What the Live Activity should call this phase. Nil for `.idle`, which has no print to label.
+    var liveActivityLabel: String? {
+        switch self {
+        case .printing: String(localized: "Printing", comment: "Live Activity status")
+        case .paused: String(localized: "Paused", comment: "Live Activity status")
+        case .idle: nil
+        }
+    }
+}
+
 struct TemperatureReading: Equatable {
     var current: Int
     var target: Int?
@@ -119,17 +141,16 @@ struct Printer: Identifiable, Equatable {
     var model: String
     var imageAssetName: String?
     var state: PrinterState
-    /// Whether Bambuddy reports this printer is in a job right now -- running OR paused,
-    /// regardless of any HMS badge. Deliberately separate from `state`, which collapses all of
-    /// that into one value: `mapState` returns `.error` for a qualifying HMS issue and `.offline`
-    /// for an unreachable printer *before* it ever looks at the gcode state, so a printer that is
-    /// mid-print with a warning attached is indistinguishable from an idle one there.
+    /// What Bambuddy's raw `gcode_state` says this printer is doing, deliberately blind to the
+    /// overlays `state` applies: `mapState` returns `.error` for a qualifying HMS issue and
+    /// `.offline` for an unreachable printer *before* it ever looks at the gcode state, so a
+    /// printer mid-print with a warning attached is indistinguishable from an idle one there.
     ///
-    /// Three-valued on purpose. `nil` means "no usable reading" (offline, or the `/status` fetch
-    /// failed) and is NOT the same as `false` ("reachable, and reports no job") -- see
-    /// `ActivityTeardown`, which only tears a Live Activity down on the latter. Conflating the two
-    /// is what let a single unreachable poll kill a live print's Live Activity.
-    var isActiveJob: Bool? = nil
+    /// `nil` means "no usable reading" (offline, or the `/status` fetch failed) and is NOT the
+    /// same as `.idle` ("reachable, and reports no job") -- see `ActivityTeardown`, which only
+    /// tears a Live Activity down on the latter. Conflating the two is what let a single
+    /// unreachable poll kill a live print's Live Activity.
+    var jobPhase: JobPhase? = nil
     var jobFileName: String?
     var progress: Double?
     var etaMinutesRemaining: Int?

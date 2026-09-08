@@ -265,6 +265,35 @@ keep working with the phone locked.
   system ends the Live Activity outright rather than just dropping the update — so every guard
   here fails closed: if compression can't hit the target, no image is sent for that field rather
   than risking the activity.
+- **One writer per Live Activity: the relay, whenever one is configured.** Both sides used to
+  recompute the *entire* content state from the same Bambuddy API and write it — and since
+  ActivityKit replaces content wholesale, whichever wrote last won. The app added nothing the
+  relay did not already have, but derived some of it less carefully: Bambuddy reports a near-zero
+  `remaining_time` at print start before it has computed a real estimate, the relay rejects it,
+  and foregrounding the app during that window overwrote the correctly-omitted estimate with an
+  "Est. finish" a couple of minutes out. The same shape applied to the issue badge (the relay
+  debounces Bambuddy's flaky `hms_errors`, the app did not) and to `stateLabel` (the app's
+  `mapState` collapses a qualifying HMS issue into `.error` before it looks at the gcode state, so
+  a print with a warning announced itself as "Error" while the relay called the same print
+  "Printing" with a badge).
+
+  Making two writers agree on every field is a losing game, so `PrintLiveActivityManager.sync()`
+  no longer calls `activity.update()` at all when `RelayConfigStore.isConfigured`. It still
+  creates activities (foreground, when none exists) and ends them (see the teardown rule above).
+  **With no relay configured the app is the sole writer and updates normally** — and its own
+  derivations were aligned with the relay's for exactly that path: `RemainingTimeTrust` mirrors
+  the relay's thresholds, and `JobPhase.liveActivityLabel` keeps a warning on the badge instead of
+  in place of the phase.
+
+  The relay's HMS debounce is deliberately *not* ported. It is calibrated to a fixed 15s poll (two
+  consecutive observations = 30s); the app refreshes on foreground and background wakes, sometimes
+  hours apart, so the same rule would delay a genuine warning by an arbitrary amount — worse than
+  the flicker it prevents. The severity floor that fixed the false positive actually observed
+  (a severity-5 "Developer Mode" advisory) is shared by both already.
+
+  Known tradeoff: if the relay dies mid-print, the activity freezes at its last pushed state even
+  with the app open and fresh data in hand. Narrow — the relay is what created the activity — and
+  preferred over two writers disagreeing.
 - **`await`, never a bare `Task { }`, for `activity.update()`/`.end()`.** Two real, confirmed bugs
   came from this: in the app, `AppStore.refresh()` returning before an un-awaited update Task
   finished meant the update could be dropped if the app was backgrounded moments later; in the
