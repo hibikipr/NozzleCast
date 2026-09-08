@@ -60,6 +60,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func applicationDidBecomeActive(_ application: UIApplication) {
         store.config.reloadIfStorageWasUnavailable()
         PushNotificationManager.shared.startObservingActivityKitTokens()
+        // Not forced: this runs on every return from the app switcher, and a POST each time would
+        // be noise. A token that actually changed still re-registers here immediately.
+        Task { await PushNotificationManager.shared.recheckPushToStartToken() }
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
@@ -112,6 +115,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             // count says nothing about whether iOS has generated a token yet. Retrying on the
             // token itself also covers the wake arriving before push-to-start has created the
             // activity at all, which the old condition could not see.
+            // Forced, unlike the activation path: the relay deletes a push-to-start token on a
+            // 400/410, and nothing local can tell that happened -- the app still believes its
+            // token is registered. A wake is rare (roughly one per print start) and is the one
+            // moment worth spending a POST to re-assert it, so a dropped token heals by the next
+            // print instead of never. See recheckPushToStartToken.
+            await PushNotificationManager.shared.recheckPushToStartToken(force: true)
+
             var registered = await PushNotificationManager.shared.recheckActivityTokens()
             for attempt in 1...2 where registered == 0 {
                 try? await Task.sleep(for: .seconds(5))

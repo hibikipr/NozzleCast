@@ -179,6 +179,20 @@ keep working with the phone locked.
   guaranteed readable), and **never map an unrecognized read failure onto "absent"** —
   `KeychainStore.read` returns `notFound` and `unavailable` as distinct answers and treats
   anything it doesn't recognize as the latter.
+- **A token the relay drops has to be re-sendable, and an async sequence alone cannot do that
+  (confirmed live 2026-09-08).** An iPad and a phone on the same build, same print: only the iPad
+  got a Live Activity, while the phone showed the "open the app" fallback. The relay deletes a
+  push-to-start token on a 400/410, and the app only ever registered one when
+  `pushToStartTokenUpdates` yielded — which happens when iOS issues or rotates a token, not on
+  launch and not on demand. So a deleted token that never rotates again is never re-sent, the
+  relay has nothing to push push-to-start to, and every subsequent print silently creates no
+  activity. The iPad worked only because a TestFlight update had issued it a fresh token.
+  Re-arming the observer cannot fix this — `pushToStartObservationTask` is already non-nil, so the
+  guard returns immediately. `recheckPushToStartToken()` reads
+  `Activity<PrintActivityAttributes>.pushToStartToken` directly instead, forced on every
+  background wake so a dropped token heals by the next print. Same reasoning as
+  `recheckActivityTokens()`, which had had this treatment for the *per-activity* token all along —
+  the asymmetry was the bug.
 - **Background wake is a secondary fallback, not the primary fix.** The app also registers its
   plain APNs device token (`/register-device`); the relay sends it a `content-available` push
   alongside every push-to-start, which runs `PrintLiveActivityManager.sync()` in the background —

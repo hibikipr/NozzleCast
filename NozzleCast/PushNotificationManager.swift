@@ -128,7 +128,11 @@ final class PushNotificationManager: NSObject {
                 NSLog("NCDEBUG relay token registration failed with unexpected response: %@", String(describing: response))
                 return
             }
-            NSLog("NCDEBUG relay token registration succeeded (environment=%@)", environment)
+            // The suffix, not the whole token: enough to match this device against a line in the
+            // relay's tokens.json (which logs the same suffix) without putting a full push
+            // credential in the device log. Identifying which stored token belongs to which
+            // handset was guesswork every time it mattered today.
+            NSLog("NCDEBUG relay token registration succeeded (environment=%@, token ...%@)", environment, String(token.suffix(8)))
             registeredPushToStartToken = token
         } catch {
             NSLog("NCDEBUG relay token registration failed: %@", String(describing: error))
@@ -237,6 +241,40 @@ final class PushNotificationManager: NSObject {
     ///   precisely the case worth retrying, since the relay only sends this wake when it is
     ///   missing a token in the first place.
     @discardableResult
+    /// Re-registers the push-to-start token with the relay, reading it synchronously rather than
+    /// waiting on `pushToStartTokenUpdates` to yield.
+    ///
+    /// The async sequence fires when iOS issues or rotates a token — not on every launch, and not
+    /// on demand. That left no recovery path from a state the relay can reach on its own: it
+    /// *deletes* a push-to-start token on a 400/410 (`tokenStore.remove`), and once deleted, a
+    /// token that never rotates again is never re-sent. The relay then has nothing to push
+    /// push-to-start to, every subsequent print silently creates no Live Activity, and the only
+    /// visible symptom is the app's own "open the app" fallback banner. Confirmed live
+    /// 2026-09-08: an iPad and a phone on the same build and the same print, and only the iPad
+    /// got a Live Activity — the iPad had been updated from TestFlight (a fresh install issues a
+    /// fresh token, which fires the sequence and re-registers), the phone had not.
+    ///
+    /// Re-arming the observer does not help, and cannot: `pushToStartObservationTask` is already
+    /// non-nil by then, so the guard returns immediately. Only reading the token directly does.
+    ///
+    /// `force` exists because local state cannot answer "does the relay still have this?" — the
+    /// relay may have dropped a token this app still believes is registered, which is the exact
+    /// failure being fixed. Background wakes pass `force: true` (they are rare — roughly one per
+    /// print start — and are the self-healing path); activation passes `false` so returning from
+    /// the app switcher doesn't POST every time.
+    func recheckPushToStartToken(force: Bool = false) async {
+        guard RelayConfigStore.isConfigured else { return }
+        guard let tokenData = Activity<PrintActivityAttributes>.pushToStartToken else {
+            NSLog("NCDEBUG recheckPushToStartToken: iOS has not issued a push-to-start token yet")
+            return
+        }
+        let token = tokenData.map { String(format: "%02x", $0) }.joined()
+        guard force || token != registeredPushToStartToken else { return }
+        NSLog("NCDEBUG recheckPushToStartToken: registering ...%@ (force=%d, changed=%d)",
+              String(token.suffix(8)), force, token != registeredPushToStartToken)
+        await registerPushToStartToken(tokenData)
+    }
+
     func recheckActivityTokens() async -> Int {
         guard RelayConfigStore.isConfigured else { return 0 }
         var registered = 0
