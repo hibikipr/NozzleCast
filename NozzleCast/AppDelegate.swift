@@ -73,21 +73,27 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         Messaging.messaging().appDidReceiveMessage(userInfo)
         Task {
             await store.refresh()
-            var printingCount = store.printers.filter { $0.state == .printing }.count
-            NSLog("NCDEBUG AppDelegate background sync complete (printingCount=%d)", printingCount)
+            NSLog("NCDEBUG AppDelegate background sync complete (printingCount=%d)", store.printers.filter { $0.state == .printing }.count)
 
-            // Bambuddy's REST API lags 5-10s behind the print-start event that triggered
-            // this push. Retry twice so the Bambuddy API has time to catch up before we
-            // give up and leave the push-to-start activity without a registered token.
-            for attempt in 1...2 where printingCount == 0 {
-                try? await Task.sleep(for: .seconds(5))
-                await store.refresh()
-                printingCount = store.printers.filter { $0.state == .printing }.count
-                NSLog("NCDEBUG AppDelegate background sync retry %d (printingCount=%d)", attempt, printingCount)
-            }
             // pushTokenUpdates may not fire while the app is suspended — poll the synchronous
             // pushToken property on every wakeup so we catch the token as soon as iOS generates it.
-            await PushNotificationManager.shared.recheckActivityTokens()
+            //
+            // The retry condition is the token, not the printer count. It used to retry while
+            // `printingCount == 0`, on the reasoning that Bambuddy's REST API lags 5-10s behind
+            // the print-start event that triggered this push — but printer state was never what
+            // this wake needs. Registering the activity's push token is, and the two come apart
+            // in both directions: with another printer already mid-print the count is non-zero
+            // immediately, so the loop was skipped and the token could be missed; and a non-zero
+            // count says nothing about whether iOS has generated a token yet. Retrying on the
+            // token itself also covers the wake arriving before push-to-start has created the
+            // activity at all, which the old condition could not see.
+            var registered = await PushNotificationManager.shared.recheckActivityTokens()
+            for attempt in 1...2 where registered == 0 {
+                try? await Task.sleep(for: .seconds(5))
+                await store.refresh()
+                registered = await PushNotificationManager.shared.recheckActivityTokens()
+                NSLog("NCDEBUG AppDelegate token recheck retry %d (registered=%d)", attempt, registered)
+            }
             completionHandler(.newData)
         }
     }

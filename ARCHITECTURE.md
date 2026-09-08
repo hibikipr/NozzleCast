@@ -130,11 +130,14 @@ keep working with the phone locked.
   `update`/`end` straight through APNs does not depend on any local process running, which is
   more robust than local discovery either way. Only the stated justification was wrong, not the
   decision. Treat "local discovery is impossible" as retracted; do not reason from it.
-- **Starting**: the relay watches for a print-start event — either Bambuddy's ntfy topic via SSE,
-  or by polling Bambuddy's own `/api/v1/printers/` + `/status` directly and diffing raw
-  `gcode_state` transitions (`BambuddyPoller`/`printerStateClassifier.js`; this is the trigger
-  actually in use — ntfy detection still exists, gated by `NTFY_TRIGGER_ENABLED`, off by default)
-  — and sends a push-to-start APNs request straight to Apple, bypassing the app/NSE entirely.
+- **Starting**: the relay watches for a print-start event by polling Bambuddy's own
+  `/api/v1/printers/` + `/status` and diffing raw `gcode_state` transitions
+  (`BambuddyPoller`/`printerStateClassifier.js`) — and sends a push-to-start APNs request straight
+  to Apple, bypassing the app/NSE entirely. A second trigger that classified Bambuddy's ntfy alert
+  *titles* was removed from the relay on 2026-09-07: it could only ever see the events Bambuddy
+  chose to notify on (start, 25/50/75%, end), so pause, resume and HMS issues were invisible to
+  it, and running it alongside the poller wiped the per-activity push token the app had just
+  registered. Unrelated to the app's own ntfy → Firebase → NSE notification path, which stays.
   `PushNotificationManager` observes `Activity<PrintActivityAttributes>.pushToStartTokenUpdates`
   and POSTs each token to the relay's `/register` endpoint.
 - **Updating and ending**: these go straight through APNs, per-activity, bypassing the app and
