@@ -156,6 +156,29 @@ keep working with the phone locked.
   `/register-activity` never fired at all on any process whose first `configureFirebaseIfNeeded()`
   ran before the relay was configured, with no way to recover short of a full relaunch. Fixed by
   adding the matching call in `RelayConnectionSheet.save()`.
+- **Anything read at launch can be unreadable at launch, and "unreadable" is not "absent"
+  (confirmed live 2026-09-08).** An iPad was power-cycled, launched in the background before its
+  first unlock, and showed blank Bambuddy settings for the rest of that process's life — the
+  credentials were never gone, and force-quitting while unlocked brought them straight back.
+  Keychain items here are `kSecAttrAccessibleAfterFirstUnlock` and `RelayConfigStore`'s file sits
+  in Application Support (protected until first unlock), so both are unreadable in that window,
+  and both used to report it as "not configured."
+
+  The expensive consequence was not the blank settings, it was that
+  `startObservingActivityKitTokens()` ran **once**, from `didFinishLaunching`, behind a
+  `RelayConfigStore.isConfigured` guard. A launch while locked armed neither token observer, and
+  nothing retried — so for that whole process no push-to-start token was observed and no activity
+  token registered, the relay went on pushing to a stale token, APNs returned a genuine 200, and
+  no Live Activity was ever created. What the user saw was the "open the app" fallback banner
+  firing over and over. Two days went into chasing that, via a payload-size theory, an
+  `attributes-type` theory, and `liveactivitiesd`'s real-but-unrelated push budget, before the
+  cause turned out to be a guard that ran too early exactly once.
+
+  The rules that follow, both now enforced in code: **arm on every activation, not at launch** (a
+  foreground app is by definition on an unlocked device, so it is the one moment these stores are
+  guaranteed readable), and **never map an unrecognized read failure onto "absent"** —
+  `KeychainStore.read` returns `notFound` and `unavailable` as distinct answers and treats
+  anything it doesn't recognize as the latter.
 - **Background wake is a secondary fallback, not the primary fix.** The app also registers its
   plain APNs device token (`/register-device`); the relay sends it a `content-available` push
   alongside every push-to-start, which runs `PrintLiveActivityManager.sync()` in the background —
