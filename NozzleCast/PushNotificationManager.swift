@@ -228,14 +228,23 @@ final class PushNotificationManager: NSObject {
     /// registers any found with the relay. Call after every background sync — `pushTokenUpdates`
     /// may not deliver while the app is suspended, so the token can arrive between wakeups without
     /// the async stream firing; this catches it via the synchronous `pushToken` property instead.
-    func recheckActivityTokens() async {
-        guard RelayConfigStore.isConfigured else { return }
+    /// - Returns: how many activities actually had a token to register on this pass. Zero means
+    ///   there was nothing to hand the relay yet — either no activity exists (the wake can beat
+    ///   push-to-start's own activity creation) or iOS hasn't generated its token — which is
+    ///   precisely the case worth retrying, since the relay only sends this wake when it is
+    ///   missing a token in the first place.
+    @discardableResult
+    func recheckActivityTokens() async -> Int {
+        guard RelayConfigStore.isConfigured else { return 0 }
+        var registered = 0
         for activity in Activity<PrintActivityAttributes>.activities where activity.activityState == .active {
             guard let tokenData = activity.pushToken else { continue }
             let printerID = activity.attributes.printerID
             NSLog("NCDEBUG recheckActivityTokens: token available for printerID=%@ (%d bytes)", printerID, tokenData.count)
             await registerActivityPushToken(tokenData, printerID: printerID)
+            registered += 1
         }
+        return registered
     }
 
     func refreshAuthorizationStatus() async {

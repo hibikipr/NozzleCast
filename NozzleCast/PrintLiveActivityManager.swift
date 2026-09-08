@@ -176,7 +176,17 @@ final class PrintLiveActivityManager {
             // fingerprint deliberately excludes them.
             guard lastFingerprints[activity.attributes.printerID] != fingerprint else { continue }
             lastFingerprints[activity.attributes.printerID] = fingerprint
-            let state = Self.contentState(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot)
+            // `startedAt: existing.startedAt` — the app must not recompute this for an activity
+            // that already has one. Two writers drive this activity: the relay, which tracks the
+            // print's real start time in `activity-tokens.json` and sends it on every push, and
+            // this method, which back-computes a start from progress + ETA. The relay's value is
+            // the true one and is stable for the whole print; the local back-computation lands
+            // somewhere different on every single sync (which is exactly why `SyncFingerprint`
+            // has to exclude it — otherwise no refresh would ever be skippable). Overwriting a
+            // pushed value with the derived one made the widget's elapsed-time math jump every
+            // time the app happened to refresh. A print's start time doesn't change; nothing here
+            // has any business restating it.
+            let state = Self.contentState(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot, startedAt: existing.startedAt)
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
 
@@ -272,15 +282,21 @@ final class PrintLiveActivityManager {
         )
     }
 
-    private static func contentState(for printer: Printer, coverImage: Data?, liveSnapshot: Data?) -> PrintActivityAttributes.ContentState {
+    /// `startedAt`, when non-nil, is the activity's existing start date and is used verbatim.
+    /// Only a brand-new activity (which has none yet) gets the back-computed fallback below.
+    private static func contentState(for printer: Printer, coverImage: Data?, liveSnapshot: Data?, startedAt existingStartedAt: Date? = nil) -> PrintActivityAttributes.ContentState {
         let progress = printer.progress ?? 0
         let now = Date()
         let estimatedEnd = printer.etaMinutesRemaining.map { now.addingTimeInterval(TimeInterval($0 * 60)) }
 
         // Back-compute a start date consistent with the current progress, so the timer-driven
-        // progress bar tracks the real percentage instead of restarting from 0 on every refresh.
+        // progress bar tracks the real percentage instead of restarting from 0. Only ever used
+        // when creating an activity locally -- an existing one already carries a start date, from
+        // the relay or from this same fallback at creation, and it must not be restated.
         let startedAt: Date
-        if let estimatedEnd, progress > 0, progress < 1 {
+        if let existingStartedAt {
+            startedAt = existingStartedAt
+        } else if let estimatedEnd, progress > 0, progress < 1 {
             let totalDuration = estimatedEnd.timeIntervalSince(now) / (1 - progress)
             startedAt = now.addingTimeInterval(-totalDuration * progress)
         } else {
