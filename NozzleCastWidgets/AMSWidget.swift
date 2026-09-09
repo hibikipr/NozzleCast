@@ -9,6 +9,8 @@ import NozzleCastShared
 // with fixed light-on-dark foreground tones, matching how the rest of the app stays single-theme
 // rather than mixing in a light appearance nothing else in the product supports.
 private let widgetBG = Color(red: 0x1a / 255, green: 0x1a / 255, blue: 0x1a / 255)
+// Currently only referenced by the commented-out Refresh button in `AMSLargeView`. Kept so the
+// button can be restored as-is; not dead code to delete.
 private let accentBlue = Color(red: 0x2A / 255, green: 0x5F / 255, blue: 0xCC / 255)
 private let statusPrinting = Color(red: 0x22 / 255, green: 0xC5 / 255, blue: 0x5E / 255)
 private let statusPaused = Color(red: 0xF5 / 255, green: 0x9E / 255, blue: 0x0B / 255)
@@ -58,6 +60,27 @@ struct AMSWidgetIntent: WidgetConfigurationIntent {
 }
 
 /// iOS 17+ in-widget refresh — widgets get no gestures, so this is a Button, not a pull.
+///
+/// TODO: currently inert, and therefore not rendered — see `AMSLargeView`'s footer.
+///
+/// Reloading the timeline re-runs `AMSProvider.timeline()` inside *this* extension, which reads
+/// `AMSWidgetStore` from the App Group. Only the containing app ever writes that store
+/// (`AppStore.refresh()`), so the reload rebuilds a byte-identical entry with an unchanged
+/// `capturedAt` — the staleness stamp keeps counting up from the old timestamp and nothing on
+/// screen moves. The `reloadTimelines` call is redundant besides: WidgetKit already reloads a
+/// widget's timeline once an interactive `AppIntent` finishes.
+///
+/// Making this real means letting the extension fetch for itself, which needs three things:
+///   1. A `keychain-access-groups` entitlement on both the app and this extension (plus a
+///      migration of the existing items), since `KeychainStore` writes with no access group
+///      today and the two targets otherwise land in separate default groups.
+///   2. `BambuddyAPIClient.swift` and `Models.swift` in this target — both are already
+///      Foundation-only, so neither needs untangling from the app's UI.
+///   3. `AppStore`'s static mapping (`mapPrinter`/`mapSpool`/`makeAMSSnapshots`) extracted into a
+///      Foundation-only file, as it currently sits inside a SwiftUI `@Observable` class.
+///
+/// Then `perform()` becomes fetch → `AMSWidgetStore.save()` → return, and the stamp resets
+/// because `lastSavedAt` genuinely moved.
 struct RefreshAMSIntent: AppIntent {
     static var title: LocalizedStringResource { "Refresh AMS" }
     static var isDiscoverable: Bool { false }
@@ -520,12 +543,18 @@ private struct AMSLargeView: View {
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.4))
                 Spacer()
-                Button(intent: RefreshAMSIntent()) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                        .font(.caption2.weight(.semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(accentBlue)
+                // TODO: restore the Refresh button once `RefreshAMSIntent` can actually fetch —
+                // see its doc comment for what that takes. Hidden rather than deleted because it
+                // did nothing at all: the extension cannot reach Bambuddy, so tapping it left the
+                // data and the "Updated N ago" stamp exactly as they were. An affordance that
+                // visibly fails to do the one thing it advertises is worse than no affordance.
+                //
+                //  Button(intent: RefreshAMSIntent()) {
+                //      Label("Refresh", systemImage: "arrow.clockwise")
+                //          .font(.caption2.weight(.semibold))
+                //  }
+                //  .buttonStyle(.plain)
+                //  .foregroundStyle(accentBlue)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
