@@ -3,10 +3,25 @@
 ## Metadata sync
 
 - Source of truth: `fastlane/metadata_config/<locale>/{app_info,version_info}.yml`.
-- `bundle exec fastlane metadata_pull` — pull live values into the repo (use after App Review edits something, to reconcile).
+- `bundle exec fastlane metadata_pull` — pull live values into the repo (use after App Review edits something, to reconcile, or to seed a locale for the first time).
 - `bundle exec fastlane metadata_push dry_run:true` — see what would change without writing anything.
 - `bundle exec fastlane metadata_push` — PATCH only the fields that differ. Never overwrites fields you haven't touched.
-- Requires env vars: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`, `ASC_APP_ID`, optional `ASC_LOCALE` (default `en-US`).
+- Requires env vars: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`, `ASC_APP_ID`, optional `ASC_LOCALE` (default `en-US`). Create `fastlane/.env.asc` locally (gitignored) with these as `export` lines, then `source .env.asc` before running any lane — see the comment header in that file (or `.env.asc`'s own template if you haven't filled it in yet) for the exact format. Never commit this file; never paste its contents anywhere.
+
+### Which App Store version metadata comes from
+
+Apple's API splits editability by the app's current `AppStoreVersionState` (confirmed against Apple's own reference, `https://developer.apple.com/documentation/appstoreconnectapi/appstoreversionstate` — note this enum is itself deprecated in favor of `AppVersionState`, see the comment block in `fastlane/lib/metadata_sync/client.rb` for exactly what renames/drops that implies):
+
+- **Editable** (`PREPARE_FOR_SUBMISSION`, `DEVELOPER_REJECTED`, `METADATA_REJECTED`, `INVALID_BINARY`, `WAITING_FOR_EXPORT_COMPLIANCE`, `REJECTED`) — `metadata_push` writes here. `name`/`subtitle` need a non-live `appInfo`; everything else needs one of these version states.
+- **Readable-only** (`WAITING_FOR_REVIEW`, `IN_REVIEW`, `READY_FOR_REVIEW`, `ACCEPTED`, `PENDING_DEVELOPER_RELEASE`, `PENDING_APPLE_RELEASE`, `PROCESSING_FOR_APP_STORE`) — `metadata_pull`/dry-run diffing can see a version in these states, but `metadata_push` still raises `NoEditableVersionError` rather than guess which fields Apple would actually accept a PATCH for. Confirmed directly against a real app (NozzleCast, `WAITING_FOR_REVIEW`) that reads work correctly here; the rest of this category is reasoned by analogy, not individually tested.
+- **Live** (`READY_FOR_SALE`) — confirmed directly against a real shipped app (ListNudge): **nothing** is editable here, not even manually through the App Store Connect UI. Reads still fall back to this state if nothing more specific exists.
+- **Unclassified** (`PENDING_CONTRACT`, `PREORDER_READY_FOR_SALE`, `DEVELOPER_REMOVED_FROM_SALE`, `REMOVED_FROM_SALE`, `REPLACED_WITH_NEW_VERSION`, `NOT_APPLICABLE`) — an app whose only version sits in one of these raises `Client::NoVersionFoundError` loudly rather than silently returning an empty result (which `metadata_pull` would otherwise write straight through, wiping any already-seeded YAML — exactly what happened with `WAITING_FOR_REVIEW` before it was added to the readable-only set).
+
+If you ever hit `NoVersionFoundError` or `NoEditableVersionError` against an app not covered by testing so far, that's the tool correctly refusing to guess — check the app's actual state in App Store Connect and treat it as new information to fold back into `client.rb`'s classification, not a bug to route around.
+
+### CI
+
+`.github/workflows/metadata-sync.yml` triggers on push to `main` touching `fastlane/metadata_config/**`, or manually via `workflow_dispatch` (Actions tab, or `gh workflow run metadata-sync.yml`). It needs 4 repo secrets — `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_APP_ID` (this app's own numeric App Store Connect ID), and `ASC_KEY_P8_BASE64` (the `.p8` file, base64-encoded) — set via `gh secret set <NAME> --repo <owner/repo> --body "$VALUE"` (never paste raw key material anywhere else). The workflow defaults to `dry_run:true` until a human deliberately removes it after confirming a clean dry run for that specific app — flipping it is a real production write from then on. Confirmed working end-to-end (both trigger paths, real secrets, real ASC API calls) against ListNudge and my-BedJet-Remote.
 
 ## Screenshots
 
