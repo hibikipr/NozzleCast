@@ -1,6 +1,51 @@
 app_identifier("com.victormanuel.NozzleCast")
-screenshots_path("./screenshots_framed")
+
+# NOT "./screenshots_framed" -- fastlane always changes its working directory
+# to the PROJECT ROOT (the parent of fastlane/) before running any lane,
+# regardless of which directory you invoked `fastlane` from. A relative path
+# here resolves against that project root, not against fastlane/ itself.
+# Confirmed directly: a real upload_screenshots run against my-BedJet-Remote
+# with the un-prefixed path found zero screenshots (Dir.pwd was the project
+# root; "./screenshots_framed" resolved to an empty, unrelated directory
+# there) and "succeeded" vacuously -- every downstream check in
+# deliver/lib/deliver/upload_screenshots.rb trivially passes when zero local
+# screenshots are found, so nothing in deliver's own output flags this as a
+# problem. Nothing was actually uploaded to App Store Connect despite the
+# "Successfully uploaded screenshots" message.
+screenshots_path("./fastlane/screenshots_framed")
 skip_metadata(true)
 skip_binary_upload(true)
-overwrite_screenshots(true)
+
+# Deliberately NOT setting overwrite_screenshots(true).
+#
+# deliver's delete_screenshots (deliver/lib/deliver/upload_screenshots.rb) deletes
+# EVERY existing screenshot set for a language being uploaded — scoped only by
+# locale, not by device/display type (see AppScreenshotIterator#each_app_screenshot_set,
+# which is not filtered by display_type at all in the delete path). Our
+# `screenshots_framed/` tree never contains iPad-13 output (frameit can't frame
+# that resolution — see fastlane/README.md), so an overwrite run would delete
+# iPad's live screenshot set on App Store Connect and upload nothing to replace
+# it, i.e. wipe it permanently with no local backfill.
+#
+# Without overwrite_screenshots, deliver only adds new screenshot sets for
+# device classes we upload and skips already-uploaded files by checksum — it
+# never deletes anything. The tradeoff: replacing/reordering a stale iPhone
+# screenshot still requires clearing the old one by hand in App Store Connect
+# first. If we later want in-lane replacement, implement scoped deletion that
+# excludes iPad-13's display type explicitly, rather than re-enabling this flag.
+overwrite_screenshots(false)
 force(true)
+
+# Apple restricts precheck's in-app-purchase check to Apple ID (2FA) auth --
+# it cannot run against an App Store Connect API key. Confirmed directly: a
+# real upload_screenshots run against my-BedJet-Remote uploaded successfully
+# but then reported the whole lane as failed here, with
+# "Precheck cannot check In-app purchases with the App Store Connect API Key
+# (yet)." A narrower fix (precheck_include_in_app_purchases(false)) exists,
+# but this lane never touches metadata (skip_metadata(true)) or submits for
+# review, so precheck's other checks (all metadata/text lints -- see
+# precheck/lib/precheck/rules/) have nothing to check here either. Disabling
+# it outright loses no protection this lane was relying on, and does not
+# affect whether the screenshot upload itself succeeds -- that always
+# completes (or raises) before precheck runs at all.
+run_precheck_before_submit(false)
