@@ -16,4 +16,21 @@ class StoreTest < Minitest::Test
       assert_equal data[:version_info], loaded[:version_info]
     end
   end
+
+  # M2: Store.load used to raise a bare Errno::ENOENT for an unseeded locale
+  # (e.g. ASC_LOCALE=de-DE bundle exec fastlane metadata_push with no prior
+  # metadata_pull for that locale) -- reachable today, not just latent. It
+  # must instead raise a clear error naming the missing directory and
+  # suggesting metadata_pull.
+  def test_load_raises_clear_error_for_unseeded_locale
+    Dir.mktmpdir do |dir|
+      missing_locale_dir = File.join(dir, "de-DE")
+
+      error = assert_raises(RuntimeError) do
+        MetadataSync::Store.load(missing_locale_dir)
+      end
+      assert_match(/No seeded metadata found in #{Regexp.escape(missing_locale_dir)}/, error.message)
+      assert_match(/metadata_pull/, error.message)
+    end
+  end
 end

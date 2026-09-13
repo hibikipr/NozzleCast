@@ -27,4 +27,28 @@ class DiffTest < Minitest::Test
     assert_empty diff[:app_info]
     assert_empty diff[:version_info]
   end
+
+  # M3 regression coverage for what caused C3 (the seeded version_info.yml
+  # producing a false diff on its first real run against live values).
+
+  # nil (repo field genuinely unset) must NOT be treated as equal-and-skippable
+  # to an empty string live value -- changed_fields already skips nil repo
+  # values unconditionally, so the field must simply never appear in the diff,
+  # regardless of what live holds (including "", which IS different from nil).
+  def test_nil_repo_value_is_always_skipped_even_when_live_is_empty_string
+    repo = { "marketing_url" => nil }
+    live = { "marketing_url" => "" }
+    diff = MetadataSync::Diff.changed_fields(repo, live, %w[marketing_url])
+    assert_empty diff
+  end
+
+  # A trailing-newline/whitespace difference (e.g. a `|` block scalar vs a
+  # live value with no trailing newline) IS a real, meaningful diff and must
+  # be surfaced, not silently treated as equal.
+  def test_trailing_newline_difference_is_treated_as_a_real_diff
+    repo = { "description" => "Same copy.\n" }
+    live = { "description" => "Same copy." }
+    diff = MetadataSync::Diff.changed_fields(repo, live, %w[description])
+    assert_equal({ "description" => "Same copy.\n" }, diff)
+  end
 end
