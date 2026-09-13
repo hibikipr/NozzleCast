@@ -1,5 +1,14 @@
 default_platform(:ios)
 
+# fastlane regenerates fastlane/README.md from lane `desc`s on every single
+# run (Fastlane::DocsGenerator, called unconditionally from LaneManager
+# unless this is set) — it would otherwise silently clobber the hand-written
+# documentation in that file (metadata sync + screenshot workflow) the next
+# time anyone runs any lane here, including `frame_app_screenshots`.
+before_all do
+  skip_docs
+end
+
 platform :ios do
   desc "Sanity-check that the fastlane toolchain loads"
   lane :hello do
@@ -64,29 +73,195 @@ platform :ios do
       next
     end
 
+    # Resolve (and validate) the version_info PATCH target BEFORE issuing any
+    # PATCH. Without this, if push_app_info succeeds and push_version_info
+    # then raises NoEditableVersionError (the common case against a shipped,
+    # live-only app), the app_info PATCH has already landed — a partial push,
+    # which the plan's Global Constraints forbid. Validate first, mutate second.
+    client.resolve_version_target!(diff[:version_info]) unless diff[:version_info].empty?
+
     client.push_app_info(diff[:app_info])
     client.push_version_info(diff[:version_info])
     UI.success("Pushed metadata changes for #{locale}.")
   end
 
-  desc "Frame screenshots with frameit, writing framed output alongside the bare captures"
+  # Two independent bugs, both confirmed by reading the vendored gem source
+  # (fastlane/vendor/bundle/ruby/2.6.0/gems/fastlane-2.230.0/{frameit,deliver}),
+  # forced this lane into a stage → frame → publish pipeline instead of the
+  # previous "copy into screenshots_framed/<locale>/ and frame in place":
+  #
+  # 1) frameit's Runner#create_config (frameit/lib/frameit/runner.rb) looks for
+  #    Framefile.json exactly 1, 2, and 4 path-components above the screenshot
+  #    file — never 3. fastlane/Framefile.json sits exactly 3 components above
+  #    a file living in fastlane/screenshots_framed/<locale>/, so it was NEVER
+  #    found there: create_config returned {}, complex framing mode never
+  #    activated, and frameit silently fell back to frame-only "easy mode"
+  #    (no headline/keyword text, and — critically — no resize to the exact
+  #    device resolution App Store Connect requires, so AppScreenshotValidator
+  #    would reject the upload).
+  #
+  # 2) deliver's Loader.load_app_screenshots (deliver/lib/deliver/loader.rb)
+  #    partitions bare-vs-framed screenshots with
+  #    `path.downcase.include?('framed')`. Because the output directory itself
+  #    is named screenshots_framed, EVERY file under it — bare copies and
+  #    _framed outputs alike — matches that substring check, so both got
+  #    uploaded: double-counted shots and a blown per-set cap.
+  #
+  # Fix: do all copying/framing in a scratch staging directory that is NOT
+  # named "*framed*" and is 2 levels below fastlane/ (so Framefile.json is
+  # reliably found at the locale-folder level — the same per-locale-Framefile
+  # mechanism already documented in README.md's "Per-locale copy override"
+  # and used for real per-locale overrides), then publish only the resulting
+  # *_framed.png files into screenshots_framed/<locale>/, which stays flat and
+  # never contains a bare original — so there is nothing left for deliver's
+  # "framed" substring check to double-count.
+  #
+  # Device class is detected by deliver from each image's pixel dimensions
+  # (deliver/lib/deliver/app_screenshot.rb), never from folder/file naming, so
+  # a flat, multi-device-class directory is fine for deliver's own discovery —
+  # filenames just need to stay unique, hence the device-class prefix.
+  #
+  # iPad-13 (2064x2752) has no frameit template on the pinned fastlane version
+  # (see README's "Known limitation" and fastlane/lib/frameit_device_patch.rb) —
+  # frameit would raise "Unsupported screen size" if we tried. We skip it here
+  # deliberately and leave its screenshots unframed/unmanaged by this lane.
+  UNFRAMEABLE_DEVICE_CLASSES = ["iPad-13"].freeze
+
+  # frameit's ConfigParser#change_paths_to_absolutes! (frameit/lib/frameit/config_parser.rb)
+  # unconditionally rewrites any 'font'/'background' string value with
+  # `value.replace(File.join(containing_folder, value))` — joining blindly,
+  # even if `value` is already absolute (File.join doesn't special-case
+  # that). `containing_folder` is *that config file's own* directory — not
+  # the fastlane directory, not the screenshot's folder. So a byte-for-byte
+  # copy of Framefile.json into screenshots_staging/<locale>/ would break its
+  # "backgrounds/white.png" / "fonts/*.ttf" relative paths (they're relative
+  # to fastlane/, where the source file normally lives), and simply
+  # rewriting them to absolute would double up once frameit re-joins them.
+  # Instead, rewrite each path to be relative *from the staging directory*
+  # to the real (fastlane/-relative) asset, so frameit's own join lands on
+  # the correct absolute path — mirroring frameit's key-based walk (only
+  # 'font' and 'background' keys get this treatment; see
+  # ConfigParser#validate_key for the same key list).
+  #
+  # IMPORTANT: relative background/font values are ALWAYS resolved against
+  # the fastlane root (asset_root, i.e. __dir__ — where backgrounds/ and
+  # fonts/ actually live), never against source_path's own directory. A
+  # per-locale override at fastlane/screenshots/<locale>/Framefile.json (see
+  # README.md's "Per-locale copy override") has the same `data` shape as the
+  # top-level file and is documented to reuse the same shared placeholder
+  # assets — only its `data` (title/keyword text) is locale-specific.
+  # Resolving against the override's own folder instead of the fastlane root
+  # was Finding 1 of the N1/N2 follow-up review: it produced paths like
+  # "screenshots/de-DE/backgrounds/white.png", which don't exist, so frameit
+  # raised "Could not find background image" and the locale silently
+  # produced zero framed files.
+  def write_resolved_framefile(source_path, dest_path, asset_root: __dir__)
+    require "json"
+    require "pathname"
+
+    data = JSON.parse(File.read(source_path))
+    source_dir = File.expand_path(asset_root)
+    dest_dir = File.dirname(File.expand_path(dest_path))
+    resolve_framefile_paths!(data, source_dir, dest_dir)
+    File.write(dest_path, JSON.pretty_generate(data))
+  end
+
+  def resolve_framefile_paths!(value, source_dir, dest_dir)
+    case value
+    when Hash
+      value.each do |key, v|
+        if %w[font background].include?(key) && v.kind_of?(String) && !Pathname.new(v).absolute?
+          absolute_target = File.expand_path(v, source_dir)
+          value[key] = Pathname.new(absolute_target).relative_path_from(Pathname.new(dest_dir)).to_s
+        else
+          resolve_framefile_paths!(v, source_dir, dest_dir)
+        end
+      end
+    when Array
+      value.each { |v| resolve_framefile_paths!(v, source_dir, dest_dir) }
+    end
+  end
+
+  desc "Frame screenshots with frameit, writing framed output flat per locale so deliver can discover it"
   lane :frame_app_screenshots do
     Dir.glob(File.join(__dir__, "screenshots", "*")).each do |locale_dir|
+      next unless File.directory?(locale_dir)
+
       locale = File.basename(locale_dir)
+      staging_dir = File.expand_path(File.join(__dir__, "screenshots_staging", locale))
+      out_dir = File.expand_path(File.join(__dir__, "screenshots_framed", locale))
+
+      # Stage: clean scratch dir, then flatten bare device-class screenshots
+      # into it with a device-class filename prefix to avoid collisions
+      # (multiple device classes reuse the same shot numbers/names).
+      FileUtils.rm_rf(staging_dir)
+      FileUtils.mkdir_p(staging_dir)
+
       Dir.glob(File.join(locale_dir, "*")).each do |device_dir|
         next unless File.directory?(device_dir)
 
         device_class = File.basename(device_dir)
-        out_dir = File.expand_path(File.join(__dir__, "screenshots_framed", locale, device_class))
-        FileUtils.mkdir_p(out_dir)
-        FileUtils.cp_r(Dir.glob(File.join(device_dir, "*.png")), out_dir)
+        if UNFRAMEABLE_DEVICE_CLASSES.include?(device_class)
+          UI.important("Skipping #{device_class} for #{locale} — frameit has no template for this resolution (see fastlane/README.md).")
+          next
+        end
 
-        frameit(path: out_dir)
+        Dir.glob(File.join(device_dir, "*.png")).each do |src|
+          dest = File.join(staging_dir, "#{device_class}-#{File.basename(src)}")
+          FileUtils.cp(src, dest)
+        end
+      end
+
+      # Frame: give frameit a Framefile.json directly inside the staging
+      # folder it's framing — the same per-locale-folder placement documented
+      # in README.md's "Per-locale copy override", proven to be found by
+      # frameit's ancestor-counting create_config. Prefer a locale-specific
+      # override when present, else the shared top-level Framefile.json.
+      locale_framefile = File.join(locale_dir, "Framefile.json")
+      source_framefile = File.exist?(locale_framefile) ? locale_framefile : File.join(__dir__, "Framefile.json")
+      write_resolved_framefile(source_framefile, File.join(staging_dir, "Framefile.json"))
+
+      frameit(path: staging_dir)
+
+      # Publish: only the genuinely-framed output goes into
+      # screenshots_framed/<locale>/ — never the bare originals — so deliver's
+      # loader has nothing ambiguous to double-count. Clean/recreate first so
+      # stale files from a previous layout or a renamed/removed shot don't
+      # accumulate across runs.
+      #
+      # BUT: verify framing actually produced output before wiping anything.
+      # frameit failures (e.g. a bad Framefile.json, a missing background/font
+      # asset) don't abort this lane, so without this check a failed framing
+      # run for one locale would rm_rf a previously-good
+      # screenshots_framed/<locale>/ and replace it with nothing — a silent
+      # regression the lane would still report as a success. This was Finding
+      # 2 of the N1/N2 follow-up review. We only treat zero framed output as a
+      # failure when staging actually had bare source screenshots to frame —
+      # a locale that's genuinely all-iPad-13 (the one UNFRAMEABLE_DEVICE_CLASSES
+      # skip) legitimately produces nothing and that's expected, not an error.
+      framed_files = Dir.glob(File.join(staging_dir, "*_framed.png"))
+      staged_source_count = Dir.glob(File.join(staging_dir, "*.png")).reject { |p| p.end_with?("_framed.png") }.count
+
+      if framed_files.empty? && staged_source_count > 0
+        UI.user_error!(
+          "frame_app_screenshots produced zero framed files for locale '#{locale}' " \
+          "even though #{staged_source_count} bare screenshot(s) were staged — frameit " \
+          "must have failed. Leaving the existing #{out_dir} untouched rather than " \
+          "wiping previously-published output. Check the frameit output above for the " \
+          "underlying error (e.g. a missing background/font asset or bad Framefile.json)."
+        )
+      end
+
+      FileUtils.rm_rf(out_dir)
+      FileUtils.mkdir_p(out_dir)
+      framed_files.each do |framed|
+        FileUtils.cp(framed, File.join(out_dir, File.basename(framed)))
       end
     end
   end
 
-  desc "Upload framed screenshots to App Store Connect (screenshots only, no metadata/binary changes)"
+  desc "Upload framed screenshots to App Store Connect (screenshots only, no metadata/binary changes). " \
+       "Does NOT delete existing screenshot sets — see Deliverfile comment on overwrite_screenshots."
   lane :upload_screenshots do
     app_store_connect_api_key(
       key_id: ENV.fetch("ASC_KEY_ID"),
