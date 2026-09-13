@@ -8,6 +8,16 @@ module MetadataSync
     ].freeze
     LIVE_VERSION_STATE = "READY_FOR_SALE".freeze
 
+    # Confirmed against a real app (NozzleCast) sitting in this state: Apple's
+    # own App Store Connect UI says "You can edit some information while your
+    # version is waiting for review" -- so WAITING_FOR_REVIEW is neither fully
+    # editable (EDITABLE_VERSION_STATES) nor fully locked (LIVE_VERSION_STATE).
+    # Without knowing exactly which fields are safely PATCHable here, treat it
+    # as readable-only: fetch/pull can see this version, but push still
+    # requires a genuinely editable version and raises rather than guessing
+    # which fields would actually succeed.
+    READABLE_ONLY_VERSION_STATES = %w[WAITING_FOR_REVIEW].freeze
+
     CAMEL_CASE_OVERRIDES = {
       "promotional_text" => "promotionalText",
       "marketing_url" => "marketingUrl",
@@ -27,7 +37,7 @@ module MetadataSync
     end
 
     def fetch_version_info
-      version = editable_version || live_version
+      version = editable_version || readable_only_version || live_version
       loc = version_localization(version)
       return {} unless loc
 
@@ -103,10 +113,11 @@ module MetadataSync
       { "data" => { "type" => type, "id" => id, "attributes" => attributes } }
     end
 
-    # All appStoreState values we ever look for (editable_version/live_version).
-    # Filtering server-side on exactly these means we never depend on landing
-    # on the right page of an app's full version history.
-    RELEVANT_VERSION_STATES = (EDITABLE_VERSION_STATES + [LIVE_VERSION_STATE]).freeze
+    # All appStoreState values we ever look for (editable_version/
+    # readable_only_version/live_version). Filtering server-side on exactly
+    # these means we never depend on landing on the right page of an app's
+    # full version history.
+    RELEVANT_VERSION_STATES = (EDITABLE_VERSION_STATES + READABLE_ONLY_VERSION_STATES + [LIVE_VERSION_STATE]).freeze
 
     # Like the version-scoped fields, a read never needs an editable appInfo
     # (falls back to the live one so metadata_pull still works against a
@@ -146,6 +157,10 @@ module MetadataSync
 
     def editable_version
       versions.find { |v| EDITABLE_VERSION_STATES.include?(v.dig("attributes", "appStoreState")) }
+    end
+
+    def readable_only_version
+      versions.find { |v| READABLE_ONLY_VERSION_STATES.include?(v.dig("attributes", "appStoreState")) }
     end
 
     def live_version
