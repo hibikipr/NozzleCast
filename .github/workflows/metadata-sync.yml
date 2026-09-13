@@ -1,0 +1,51 @@
+name: App Store Connect metadata sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fastlane/metadata_config/**"
+  workflow_dispatch: {}
+
+jobs:
+  metadata_push:
+    # No Xcode/simulator step here -- this lane only talks to the App Store
+    # Connect REST API over JWT, so a Linux runner is sufficient and cheaper
+    # than macos-latest.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          # Pinned to match fastlane/Gemfile.lock's vendored gems (the repo's
+          # vendor/bundle tree is ruby/2.6.0) and the Ruby this project has
+          # actually been developed and tested against.
+          ruby-version: "2.6.10"
+          working-directory: fastlane
+          bundler-cache: true
+      - name: Write ASC API key to a temp file
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: echo "$ASC_KEY_P8_BASE64" | base64 --decode > "${{ runner.temp }}/AuthKey.p8"
+      - name: Verify decoded key is non-empty
+        run: |
+          if [ ! -s "${{ runner.temp }}/AuthKey.p8" ]; then
+            echo "Decoded ASC API key is empty -- check the ASC_KEY_P8_BASE64 secret." >&2
+            exit 1
+          fi
+      - name: Push metadata diff
+        working-directory: fastlane
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+        # NOTE: forced to dry_run:true for now. The seeded metadata_config
+        # had never had a verified clean dry run against real credentials
+        # (see the version_info.yml fix for why the first real run would
+        # have shown a false 5-field diff) -- so this workflow has never
+        # actually proven a real push is safe. A human must confirm a clean
+        # `bundle exec fastlane metadata_push dry_run:true` run against real
+        # ASC credentials, then flip this to a real push (drop
+        # `dry_run:true` below) deliberately, with review.
+        run: bundle exec fastlane metadata_push dry_run:true
