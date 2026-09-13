@@ -89,6 +89,26 @@ If you ever hit `NoVersionFoundError` or `NoEditableVersionError` against an app
   path relative to the locale folder itself, since no such assets exist
   there. Always render and visually check for clipping before uploading;
   never auto-translate the English copy into a new locale's Framefile.
+- **Critical gotcha — relative paths in `Deliverfile`/`Fastfile` config resolve
+  against the project root, not `fastlane/`:** fastlane always `Dir.chdir`s to
+  the project root (the parent of `fastlane/`) before running any lane,
+  regardless of which directory you invoked `fastlane` from. A bare relative
+  path like `screenshots_path("./screenshots_framed")` therefore resolves to
+  `<project-root>/screenshots_framed`, not `<project-root>/fastlane/screenshots_framed`
+  — the actual `Deliverfile` setting is `"./fastlane/screenshots_framed"` for
+  exactly this reason. This bit us for real: with the un-prefixed path,
+  `upload_screenshots` silently found zero local screenshots (an unrelated,
+  coincidentally-existing empty directory at the project root satisfied the
+  glob with nothing in it) and every downstream check in
+  `deliver/lib/deliver/upload_screenshots.rb` trivially passed on zero files,
+  so the lane printed "Successfully uploaded screenshots to App Store
+  Connect" while uploading nothing — confirmed against a real app
+  (my-BedJet-Remote) via a read-only ASC API query showing zero screenshot
+  sets existed server-side despite that message. Any new relative path added
+  to `Deliverfile` needs the `./fastlane/` prefix for the same reason; code
+  written directly in `Fastfile.rb` is unaffected since it anchors paths with
+  `File.join(__dir__, ...)`, and `__dir__` reflects the source file's own
+  location rather than the process's current working directory.
 - Upload: `bundle exec fastlane upload_screenshots`. This lane does **not**
   delete any existing screenshot sets on App Store Connect (see the
   `overwrite_screenshots(false)` comment in `fastlane/Deliverfile`) —
