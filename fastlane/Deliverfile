@@ -1,0 +1,6 @@
+app_identifier("com.victormanuel.NozzleCast")
+screenshots_path("./screenshots_framed")
+skip_metadata(true)
+skip_binary_upload(true)
+overwrite_screenshots(true)
+force(true)

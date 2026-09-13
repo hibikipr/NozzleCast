@@ -1,0 +1,98 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Sanity-check that the fastlane toolchain loads"
+  lane :hello do
+    UI.success("fastlane toolchain is wired up.")
+  end
+
+  $LOAD_PATH.unshift(File.join(__dir__, "lib")) unless $LOAD_PATH.include?(File.join(__dir__, "lib"))
+
+  require "metadata_sync/auth"
+  require "metadata_sync/http_transport"
+  require "metadata_sync/client"
+  require "metadata_sync/store"
+  require "metadata_sync/diff"
+  require "frameit_device_patch"
+
+  def metadata_client(locale)
+    key_id = ENV.fetch("ASC_KEY_ID")
+    issuer_id = ENV.fetch("ASC_ISSUER_ID")
+    key_path = ENV.fetch("ASC_KEY_PATH")
+    app_id = ENV.fetch("ASC_APP_ID")
+
+    token = MetadataSync::Auth.build_token(
+      key_id: key_id,
+      issuer_id: issuer_id,
+      private_key_pem: File.read(key_path)
+    )
+    transport = MetadataSync::HttpTransport.new(token: token)
+    MetadataSync::Client.new(transport: transport, app_id: app_id, locale: locale)
+  end
+
+  desc "Pull live App Store Connect metadata into fastlane/metadata_config/<locale>/"
+  lane :metadata_pull do
+    locale = ENV.fetch("ASC_LOCALE", "en-US")
+    client = metadata_client(locale)
+    live = { app_info: client.fetch_app_info, version_info: client.fetch_version_info }
+    locale_dir = File.join(__dir__, "metadata_config", locale)
+    MetadataSync::Store.save(locale_dir, live)
+    UI.success("Pulled live metadata for #{locale} into #{locale_dir}")
+  end
+
+  desc "Diff repo metadata against live App Store Connect metadata and PATCH only what changed. Pass dry_run:true to only print the diff."
+  lane :metadata_push do |options|
+    locale = ENV.fetch("ASC_LOCALE", "en-US")
+    locale_dir = File.join(__dir__, "metadata_config", locale)
+    repo = MetadataSync::Store.load(locale_dir)
+
+    client = metadata_client(locale)
+    live = { app_info: client.fetch_app_info, version_info: client.fetch_version_info }
+
+    diff = MetadataSync::Diff.compute(repo, live)
+
+    if diff[:app_info].empty? && diff[:version_info].empty?
+      UI.success("No changes to push for #{locale}.")
+      next
+    end
+
+    UI.message("app_info changes: #{diff[:app_info]}")
+    UI.message("version_info changes: #{diff[:version_info]}")
+
+    if options[:dry_run]
+      UI.important("Dry run — nothing was pushed.")
+      next
+    end
+
+    client.push_app_info(diff[:app_info])
+    client.push_version_info(diff[:version_info])
+    UI.success("Pushed metadata changes for #{locale}.")
+  end
+
+  desc "Frame screenshots with frameit, writing framed output alongside the bare captures"
+  lane :frame_app_screenshots do
+    Dir.glob(File.join(__dir__, "screenshots", "*")).each do |locale_dir|
+      locale = File.basename(locale_dir)
+      Dir.glob(File.join(locale_dir, "*")).each do |device_dir|
+        next unless File.directory?(device_dir)
+
+        device_class = File.basename(device_dir)
+        out_dir = File.expand_path(File.join(__dir__, "screenshots_framed", locale, device_class))
+        FileUtils.mkdir_p(out_dir)
+        FileUtils.cp_r(Dir.glob(File.join(device_dir, "*.png")), out_dir)
+
+        frameit(path: out_dir)
+      end
+    end
+  end
+
+  desc "Upload framed screenshots to App Store Connect (screenshots only, no metadata/binary changes)"
+  lane :upload_screenshots do
+    app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: ENV.fetch("ASC_KEY_PATH")
+    )
+    deliver(app_identifier: "com.victormanuel.NozzleCast")
+  end
+end

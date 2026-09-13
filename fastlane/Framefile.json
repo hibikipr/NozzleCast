@@ -1,0 +1,9 @@
+{
+  "default": {
+    "keyword": { "font": "Helvetica-Bold", "color": "#4a4a4aff" },
+    "title": { "font": "Helvetica", "color": "#1c1c1cff" },
+    "stack_title": true,
+    "show_complete_frame": false
+  },
+  "data": []
+}
