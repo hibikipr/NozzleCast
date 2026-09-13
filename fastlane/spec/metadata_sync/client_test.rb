@@ -29,7 +29,10 @@ class ClientTest < Minitest::Test
   # for the versions GET, filter[locale] for both localization GETs -- see
   # I2). FakeTransport matches on the exact path string.
   RELEVANT_VERSION_STATES = "PREPARE_FOR_SUBMISSION,DEVELOPER_REJECTED,METADATA_REJECTED," \
-                             "INVALID_BINARY,WAITING_FOR_EXPORT_COMPLIANCE,WAITING_FOR_REVIEW,READY_FOR_SALE"
+                             "INVALID_BINARY,WAITING_FOR_EXPORT_COMPLIANCE,REJECTED," \
+                             "WAITING_FOR_REVIEW,IN_REVIEW,READY_FOR_REVIEW,ACCEPTED," \
+                             "PENDING_DEVELOPER_RELEASE,PENDING_APPLE_RELEASE," \
+                             "PROCESSING_FOR_APP_STORE,READY_FOR_SALE"
 
   def versions_path
     "/v1/apps/app-1/appStoreVersions?filter[appStoreState]=#{RELEVANT_VERSION_STATES}&limit=200"
@@ -114,6 +117,47 @@ class ClientTest < Minitest::Test
     end
     assert_match(/No editable App Store version/, error.message)
     assert_empty t.patches
+  end
+
+  # REJECTED (distinct from DEVELOPER_REJECTED/METADATA_REJECTED) reasoned
+  # into EDITABLE_VERSION_STATES: any rejected version must be editable to
+  # let the developer fix and resubmit. Not individually confirmed against a
+  # real app, but the alternative (treating a rejected version as locked)
+  # would be clearly wrong.
+  def test_push_version_info_treats_rejected_as_editable
+    rejected_fixture = write_json_fixture(
+      { "data" => [{ "id" => "version-rejected", "attributes" => { "appStoreState" => "REJECTED" } }] }
+    )
+    t = transport(
+      versions_path => rejected_fixture,
+      version_localizations_path("version-rejected") => File.join(FIXTURES_DIR, "app_store_version_localizations.json")
+    )
+    client(t).push_version_info({ "description" => "New description" })
+    assert_equal "/v1/appStoreVersionLocalizations/loc-version-en", t.patches.first[:path]
+  end
+
+  # The foundational safety fix: an app whose only version sits in a state we
+  # don't recognize at all (not editable, not readable-only, not live) must
+  # fail loudly rather than silently returning {} -- which metadata_pull
+  # would otherwise write straight through, wiping any already-seeded
+  # metadata_config/*.yml with nothing.
+  def test_fetch_version_info_raises_when_no_version_resolves_at_all
+    unrecognized_fixture = write_json_fixture(
+      { "data" => [{ "id" => "version-limbo", "attributes" => { "appStoreState" => "PENDING_CONTRACT" } }] }
+    )
+    t = transport(versions_path => unrecognized_fixture)
+    error = assert_raises(MetadataSync::Client::NoVersionFoundError) do
+      client(t).fetch_version_info
+    end
+    assert_match(/No App Store version found/, error.message)
+  end
+
+  def test_fetch_version_info_raises_when_no_localization_for_locale
+    t = transport(version_localizations_path("version-pending") => empty_localizations_fixture)
+    error = assert_raises(MetadataSync::Client::NoVersionFoundError) do
+      client(t).fetch_version_info
+    end
+    assert_match(/no appStoreVersionLocalization/, error.message)
   end
 
   def test_push_app_info_patches_only_the_pending_localization

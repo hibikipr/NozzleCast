@@ -1,22 +1,70 @@
 module MetadataSync
   class Client
     class NoEditableVersionError < StandardError; end
+    class NoVersionFoundError < StandardError; end
+
+    # The complete AppStoreVersionState enum, per Apple's own reference
+    # (https://developer.apple.com/documentation/appstoreconnectapi/appstoreversionstate),
+    # for the record as of this writing:
+    #   ACCEPTED, DEVELOPER_REMOVED_FROM_SALE, DEVELOPER_REJECTED, IN_REVIEW,
+    #   INVALID_BINARY, METADATA_REJECTED, PENDING_APPLE_RELEASE,
+    #   PENDING_CONTRACT, PENDING_DEVELOPER_RELEASE, PREPARE_FOR_SUBMISSION,
+    #   PREORDER_READY_FOR_SALE, PROCESSING_FOR_APP_STORE, READY_FOR_REVIEW,
+    #   READY_FOR_SALE, REJECTED, REMOVED_FROM_SALE,
+    #   WAITING_FOR_EXPORT_COMPLIANCE, WAITING_FOR_REVIEW,
+    #   REPLACED_WITH_NEW_VERSION, NOT_APPLICABLE.
+    # NOTE: AppStoreVersionState itself is DEPRECATED in favor of the newer
+    # AppVersionState (App Store Connect API 3.3+), which renames
+    # READY_FOR_SALE -> READY_FOR_DISTRIBUTION and PROCESSING_FOR_APP_STORE ->
+    # PROCESSING_FOR_DISTRIBUTION, and drops PENDING_CONTRACT,
+    # PREORDER_READY_FOR_SALE, DEVELOPER_REMOVED_FROM_SALE,
+    # REMOVED_FROM_SALE, and NOT_APPLICABLE entirely. As of this writing the
+    # live `GET /v1/apps/{id}/appStoreVersions` endpoint this Client actually
+    # calls still returns the old (deprecated) values -- confirmed
+    # empirically against a real live app, which resolved as READY_FOR_SALE,
+    # not READY_FOR_DISTRIBUTION. If Apple ever migrates that endpoint's
+    # returned values to the new names, every state string below (and the
+    # LIVE_VERSION_STATE constant) needs updating to match.
+    #
+    # Below this point we only classify the states we have SOME basis for:
+    # states that logically must permit edits to let a developer fix and
+    # resubmit (EDITABLE_VERSION_STATES), one state confirmed directly
+    # against a real app to be readable-but-not-necessarily-writable
+    # (WAITING_FOR_REVIEW), and states in the same "submitted, awaiting
+    # review or release" family as that confirmed one, reasoned by analogy
+    # but not individually tested (the rest of READABLE_ONLY_VERSION_STATES).
+    # Everything else -- PENDING_CONTRACT, PREORDER_READY_FOR_SALE,
+    # DEVELOPER_REMOVED_FROM_SALE, REMOVED_FROM_SALE,
+    # REPLACED_WITH_NEW_VERSION, NOT_APPLICABLE -- is deliberately
+    # unclassified rather than guessed at. An app whose ONLY version sits in
+    # one of those states resolves to no version at all here, which
+    # `fetch_version_info` now treats as a loud, actionable failure (see
+    # NoVersionFoundError below) instead of silently returning {} and letting
+    # metadata_pull overwrite a repo's already-seeded metadata with nothing.
 
     EDITABLE_VERSION_STATES = %w[
       PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED METADATA_REJECTED
-      INVALID_BINARY WAITING_FOR_EXPORT_COMPLIANCE
+      INVALID_BINARY WAITING_FOR_EXPORT_COMPLIANCE REJECTED
     ].freeze
     LIVE_VERSION_STATE = "READY_FOR_SALE".freeze
 
-    # Confirmed against a real app (NozzleCast) sitting in this state: Apple's
-    # own App Store Connect UI says "You can edit some information while your
-    # version is waiting for review" -- so WAITING_FOR_REVIEW is neither fully
-    # editable (EDITABLE_VERSION_STATES) nor fully locked (LIVE_VERSION_STATE).
-    # Without knowing exactly which fields are safely PATCHable here, treat it
-    # as readable-only: fetch/pull can see this version, but push still
-    # requires a genuinely editable version and raises rather than guessing
-    # which fields would actually succeed.
-    READABLE_ONLY_VERSION_STATES = %w[WAITING_FOR_REVIEW].freeze
+    # WAITING_FOR_REVIEW confirmed directly against a real app (NozzleCast):
+    # Apple's own App Store Connect UI says "You can edit some information
+    # while your version is waiting for review" -- neither fully editable
+    # (EDITABLE_VERSION_STATES) nor fully locked (LIVE_VERSION_STATE). The
+    # other six are reasoned by analogy, not individually confirmed, as the
+    # same "somewhere in the review/release pipeline" family -- with one
+    # caveat: READY_FOR_REVIEW is queued but likely still pre-submission and
+    # possibly still writable in practice, unlike the rest. Classifying it
+    # read-only here is the conservative choice (base treated it as nothing
+    # at all), not a confirmed fact -- worth re-testing against a real app in
+    # that specific state. Reads fall back to any of these; push still
+    # always requires a genuinely editable version and raises rather than
+    # guessing which fields, if any, would actually PATCH successfully here.
+    READABLE_ONLY_VERSION_STATES = %w[
+      WAITING_FOR_REVIEW IN_REVIEW READY_FOR_REVIEW ACCEPTED
+      PENDING_DEVELOPER_RELEASE PENDING_APPLE_RELEASE PROCESSING_FOR_APP_STORE
+    ].freeze
 
     CAMEL_CASE_OVERRIDES = {
       "promotional_text" => "promotionalText",
@@ -38,8 +86,20 @@ module MetadataSync
 
     def fetch_version_info
       version = editable_version || readable_only_version || live_version
+      if version.nil?
+        raise NoVersionFoundError,
+              "No App Store version found for app #{@app_id} in any recognized state " \
+              "(editable, review/release-pipeline, or live). Check the app's actual state " \
+              "in App Store Connect -- metadata_pull refuses to overwrite the repo's seeded " \
+              "metadata with an empty result."
+      end
+
       loc = version_localization(version)
-      return {} unless loc
+      if loc.nil?
+        raise NoVersionFoundError,
+              "App #{@app_id}'s resolved version (#{version['id']}) has no " \
+              "appStoreVersionLocalization for locale #{@locale}."
+      end
 
       attrs = loc["attributes"]
       {
