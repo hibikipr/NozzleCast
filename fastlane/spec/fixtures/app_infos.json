@@ -1,0 +1,6 @@
+{
+  "data": [
+    { "id": "info-live", "attributes": { "appStoreState": "READY_FOR_SALE" } },
+    { "id": "info-pending", "attributes": { "appStoreState": "PREPARE_FOR_SUBMISSION" } }
+  ]
+}

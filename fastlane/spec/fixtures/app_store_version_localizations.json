@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "id": "loc-version-en",
+      "attributes": {
+        "locale": "en-US",
+        "description": "ListNudge is the grocery list that remembers for you.",
+        "keywords": "grocery,shopping list",
+        "promotionalText": "Share grocery lists with your household.",
+        "marketingUrl": null,
+        "supportUrl": null,
+        "whatsNew": ""
+      }
+    }
+  ]
+}
