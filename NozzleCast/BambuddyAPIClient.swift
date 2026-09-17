@@ -244,7 +244,7 @@ enum BambuddyAPIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            String(localized: "Bambuddy server isn't configured.")
+            String(localized: "Printer server isn't configured.")
         case .invalidResponse:
             String(localized: "Received an unexpected response from the server.")
         case .http(let code, let message):

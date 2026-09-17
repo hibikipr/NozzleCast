@@ -110,7 +110,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Push Notifications")
                 } footer: {
-                    Text("Import the GoogleService-Info.plist from the Firebase project your ntfy server publishes through. NozzleCast will subscribe to the same alert topic Bambuddy already sends to.")
+                    Text("Import the GoogleService-Info.plist from the Firebase project your ntfy server publishes through. NozzleCast will subscribe to the same alert topic your server already sends to.")
                 }
 
                 Section {
@@ -138,7 +138,7 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Bambuddy Server")
+                    Text("Printer Server")
                 } footer: {
                     Text(footerText)
                 }
@@ -330,13 +330,13 @@ struct SettingsView: View {
         case .connected:
             var granted: [String] = []
             if store.grantedPermissions.contains("inventory:update") || store.grantedPermissions.contains("inventory:create") {
-                granted.append(String(localized: "Manage Inventory", comment: "Bambuddy API permission name"))
+                granted.append(String(localized: "Manage Inventory", comment: "Server API permission name"))
             }
             if store.grantedPermissions.contains("printers:read") {
-                granted.append(String(localized: "Read Status", comment: "Bambuddy API permission name"))
+                granted.append(String(localized: "Read Status", comment: "Server API permission name"))
             }
             if store.grantedPermissions.contains("printers:control") {
-                granted.append(String(localized: "Printer Control", comment: "Bambuddy API permission name"))
+                granted.append(String(localized: "Printer Control", comment: "Server API permission name"))
             }
             if granted.isEmpty {
                 return String(localized: "Connected.", comment: "Settings footer: connected with no listed permissions")
@@ -346,9 +346,9 @@ struct SettingsView: View {
         case .failed(let message):
             return String(localized: "Couldn't connect: \(message)", comment: "Settings footer: connection error")
         case .connecting:
-            return String(localized: "Connecting to your Bambuddy server…", comment: "Settings footer: connecting")
+            return String(localized: "Connecting to your server…", comment: "Settings footer: connecting")
         case .notConfigured:
-            return String(localized: "Showing demo data. Tap Server to connect to your Bambuddy instance.", comment: "Settings footer: no server configured")
+            return String(localized: "Showing demo data. Tap Server to connect to your server instance.", comment: "Settings footer: no server configured")
         }
     }
 

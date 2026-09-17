@@ -74,7 +74,7 @@ struct InventoryView: View {
                                 .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
                             Group {
                                 if isConnecting {
-                                    Text("Connecting to Bambuddy…")
+                                    Text("Connecting to server…")
                                 } else {
                                     Text("\(store.spools.count) spools · \(totalGrams) g on hand")
                                 }

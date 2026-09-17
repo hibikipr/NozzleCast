@@ -23,7 +23,7 @@ struct BambuddyConnectionSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("bambuddy.example.com", text: $serverURLString)
+                    TextField("printer-server.example.com", text: $serverURLString)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -31,9 +31,9 @@ struct BambuddyConnectionSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("Bambuddy Server")
+                    Text("Printer Server")
                 } footer: {
-                    Text("Find your API key in Bambuddy under Settings → API Keys. It needs Read Status and Manage Inventory permissions.")
+                    Text("Find your API key in your server's Settings → API Keys. It needs Read Status and Manage Inventory permissions.")
                 }
 
                 if let testResult {
@@ -87,7 +87,7 @@ struct BambuddyConnectionSheet: View {
             }
             .scrollContentBackground(.hidden)
             .background(NCColor.canvasBackground.ignoresSafeArea())
-            .navigationTitle("Connect Bambuddy")
+            .navigationTitle("Connect Server")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
