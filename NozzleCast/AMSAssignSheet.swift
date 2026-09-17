@@ -145,7 +145,7 @@ struct AMSAssignSheet: View {
             Button("Assign Anyway") { performAssign(spool) }
         } message: { spool in
             Text(
-                "The selected spool's material \"\(spool.material)\" doesn't match the tray material \"\(trayMaterial)\" for \(slotLabel). This only updates NozzleCast and Bambuddy's inventory record — it doesn't change what's physically loaded in the AMS. Assign anyway?",
+                "The selected spool's material \"\(spool.material)\" doesn't match the tray material \"\(trayMaterial)\" for \(slotLabel). This only updates NozzleCast's and your server's inventory record — it doesn't change what's physically loaded in the AMS. Assign anyway?",
                 comment: "Material mismatch confirmation when assigning a spool whose material differs from what the printer reports for that AMS slot"
             )
         }

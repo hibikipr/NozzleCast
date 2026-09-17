@@ -11,24 +11,23 @@ NozzleCast
 
 ## Subtitle (30 char max)
 ```
-Bambuddy printer monitoring
+Self-hosted printer monitor
 ```
-28/30. Shows right under the name in search/on the product page.
+27/30. Shows right under the name in search/on the product page.
 
 ## Promotional text (170 char max, editable anytime without a new build)
 ```
 Live Activities for your Bambu printers — real progress, real ETA, and
-HMS alerts on your Lock Screen, driven by your own self-hosted Bambuddy
-server.
+HMS alerts on your Lock Screen, driven by your own self-hosted server.
 ```
-159/170.
+Recount before pasting.
 
 ## Description (4000 char max)
 ```
-NozzleCast is a companion app for Bambuddy, the self-hosted management
-server for Bambu Lab 3D printers. Connect it to your own Bambuddy
-instance and monitor every printer on your farm — no cloud account,
-no subscription, no data leaving your own network.
+NozzleCast is a live monitoring companion for your self-hosted 3D
+printer management server, built for Bambu Lab printers. Connect it
+to your own server instance and monitor every printer on your farm —
+no cloud account, no subscription, no data leaving your own network.
 
 LIVE ACTIVITIES THAT ACTUALLY UPDATE
 Start a print and NozzleCast puts a Live Activity on your Lock Screen
@@ -39,8 +38,8 @@ for the job, and keeps updating for the entire print.
 
 KNOW WHEN SOMETHING NEEDS ATTENTION
 A color-coded badge — yellow for a warning, red for an error — appears
-the moment Bambuddy reports an HMS issue serious enough to matter,
-matching the same severity Bambuddy's own dashboard shows. No more
+the moment your server reports an HMS issue serious enough to matter,
+matching the same severity your server's own dashboard shows. No more
 guessing whether "Paused" means a filament runout or nothing at all.
 
 YOUR WHOLE FARM AT A GLANCE
@@ -55,23 +54,23 @@ barcode or printed label with your camera to add it in seconds,
 entirely on-device.
 
 BUILT FOR SELF-HOSTERS
-NozzleCast talks directly to your Bambuddy server's API. Live
+NozzleCast talks directly to your self-hosted server's API. Live
 Activity push updates go through a small relay you run yourself
 (nozzlecast-relay, open source). There is no NozzleCast account and
 no NozzleCast server in between — your printer data stays on your
 own infrastructure.
 
-Requires an existing Bambuddy server on your network. Live Activities
-and Lock Screen push updates require the optional nozzlecast-relay
-component.
+Requires an existing compatible self-hosted printer management server
+on your network. Live Activities and Lock Screen push updates require
+the optional nozzlecast-relay component.
 ```
-~1,750/4000.
+Recount before pasting.
 
 ## Keywords (100 char max, comma-separated, no spaces needed but kept for readability)
 ```
-bambu,3d printing,bambuddy,3d printer,filament,ams,print farm,live activity,x1c,p1s,a1,octoprint
+bambu,3d printing,3d printer,filament,ams,print farm,live activity,x1c,p1s,a1,octoprint
 ```
-97/100.
+Recount before pasting.
 
 ## What's New in This Version (4000 char max) — first release
 ```
@@ -122,7 +121,7 @@ Connect uses this verbatim.
 Answer **"Data Not Collected"** for every category. NozzleCast has no
 first-party server — everything it touches is either kept on-device
 (Keychain) or sent only to servers the user configures themselves
-(their Bambuddy instance, their nozzlecast-relay, their own Firebase
+(their self-hosted printer server, their nozzlecast-relay, their own Firebase
 project). None of that is *collected by the developer*, which is what
 this questionnaire asks about. See `privacy-policy.html` for the
 full, precise breakdown if Apple's review team asks for detail.

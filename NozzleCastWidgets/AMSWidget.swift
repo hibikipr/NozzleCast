@@ -600,7 +600,7 @@ struct AMSWidgetEntryView: View {
             Text("No printers yet")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.white.opacity(0.75))
-            Text("Open NozzleCast to connect Bambuddy")
+            Text("Open NozzleCast to connect a server")
                 .font(.caption2)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Color.white.opacity(0.4))

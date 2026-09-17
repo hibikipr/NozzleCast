@@ -21,7 +21,7 @@ struct MonitorView: View {
                                 .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
                             Group {
                                 if isConnecting {
-                                    Text("Connecting to Bambuddy…")
+                                    Text("Connecting to server…")
                                 } else {
                                     Text("\(printingCount) printing · \(store.printers.count) printers")
                                 }
