@@ -23,4 +23,6 @@ promotional_text: Live Activities for your Bambu printers — real progress, rea
   and HMS alerts on your Lock Screen, driven by your own self-hosted server.
 marketing_url: https://nozzlecast.townsville.cc
 support_url: https://nozzlecast.townsville.cc
-whats_new: 
+whats_new: |-
+  1.0.0 beta: removed third-party branding from the app and its App Store
+  listing to address App Review feedback. No functional changes.
