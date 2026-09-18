@@ -579,7 +579,7 @@ final class AppStore {
     /// per call since the API gives no expiry, and snapshots are only polled every few seconds.
     func cameraSnapshot(printerID: String) async -> UIImage? {
         guard let client, let bbID = bambuddyID(printerID) else {
-            cameraErrors[printerID] = String(localized: "Not connected to a Bambuddy server.")
+            cameraErrors[printerID] = String(localized: "Not connected to a server.")
             return nil
         }
         do {
