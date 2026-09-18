@@ -23,6 +23,9 @@ promotional_text: Live Activities for your Bambu printers — real progress, rea
   and HMS alerts on your Lock Screen, driven by your own self-hosted server.
 marketing_url: https://nozzlecast.townsville.cc
 support_url: https://nozzlecast.townsville.cc
-whats_new: |-
-  1.0.0 beta: removed third-party branding from the app and its App Store
-  listing to address App Review feedback. No functional changes.
+# whats_new intentionally omitted: Apple's API rejects it with a 409
+# STATE_ERROR ("Attribute 'whatsNew' cannot be edited at this time") on a
+# version that has never been released -- there's nothing for "what's new"
+# to compare against yet. Confirmed live against NozzleCast's first (rejected,
+# never-released) 1.0 submission. Add this field back once NozzleCast has a
+# live version and this becomes an update.
