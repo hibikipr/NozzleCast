@@ -1,9 +1,16 @@
 {
   "default": {
-    "keyword": { "font": "Helvetica-Bold", "color": "#4a4a4aff" },
-    "title": { "font": "Helvetica", "color": "#1c1c1cff" },
+    "background": "backgrounds/dark_glow.png",
+    "keyword": { "font": "fonts/Poppins-SemiBold.ttf", "color": "#4F7FE0ff" },
+    "title": { "font": "fonts/Poppins-ExtraBold.ttf", "color": "#FFFFFFff" },
     "stack_title": true,
-    "show_complete_frame": false
+    "show_complete_frame": false,
+    "padding": "5%"
   },
-  "data": []
+  "data": [
+    { "filter": "01-monitor-live-status", "keyword": { "text": "LIVE STATUS" }, "title": { "text": "Every printer, one glance away" } },
+    { "filter": "02-ams-filament", "keyword": { "text": "SMART AMS" }, "title": { "text": "Know what's loaded, instantly" } },
+    { "filter": "03-widget-large", "keyword": { "text": "ON YOUR HOME SCREEN" }, "title": { "text": "Filament status without opening the app" } },
+    { "filter": "04-live-activity", "keyword": { "text": "ALWAYS IN VIEW" }, "title": { "text": "Track prints from your Lock Screen" } }
+  ]
 }
