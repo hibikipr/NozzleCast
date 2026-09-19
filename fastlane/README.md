@@ -1,5 +1,22 @@
 # fastlane/README.md (App Store Connect automation)
 
+## Prerequisites
+
+**Ruby >= 3.3** (macOS system Ruby is 2.6 and will not work). fastlane 2.240.1
+itself only needs 3.1, but the committed `Gemfile.lock` resolves `excon 1.7.1`
+and `rbs 4.2.0`, which both require >= 3.3 — so 3.3 is the real floor for this
+lockfile. Those excon/aws-sdk-s3 versions are what clear GHSA-48rx-c7pg-q66r
+and GHSA-2xgq-q749-89fq; the old Ruby 2.6 pin made both advisories permanently
+unfixable, since no patched release resolves on 2.6.
+
+Install a modern Ruby (`brew install ruby`, or any version manager), then
+`bundle install` from `fastlane/`. CI pins `ruby-version: "3.4"` in
+`.github/workflows/metadata-sync.yml`; the lockfile was last resolved locally
+on Ruby 4.0.7. Both work — every gem in the lockfile was checked against 3.4,
+and the lockfile carries no `RUBY VERSION` stanza and a generic `PLATFORMS:
+ruby`, so it is portable. `BUNDLED WITH 4.0.20` means `ruby/setup-ruby` will
+install bundler 4.x in CI (needs Ruby >= 3.2, satisfied by the 3.4 pin).
+
 ## Metadata sync
 
 - Source of truth: `fastlane/metadata_config/<locale>/{app_info,version_info}.yml`.
@@ -73,9 +90,9 @@ If you ever hit `NoVersionFoundError` or `NoEditableVersionError` against an app
   this resolution. `frame_app_screenshots` deliberately skips `iPad-13`
   rather than letting frameit raise; its screenshots stay bare and are not
   produced under `screenshots_framed/` at all. iPhone 6.9" and iPhone 6.5"
-  both work. Revisit if upgrading Ruby/fastlane (see
-  `fastlane/lib/frameit_device_patch.rb`'s comments) becomes worthwhile, or
-  if Apple/frameit ships this frame later.
+  both work. Still unsupported as of fastlane 2.240.1 (checked against its
+  `frameit/lib/frameit/device_types.rb`, which has no 2064x2752 entry);
+  revisit if Apple/frameit ships this frame later.
 - **Per-locale copy override:** to give a locale different headline text
   (e.g. because German or Finnish text runs longer), drop a second
   `Framefile.json` inside that locale's screenshot folder —

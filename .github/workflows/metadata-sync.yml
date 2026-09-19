@@ -17,10 +17,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
         with:
-          # Pinned to match fastlane/Gemfile.lock's vendored gems (the repo's
-          # vendor/bundle tree is ruby/2.6.0) and the Ruby this project has
-          # actually been developed and tested against.
-          ruby-version: "2.6.10"
+          # Was pinned to 2.6.10 to match the local vendor/bundle tree. That
+          # pin was the root cause of two unfixable Dependabot alerts: excon
+          # >= 1.5.0 (GHSA-48rx-c7pg-q66r) needs Ruby >= 3.1, and aws-sdk-s3
+          # >= 1.208.0 (GHSA-2xgq-q749-89fq) needs Ruby >= 2.7, so neither
+          # patched version could ever resolve on 2.6. vendor/bundle is
+          # gitignored, so nothing in the repo actually depends on 2.6.0.
+          ruby-version: "3.4"
           working-directory: fastlane
           bundler-cache: true
       - name: Write ASC API key to a temp file

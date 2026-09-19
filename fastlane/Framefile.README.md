@@ -7,4 +7,6 @@ This config drives `frameit` (invoked via the `ios frame_app_screenshots` fastla
 - `background`: currently `backgrounds/white.png`, a plain white placeholder. Replace with an actual branded background before shipping.
 - `fonts/*`: currently bundled Liberation Sans (an Arial/Helvetica-metric-compatible, OFL-licensed substitute), not true Helvetica. Replace with a properly licensed font if a different look is required.
 
-See `fastlane/lib/frameit_device_patch.rb` for the related device-registration patch needed to frame iPhone 6.9" screenshots on the pinned fastlane/frameit version.
+iPhone 6.9" (1320x2868) is registered natively by frameit as of fastlane
+2.239.0+; the local `frameit_device_patch.rb` that used to backfill it was
+removed when this repo moved off the Ruby 2.6 / fastlane 2.230.0 pin.

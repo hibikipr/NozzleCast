@@ -22,7 +22,6 @@ platform :ios do
   require "metadata_sync/client"
   require "metadata_sync/store"
   require "metadata_sync/diff"
-  require "frameit_device_patch"
 
   def metadata_client(locale)
     key_id = ENV.fetch("ASC_KEY_ID")
@@ -121,10 +120,12 @@ platform :ios do
   # a flat, multi-device-class directory is fine for deliver's own discovery —
   # filenames just need to stay unique, hence the device-class prefix.
   #
-  # iPad-13 (2064x2752) has no frameit template on the pinned fastlane version
-  # (see README's "Known limitation" and fastlane/lib/frameit_device_patch.rb) —
-  # frameit would raise "Unsupported screen size" if we tried. We skip it here
-  # deliberately and leave its screenshots unframed/unmanaged by this lane.
+  # iPad-13 (2064x2752) has no frameit template in any fastlane version to
+  # date (verified against 2.240.1's frameit/lib/frameit/device_types.rb,
+  # which has no 2064x2752 entry — see README's "Known limitation"), so
+  # frameit would raise "Unsupported screen size" if we tried. We skip it
+  # here deliberately and leave its screenshots unframed/unmanaged by this
+  # lane.
   UNFRAMEABLE_DEVICE_CLASSES = ["iPad-13"].freeze
 
   # frameit's ConfigParser#change_paths_to_absolutes! (frameit/lib/frameit/config_parser.rb)
