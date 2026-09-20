@@ -20,10 +20,38 @@ install bundler 4.x in CI (needs Ruby >= 3.2, satisfied by the 3.4 pin).
 ## Metadata sync
 
 - Source of truth: `fastlane/metadata_config/<locale>/{app_info,version_info}.yml`.
-- `bundle exec fastlane metadata_pull` — pull live values into the repo (use after App Review edits something, to reconcile, or to seed a locale for the first time).
+- `bundle exec fastlane metadata_pull` — pull live values into the repo (use after App Review edits something, to reconcile, or to seed a locale for the first time). Prints which App Store version it actually read from, and **refuses to blank a field the repo has content for** (pass `force:true` to override). See "What `metadata_pull` reads" below.
 - `bundle exec fastlane metadata_push dry_run:true` — see what would change without writing anything.
 - `bundle exec fastlane metadata_push` — PATCH only the fields that differ. Never overwrites fields you haven't touched.
 - Requires env vars: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`, `ASC_APP_ID`, optional `ASC_LOCALE` (default `en-US`). Create `fastlane/.env.asc` locally (gitignored) with these as `export` lines, then `source .env.asc` before running any lane — see the comment header in that file (or `.env.asc`'s own template if you haven't filled it in yet) for the exact format. Never commit this file; never paste its contents anywhere.
+
+### What `metadata_pull` reads (and why it can blank things)
+
+A read resolves **editable → review-pipeline → live**, so `metadata_pull` does
+*not* necessarily read what is currently on the App Store. When a new version
+is started in App Store Connect, Apple carries `description`, `keywords`,
+`marketingUrl` and `supportUrl` forward onto it but leaves **`promotionalText`
+and `whatsNew` empty**. Pulling at that moment reads the draft and writes those
+two fields back as blanks, destroying copy the repo correctly held.
+
+This happened for real on 2026-09-19: KaiReads had a 1.3.0 draft in
+`PREPARE_FOR_SUBMISSION` with both fields empty while live 1.2.0 had 152 and
+550 characters. The repo was already byte-identical to live on every field, so
+there was genuinely nothing to pull — but the pull blanked both anyway.
+
+`metadata_pull` now prints the version and state it read from, and aborts
+rather than replacing a non-empty repo value with an empty one:
+
+```
+[!] Refusing to pull: this would blank 1 field(s) that the repo currently has
+    content for, using empty values from App Store version 1.3.0
+    (PREPARE_FOR_SUBMISSION):
+      version_info.whats_new (currently 550 chars: "Story Planet now offers …")
+```
+
+Pass `force:true` to override. Real content *changes* (non-empty → different
+non-empty) are never blocked; only blanking is. Logic and tests live in
+`lib/metadata_sync/pull_guard.rb` and `spec/metadata_sync/pull_guard_test.rb`.
 
 ### Which App Store version metadata comes from
 

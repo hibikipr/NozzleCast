@@ -73,10 +73,18 @@ module MetadataSync
       "whats_new" => "whatsNew"
     }.freeze
 
+    # The App Store version the most recent fetch_version_info actually read
+    # from, as {"version" => "1.3.0", "state" => "PREPARE_FOR_SUBMISSION"}.
+    # A read resolves editable -> review-pipeline -> live, so it is NOT
+    # necessarily the version that is live on the App Store; metadata_pull
+    # reports this so pulling from a draft is visible rather than silent.
+    attr_reader :source_version
+
     def initialize(transport:, app_id:, locale:)
       @transport = transport
       @app_id = app_id
       @locale = locale
+      @source_version = nil
     end
 
     def fetch_app_info
@@ -100,6 +108,11 @@ module MetadataSync
               "App #{@app_id}'s resolved version (#{version['id']}) has no " \
               "appStoreVersionLocalization for locale #{@locale}."
       end
+
+      @source_version = {
+        "version" => version.dig("attributes", "versionString"),
+        "state" => version.dig("attributes", "appStoreState")
+      }
 
       attrs = loc["attributes"]
       {
