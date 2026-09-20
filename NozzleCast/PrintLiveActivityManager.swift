@@ -52,6 +52,37 @@ final class PrintLiveActivityManager {
     /// window, which errs toward keeping an activity alive, the safe direction.
     private var teardownAnchors: [String: Date] = [:]
 
+    /// Serializes "does this printer already have an `Activity.request()` in flight" checks. This
+    /// class isn't actor-isolated and `sync()` is called concurrently from several independent
+    /// triggers (background-wake pushes, the foreground poll loop, scenePhase changes) — an
+    /// `NSLock` won't compile here (Swift's strict concurrency checking disallows it from async
+    /// contexts), and only an actor makes "check + insert" atomic without an actual blocking wait
+    /// anyway. Confirmed live: a burst of background-wake retries around one print start produced
+    /// 10 distinct per-activity push tokens for a single printer instead of one, in two 5-token
+    /// clusters five seconds apart — the signature of that many overlapping `sync()` calls each
+    /// reaching the "no activity yet for this printer" check before any of the others'
+    /// `Activity.request()` had propagated to `Activity<PrintActivityAttributes>.activities`.
+    /// Scoped to just the creation loop, not the whole function: the update/end paths above already
+    /// operate on activities that exist, so running them twice concurrently is harmless — only
+    /// creating a brand-new activity for the same printer twice is the actual bug.
+    private actor ActivityCreationGate {
+        private var inFlight: Set<String> = []
+
+        /// Marks `id` in flight and returns `true` if it wasn't already; `false` (meaning "skip,
+        /// another call already owns this") if it was.
+        func beginIfNeeded(_ id: String) -> Bool {
+            guard !inFlight.contains(id) else { return false }
+            inFlight.insert(id)
+            return true
+        }
+
+        func end(_ id: String) {
+            inFlight.remove(id)
+        }
+    }
+
+    private let creationGate = ActivityCreationGate()
+
     /// Whether a printer's activity already has a cover image cached, so callers can skip
     /// re-fetching it (it's static for the whole print, unlike `liveSnapshot`).
     func hasCoverImage(printerName: String) -> Bool {
@@ -221,6 +252,12 @@ final class PrintLiveActivityManager {
         NSLog("NCDEBUG sync: attempting Activity.request for %d printer(s) (state=%d)", newPrinters.count, appState.rawValue)
         for printer in newPrinters {
             let id = PrintActivityAttributes.normalizedID(printer.name)
+
+            guard await creationGate.beginIfNeeded(id) else {
+                NSLog("NCDEBUG sync: skipping Activity.request for printerID=%@ (already in flight from a concurrent sync)", id)
+                continue
+            }
+
             let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
             let state = Self.contentState(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
             lastFingerprints[id] = Self.fingerprint(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
@@ -237,6 +274,7 @@ final class PrintLiveActivityManager {
             } catch {
                 NSLog("NCDEBUG Activity.request failed for printerID=%@: %@", id, String(describing: error))
             }
+            await creationGate.end(id)
         }
     }
 
