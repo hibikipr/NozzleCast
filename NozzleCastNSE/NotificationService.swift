@@ -86,18 +86,20 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         }
 
         var thumbnail: Data?
+        var fullThumbnail: Data?
         if let attachmentURL = message.attachmentURL, let imageData = await Self.downloadImage(attachmentURL) {
             if let localURL = Self.writeTempFile(imageData, id: message.id),
                let attachment = try? UNNotificationAttachment(identifier: message.id, url: localURL) {
                 content.attachments = [attachment]
             }
             thumbnail = Self.downscaledThumbnail(imageData)
+            fullThumbnail = Self.downscaledThumbnail(imageData, maxDimension: 180, maxBytes: 60_000, quality: 0.8)
             // Same full-size download used for the banner attachment, kept alongside the history
             // entry so the in-app Notifications list can show it too (that list reads the shared
             // history log directly, not the system's notification center).
             PushSharedStore.saveHistoryImage(imageData, id: message.id)
         }
-        await Self.updateLiveActivity(matching: message, thumbnail: thumbnail)
+        await Self.updateLiveActivity(matching: message, thumbnail: thumbnail, fullThumbnail: fullThumbnail)
 
         PushSharedStore.appendHistory(.init(
             id: message.id,
@@ -139,7 +141,10 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
     /// (2x/3x), so a "40pt" render was actually rasterizing up to 9x the intended pixel count no
     /// matter how low the JPEG quality went — pinning `format.scale = 1` fixes the real cause;
     /// the byte cap only ever needed to be this generous to mask that.
-    private static func downscaledThumbnail(_ data: Data, maxDimension: CGFloat = 40, maxBytes: Int = 1300) -> Data? {
+    ///
+    /// Also produces the larger `LiveActivityImageStore` copy (180px covers the 56pt Lock Screen
+    /// tile at 3x), which lives in a file rather than the content state so it has no 4KB budget.
+    private static func downscaledThumbnail(_ data: Data, maxDimension: CGFloat = 40, maxBytes: Int = 1300, quality startQuality: CGFloat = 0.5) -> Data? {
         guard let image = UIImage(data: data) else { return nil }
         let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
@@ -149,7 +154,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
 
-        var quality: CGFloat = 0.5
+        var quality = startQuality
         var jpeg = resized.jpegData(compressionQuality: quality)
         while let data = jpeg, data.count > maxBytes, quality > 0.1 {
             quality -= 0.1
@@ -187,7 +192,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
     /// `nozzlecast-relay`'s `/register-activity`, and the relay pushes `update`/`end` events
     /// directly to that token via APNs — no local discovery needed on either side. Confirmed working
     /// end-to-end (start → progress → completion, all while locked) as of this writing.
-    private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?) async {
+    private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?, fullThumbnail: Data?) async {
         // Per Apple's guidance ("make it easy for people to turn them off in your app"), Settings
         // exposes this toggle. Turning it off here just stops this push-driven path from touching
         // activities further — `PrintLiveActivityManager.sync()` (the main app, on its next
@@ -217,7 +222,14 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             // — Apple's guidance calls out letting people configure whether sensitive content
             // like this shows there. Skips assignment entirely rather than clearing an existing
             // frame, matching how `coverImage` is already left alone when a fresh one isn't sent.
-            if let thumbnail, PushSharedStore.liveActivityCameraPreviewEnabled { state.liveSnapshot = thumbnail }
+            if let thumbnail, PushSharedStore.liveActivityCameraPreviewEnabled {
+                state.liveSnapshot = thumbnail
+                // Always reassigned alongside `liveSnapshot`, nil included, so a failed file write
+                // can't leave an older sharp frame outranking this newer inline one.
+                state.liveSnapshotFile = fullThumbnail.flatMap {
+                    LiveActivityImageStore.saveLiveSnapshot($0, printerID: activity.attributes.printerID)
+                }
+            }
 
             // Awaited, not fired as an unstructured Task: the extension process is liable to be
             // terminated shortly after this method returns and `deliver(content)` is called, so
