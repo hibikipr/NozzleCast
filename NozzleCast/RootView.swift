@@ -10,7 +10,7 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            MonitorView()
+            MonitorView(selectedTab: $selectedTab)
                 .tabItem { Label("Monitor", systemImage: "square.grid.2x2") }
                 .tag(RootTab.monitor)
 

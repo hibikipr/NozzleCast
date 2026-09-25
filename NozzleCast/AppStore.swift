@@ -51,6 +51,12 @@ final class AppStore {
 
     var isLive: Bool { config.isConfigured && connectionStatusIsUsable }
 
+    /// True whenever `printers`/`spools` hold `MockData` rather than the user's own — both with no
+    /// server configured and after a configured server failed to connect, since
+    /// `testConnectionAndRefresh()` falls back to `loadMockData()` in either case. Drives the
+    /// `DemoDataBanner`, so sample printers are never mistaken for real ones.
+    var isShowingDemoData: Bool { !isLive }
+
     private var connectionStatusIsUsable: Bool {
         if case .failed = connectionStatus { return false }
         if case .notConfigured = connectionStatus { return false }

@@ -368,6 +368,59 @@ struct LiveBadge: View {
     }
 }
 
+/// Shown above Monitor/Inventory content whenever `AppStore.isShowingDemoData` — the sample
+/// printers and spools look exactly like real ones, so without this a first-run user (or App
+/// Review) has no way to tell they aren't looking at their own farm. The whole card is the button
+/// that takes them to Settings to connect a server.
+struct DemoDataBanner: View {
+    var connectionStatus: ConnectionStatus
+    var action: () -> Void
+
+    private var message: String {
+        if case .failed = connectionStatus {
+            return String(localized: "Couldn't reach your server, so NozzleCast is showing sample printers and spools. Check your server in Settings.", comment: "Demo data banner: configured server failed to connect")
+        }
+        return String(localized: "These printers and spools are samples. Connect your server in Settings to see your own.", comment: "Demo data banner: no server configured")
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(NCColor.statusWarning)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Demo Data", comment: "Demo data banner title")
+                        .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(.white)
+                    Text(message)
+                        .ncFont(size: 13, relativeTo: .footnote)
+                        .foregroundStyle(NCColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Open Settings", comment: "Demo data banner button")
+                        .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
+                        .foregroundStyle(NCColor.accentLight)
+                        .padding(.top, 3)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(NCColor.statusWarning.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(NCColor.statusWarning.opacity(0.35), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(Text("Opens Settings to connect your server", comment: "Demo data banner accessibility hint"))
+    }
+}
+
 /// Small rounded status badge — wifi strength, firmware version, warning count, etc.
 struct InfoPill: View {
     var icon: String

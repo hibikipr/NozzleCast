@@ -6,6 +6,7 @@ struct MonitorView: View {
     @State private var showNotifications = false
     @State private var unreadCount = 0
     @State private var path: [String] = []
+    @Binding var selectedTab: RootTab
 
     private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
 
@@ -44,6 +45,11 @@ struct MonitorView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                     .padding(.bottom, 4)
+
+                    if store.isShowingDemoData {
+                        DemoDataBanner(connectionStatus: store.connectionStatus) { selectedTab = .settings }
+                            .padding(.horizontal, 16)
+                    }
 
                     if isConnecting {
                         VStack(spacing: 14) {
@@ -264,7 +270,7 @@ struct PrinterCard: View {
 }
 
 #Preview {
-    MonitorView()
+    MonitorView(selectedTab: .constant(.monitor))
         .environment(AppStore(config: BambuddyConfig()))
         .preferredColorScheme(.dark)
 }

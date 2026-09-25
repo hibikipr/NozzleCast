@@ -84,6 +84,11 @@ struct InventoryView: View {
                         }
                         .padding(.horizontal, 16)
 
+                        if store.isShowingDemoData {
+                            DemoDataBanner(connectionStatus: store.connectionStatus) { selectedTab = .settings }
+                                .padding(.horizontal, 16)
+                        }
+
                         if isConnecting {
                             VStack(spacing: 14) {
                                 ProgressView().tint(NCColor.accentLight)
