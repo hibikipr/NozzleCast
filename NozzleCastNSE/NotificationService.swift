@@ -92,7 +92,6 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 content.attachments = [attachment]
             }
             thumbnail = Self.downscaledThumbnail(imageData)
-            Self.saveSharpFrame(imageData, for: message)
             // Same full-size download used for the banner attachment, kept alongside the history
             // entry so the in-app Notifications list can show it too (that list reads the shared
             // history log directly, not the system's notification center).
@@ -158,21 +157,6 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         }
         guard let jpeg, jpeg.count <= maxBytes else { return nil }
         return jpeg
-    }
-
-    /// Stores the sharp copy the Live Activity widget prefers over the inline ~40px frame (see
-    /// `LiveActivityImageStore`). Matched against the printers the app last saw as well as any
-    /// active activity, and done independently of `updateLiveActivity`: Bambuddy's "Print
-    /// Started" push usually arrives before the relay's push-to-start has created the activity,
-    /// and that first frame is exactly the one that would otherwise be lost.
-    private static func saveSharpFrame(_ imageData: Data, for message: NtfyPushMessage) {
-        guard PushSharedStore.liveActivityCameraPreviewEnabled else { return }
-        let haystack = PrintActivityAttributes.normalizedID((message.title ?? "") + " " + (message.message ?? ""))
-        let candidates = LiveActivityImageStore.knownPrinterIDs
-            + Activity<PrintActivityAttributes>.activities.map(\.attributes.printerID)
-        for printerID in LiveActivityImageStore.printerIDs(in: haystack, candidates: candidates) {
-            LiveActivityImageStore.saveLatestFrame(sourceImageData: imageData, printerID: printerID)
-        }
     }
 
     /// Bambuddy's ntfy messages don't carry a printer id, only a name embedded in the title/body
