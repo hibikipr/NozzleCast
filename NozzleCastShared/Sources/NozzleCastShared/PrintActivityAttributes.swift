@@ -68,13 +68,7 @@ public struct PrintActivityAttributes: ActivityAttributes {
         /// Kept tiny deliberately: ActivityKit caps the whole content state at roughly 4KB
         /// serialized, a Data field costs ~33% more once base64-encoded into that JSON, and this
         /// state carries up to two images plus the fields above.
-        /// When a live frame is showing at all, a sharper copy of it from `LiveActivityImageStore`
-        /// takes its place if one is fresh. Gated on `liveSnapshot` being set so the camera-preview
-        /// setting (which is what keeps it nil) still hides the camera from the Lock Screen.
-        public func preferredThumbnail(printerID: String) -> Data? {
-            guard let liveSnapshot else { return coverImage }
-            return LiveActivityImageStore.latestFrame(printerID: printerID) ?? liveSnapshot
-        }
+        public var preferredThumbnail: Data? { liveSnapshot ?? coverImage }
 
         public init(
             progress: Double,
