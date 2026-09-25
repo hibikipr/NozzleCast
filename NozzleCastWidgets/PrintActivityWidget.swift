@@ -28,7 +28,7 @@ private func thumbnailView(_ data: Data?, size: CGFloat) -> some View {
        let source = CGImageSourceCreateWithData(data as CFData, nil),
        let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
         // Normally a ~180px camera frame read from the App Group (`LiveActivityImageStore`). When
-        // that's missing, this is the inline ~40px fallback squeezed into ActivityKit's
+        // there's no fresh one, this is the relay's inline ~40px frame squeezed into ActivityKit's
         // content-state budget (see nozzlecast-relay's index.js MAX_DIMENSION constants), which
         // this view stretches back up to `size` -- often 2-3x on a Retina lock screen.
         // `.interpolation(.high)` can't recover detail that was never captured, but it resamples
@@ -142,7 +142,7 @@ struct PrintActivityWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     SafeSection {
-                        thumbnailView(context.state.preferredThumbnail, size: 36)
+                        thumbnailView(context.state.preferredThumbnail(printerID: context.attributes.printerID), size: 36)
                             .overlay(alignment: .topTrailing) {
                                 issueBadge(context.state).padding(-3)
                             }
@@ -183,7 +183,7 @@ struct PrintActivityWidget: Widget {
                 }
             } compactLeading: {
                 SafeSection {
-                    thumbnailView(context.state.preferredThumbnail, size: 20)
+                    thumbnailView(context.state.preferredThumbnail(printerID: context.attributes.printerID), size: 20)
                 }
             } compactTrailing: {
                 SafeSection {
@@ -193,7 +193,7 @@ struct PrintActivityWidget: Widget {
                 }
             } minimal: {
                 SafeSection {
-                    thumbnailView(context.state.preferredThumbnail, size: 16)
+                    thumbnailView(context.state.preferredThumbnail(printerID: context.attributes.printerID), size: 16)
                 }
             }
         }
@@ -214,7 +214,7 @@ private struct LockScreenView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             SafeSection {
-                thumbnailView(state.preferredThumbnail, size: 56)
+                thumbnailView(state.preferredThumbnail(printerID: attributes.printerID), size: 56)
                     .overlay(alignment: .topLeading) {
                         if state.liveSnapshot != nil {
                             HStack(spacing: 3) {

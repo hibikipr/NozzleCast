@@ -64,16 +64,16 @@ public struct PrintActivityAttributes: ActivityAttributes {
         /// The printer's own camera frame, from Bambuddy's ntfy push attachment — refreshed by
         /// the notification extension on each progress event, independent of app refreshes.
         public var liveSnapshot: Data?
-        /// File name of a larger copy of `liveSnapshot` in `LiveActivityImageStore`. Preferred over
-        /// the inline `liveSnapshot` whenever it resolves, which is what keeps the Lock Screen
-        /// thumbnail sharp — see `LiveActivityImageStore` for why the inline copy can't be.
-        public var liveSnapshotFile: String?
 
         /// Kept tiny deliberately: ActivityKit caps the whole content state at roughly 4KB
         /// serialized, a Data field costs ~33% more once base64-encoded into that JSON, and this
         /// state carries up to two images plus the fields above.
-        public var preferredThumbnail: Data? {
-            liveSnapshotFile.flatMap(LiveActivityImageStore.load(fileName:)) ?? liveSnapshot ?? coverImage
+        /// When a live frame is showing at all, a sharper copy of it from `LiveActivityImageStore`
+        /// takes its place if one is fresh. Gated on `liveSnapshot` being set so the camera-preview
+        /// setting (which is what keeps it nil) still hides the camera from the Lock Screen.
+        public func preferredThumbnail(printerID: String) -> Data? {
+            guard let liveSnapshot else { return coverImage }
+            return LiveActivityImageStore.latestFrame(printerID: printerID) ?? liveSnapshot
         }
 
         public init(
@@ -89,7 +89,6 @@ public struct PrintActivityAttributes: ActivityAttributes {
             bedTempC: Int? = nil,
             coverImage: Data? = nil,
             liveSnapshot: Data? = nil,
-            liveSnapshotFile: String? = nil,
             issueSeverity: String? = nil,
             issueCount: Int? = nil,
             stageDetail: String? = nil
@@ -106,7 +105,6 @@ public struct PrintActivityAttributes: ActivityAttributes {
             self.bedTempC = bedTempC
             self.coverImage = coverImage
             self.liveSnapshot = liveSnapshot
-            self.liveSnapshotFile = liveSnapshotFile
             self.issueSeverity = issueSeverity
             self.issueCount = issueCount
             self.stageDetail = stageDetail
