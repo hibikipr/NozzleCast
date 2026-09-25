@@ -240,7 +240,6 @@ final class PushNotificationManager: NSObject {
     ///   push-to-start's own activity creation) or iOS hasn't generated its token — which is
     ///   precisely the case worth retrying, since the relay only sends this wake when it is
     ///   missing a token in the first place.
-    @discardableResult
     /// Re-registers the push-to-start token with the relay, reading it synchronously rather than
     /// waiting on `pushToStartTokenUpdates` to yield.
     ///
