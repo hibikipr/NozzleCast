@@ -225,7 +225,7 @@ final class PrintLiveActivityManager {
             // pushed value with the derived one made the widget's elapsed-time math jump every
             // time the app happened to refresh. A print's start time doesn't change; nothing here
             // has any business restating it.
-            let state = Self.contentState(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot, liveSnapshotFile: existing.liveSnapshotFile, startedAt: existing.startedAt)
+            let state = Self.contentState(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot, startedAt: existing.startedAt)
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
 
@@ -330,7 +330,7 @@ final class PrintLiveActivityManager {
 
     /// `startedAt`, when non-nil, is the activity's existing start date and is used verbatim.
     /// Only a brand-new activity (which has none yet) gets the back-computed fallback below.
-    private static func contentState(for printer: Printer, coverImage: Data?, liveSnapshot: Data?, liveSnapshotFile: String? = nil, startedAt existingStartedAt: Date? = nil) -> PrintActivityAttributes.ContentState {
+    private static func contentState(for printer: Printer, coverImage: Data?, liveSnapshot: Data?, startedAt existingStartedAt: Date? = nil) -> PrintActivityAttributes.ContentState {
         let progress = printer.progress ?? 0
         let now = Date()
         let estimatedEnd = printer.etaMinutesRemaining.map { now.addingTimeInterval(TimeInterval($0 * 60)) }
@@ -369,7 +369,6 @@ final class PrintLiveActivityManager {
             bedTempC: printer.bed.current,
             coverImage: coverImage,
             liveSnapshot: liveSnapshot,
-            liveSnapshotFile: liveSnapshotFile,
             issueSeverity: issue.severity,
             issueCount: issue.count,
             stageDetail: printer.stageDetail

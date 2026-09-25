@@ -196,6 +196,9 @@ final class AppStore {
                 Self.mapPrinter(dto, extras: extras[dto.id] ?? PrinterExtras(status: nil, maintenance: nil, smartPlug: nil), obico: obico, assignmentsByPrinterSlot: assignmentsByPrinterSlot)
             }
             resolvePendingDeepLink()
+            // Lets the notification extension tell which printer a push is about before any Live
+            // Activity exists to match against (see `LiveActivityImageStore.knownPrinterIDs`).
+            LiveActivityImageStore.knownPrinterIDs = printers.map { PrintActivityAttributes.normalizedID($0.name) }
 
             // The cover render is static for the whole print, so only fetch it once per job
             // rather than on every refresh — the Live Activity manager tells us who already has one.
@@ -590,6 +593,13 @@ final class AppStore {
                 return nil
             }
             cameraErrors[printerID] = nil
+            // Every frame the app polls while a print runs doubles as the Live Activity's sharp
+            // thumbnail (see `LiveActivityImageStore`), which otherwise only updates on the ntfy
+            // pushes that carry a camera attachment.
+            if PushSharedStore.liveActivityCameraPreviewEnabled,
+               let printer = printers.first(where: { $0.id == printerID }), printer.state == .printing {
+                LiveActivityImageStore.saveLatestFrame(sourceImageData: data, printerID: PrintActivityAttributes.normalizedID(printer.name))
+            }
             return image
         } catch {
             cameraErrors[printerID] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
