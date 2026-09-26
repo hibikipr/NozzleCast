@@ -117,9 +117,22 @@ public struct FilamentSwatchView: View {
         _ context: inout GraphicsContext, size: CGSize, colorHex: String,
         extraColorHexes: [String], subtype: String?, effectType: String?
     ) {
-        guard let effect = effectType?.lowercased() else { return }
+        // Prefers `effectType` (Bambuddy's own finish label) but falls back to `subtype`,
+        // since a manually-entered finish like "Glow" or "Matte" often only ever lands in
+        // `subtype` — without this, swatches for those spools would show no finish overlay at
+        // all despite the spool's displayed name saying otherwise. Mirrors the same fallback
+        // `Spool.materialWithEffect` uses for the text label.
+        let resolvedEffect: String?
+        if let effectType, !effectType.isEmpty {
+            resolvedEffect = effectType.lowercased()
+        } else if let subtype, !subtype.isEmpty {
+            resolvedEffect = subtype.lowercased()
+        } else {
+            resolvedEffect = nil
+        }
+        guard let effect = resolvedEffect else { return }
         switch effect {
-        case "sparkle":
+        case "sparkle", "galaxy":
             drawSparkle(&context, size: size, seed: colorHex + extraColorHexes.joined() + (subtype ?? "") + effect)
         case "wood":
             drawWoodGrain(&context, size: size)
@@ -131,8 +144,6 @@ public struct FilamentSwatchView: View {
             drawMatteInset(&context, size: size)
         case "silk":
             drawSheen(&context, size: size, peakOpacity: 0.30)
-        case "galaxy":
-            drawSheen(&context, size: size, peakOpacity: 0.40)
         case "metal":
             drawBrushedMetal(&context, size: size)
         default:

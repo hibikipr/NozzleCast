@@ -295,16 +295,6 @@ struct Spool: Identifiable, Equatable {
         if displayEffect.range(of: material, options: .caseInsensitive) != nil { return displayEffect }
         return "\(material) \(displayEffect)"
     }
-    /// The color name shown as the card's headline, with the effect/finish appended when
-    /// present. `materialWithEffect` alone isn't enough — the swatch badge it appears on is
-    /// small and secondary, while this color name is the largest, most prominent text on the
-    /// card, so it needs the same disambiguation for two same-color, same-material spools of
-    /// different finishes to actually read as different at a glance.
-    var colorNameWithEffect: String {
-        guard let displayEffect else { return colorName }
-        if displayEffect.range(of: colorName, options: .caseInsensitive) != nil { return displayEffect }
-        return "\(colorName) \(displayEffect)"
-    }
     /// Bambu's short filament preset id, e.g. "GFL05" — what `configure` calls `tray_info_idx`.
     /// Not editable via a catalog search yet (that's a large separate undertaking); shown/edited
     /// as a raw code for now.

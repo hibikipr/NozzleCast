@@ -227,18 +227,17 @@ struct SpoolCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .top) {
                 spool.swatch
-                Text(spool.material)
-                    .ncFont(size: 11, weight: .bold, relativeTo: .caption2)
-                    .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black.opacity(0.7) : .white)
-                    .padding(8)
+                colorNamePill
+                    .padding(.top, 8)
+                    .padding(.horizontal, 8)
             }
             .frame(height: 60)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(spool.colorNameWithEffect)
+                Text(spool.materialWithEffect)
                     .ncFont(size: 12.5, weight: .semibold, relativeTo: .caption)
                     .foregroundStyle(.white)
                 Text(spool.brand)
@@ -272,6 +271,22 @@ struct SpoolCard: View {
         .padding(10)
         .glassCard(cornerRadius: 16)
     }
+
+    /// Bambuddy's own spool cards put the color name in a pill on the swatch itself, with
+    /// material/subtype as the headline below — matching that here so the color's identity
+    /// stays with its swatch instead of competing with material/subtype for the headline spot.
+    private var colorNamePill: some View {
+        Text(spool.colorName)
+            .ncFont(size: 10.5, weight: .semibold, relativeTo: .caption2)
+            .foregroundStyle(.black.opacity(0.75))
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(.white.opacity(0.92)))
+            // Without this, a near-white spool (e.g. "Pure White") leaves the pill nearly
+            // invisible against a same-toned swatch — this keeps it legible on every color.
+            .overlay(Capsule().strokeBorder(Color.black.opacity(0.12), lineWidth: 1))
+    }
 }
 
 struct SpoolListRow: View {
@@ -283,17 +298,12 @@ struct SpoolListRow: View {
             spool.swatch
                 .frame(width: 44, height: 44)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    Text(spool.material)
-                        .ncFont(size: 9, weight: .bold, relativeTo: .caption2)
-                        .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black.opacity(0.7) : .white)
-                }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(spool.colorNameWithEffect)
+                Text(spool.materialWithEffect)
                     .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
-                Text("\(spool.brand) · \(spool.locationCaption(printerName: store.printerName))")
+                Text("\(spool.colorName) · \(spool.brand) · \(spool.locationCaption(printerName: store.printerName))")
                     .ncFont(size: 11.5, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
                     .lineLimit(1)
