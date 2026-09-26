@@ -272,6 +272,14 @@ struct Spool: Identifiable, Equatable {
     /// filament. Purely cosmetic; "translucent" itself paints nothing extra since the look
     /// already comes from `colorAlpha` — it's a categorical label only.
     var effectType: String? = nil
+    /// The material badge shown on swatches, with the effect/finish appended when present —
+    /// e.g. "PLA Glow" vs "PLA Matte" — so otherwise-identical-looking spools of the same
+    /// material and color (different Panchroma finishes of the same yellow, say) can be told
+    /// apart at a glance instead of relying on the swatch color alone.
+    var materialWithEffect: String {
+        guard let effectType, !effectType.isEmpty else { return material }
+        return "\(material) \(effectType.capitalized)"
+    }
     /// Bambu's short filament preset id, e.g. "GFL05" — what `configure` calls `tray_info_idx`.
     /// Not editable via a catalog search yet (that's a large separate undertaking); shown/edited
     /// as a raw code for now.
