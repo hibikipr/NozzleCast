@@ -439,7 +439,7 @@ struct ScanView: View {
             if let addedSpool {
                 HStack(spacing: 10) {
                     addedSpool.swatch.frame(width: 24, height: 24).clipShape(Circle())
-                    Text("\(addedSpool.material) · \(addedSpool.colorName)")
+                    Text("\(addedSpool.materialWithEffect) · \(addedSpool.colorName)")
                         .ncFont(size: 15, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                 }

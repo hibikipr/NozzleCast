@@ -239,7 +239,7 @@ struct SpoolCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(spool.colorName)
+                Text(spool.colorNameWithEffect)
                     .ncFont(size: 12.5, weight: .semibold, relativeTo: .caption)
                     .foregroundStyle(.white)
                 Text(spool.brand)
@@ -295,7 +295,7 @@ struct SpoolListRow: View {
                 }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(spool.colorName)
+                Text(spool.colorNameWithEffect)
                     .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                 Text("\(spool.brand) · \(spool.locationCaption(printerName: store.printerName))")

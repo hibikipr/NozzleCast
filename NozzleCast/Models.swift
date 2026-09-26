@@ -280,6 +280,15 @@ struct Spool: Identifiable, Equatable {
         guard let effectType, !effectType.isEmpty else { return material }
         return "\(material) \(effectType.capitalized)"
     }
+    /// The color name shown as the card's headline, with the effect/finish appended when
+    /// present. `materialWithEffect` alone isn't enough — the swatch badge it appears on is
+    /// small and secondary, while this color name is the largest, most prominent text on the
+    /// card, so it needs the same disambiguation for two same-color, same-material spools of
+    /// different finishes to actually read as different at a glance.
+    var colorNameWithEffect: String {
+        guard let effectType, !effectType.isEmpty else { return colorName }
+        return "\(colorName) \(effectType.capitalized)"
+    }
     /// Bambu's short filament preset id, e.g. "GFL05" — what `configure` calls `tray_info_idx`.
     /// Not editable via a catalog search yet (that's a large separate undertaking); shown/edited
     /// as a raw code for now.
