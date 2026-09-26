@@ -272,13 +272,28 @@ struct Spool: Identifiable, Equatable {
     /// filament. Purely cosmetic; "translucent" itself paints nothing extra since the look
     /// already comes from `colorAlpha` — it's a categorical label only.
     var effectType: String? = nil
+    /// The finish/effect text to append to the material or color name for display — prefers
+    /// `effectType` (Bambuddy's own finish label, always a plain lowercase word like "glow"
+    /// so `.capitalized` is safe) but falls back to `subtype`, since the edit screen only
+    /// exposes a single "Subtype" field and that's where a manually-entered finish like
+    /// "Glow" or "Matte" actually lives in practice. `subtype` is used verbatim (no
+    /// `.capitalized`) because it can already contain multi-word acronyms like "PLA Basic" or
+    /// "PETG HF" that `.capitalized` would mangle into "Pla Basic".
+    private var displayEffect: String? {
+        if let effectType, !effectType.isEmpty { return effectType.capitalized }
+        if let subtype, !subtype.isEmpty { return subtype }
+        return nil
+    }
     /// The material badge shown on swatches, with the effect/finish appended when present —
     /// e.g. "PLA Glow" vs "PLA Matte" — so otherwise-identical-looking spools of the same
     /// material and color (different Panchroma finishes of the same yellow, say) can be told
     /// apart at a glance instead of relying on the swatch color alone.
     var materialWithEffect: String {
-        guard let effectType, !effectType.isEmpty else { return material }
-        return "\(material) \(effectType.capitalized)"
+        guard let displayEffect else { return material }
+        // A subtype like "PLA Basic" already reads as material + profile — appending it after
+        // `material` again would show "PLA PLA Basic".
+        if displayEffect.range(of: material, options: .caseInsensitive) != nil { return displayEffect }
+        return "\(material) \(displayEffect)"
     }
     /// The color name shown as the card's headline, with the effect/finish appended when
     /// present. `materialWithEffect` alone isn't enough — the swatch badge it appears on is
@@ -286,8 +301,9 @@ struct Spool: Identifiable, Equatable {
     /// card, so it needs the same disambiguation for two same-color, same-material spools of
     /// different finishes to actually read as different at a glance.
     var colorNameWithEffect: String {
-        guard let effectType, !effectType.isEmpty else { return colorName }
-        return "\(colorName) \(effectType.capitalized)"
+        guard let displayEffect else { return colorName }
+        if displayEffect.range(of: colorName, options: .caseInsensitive) != nil { return displayEffect }
+        return "\(colorName) \(displayEffect)"
     }
     /// Bambu's short filament preset id, e.g. "GFL05" — what `configure` calls `tray_info_idx`.
     /// Not editable via a catalog search yet (that's a large separate undertaking); shown/edited
