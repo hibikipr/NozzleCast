@@ -149,10 +149,18 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
 
-        var quality: CGFloat = 0.5
+        // Starting low and returning the first fit was the bug: these renders are tiny enough
+        // that quality 0.5 nearly always fits under maxBytes on the very first try, so the loop
+        // never got a chance to check whether 0.6-0.95 would also fit — spending only ~40% of
+        // the already-safe byte budget for zero size benefit and looking needlessly pixelated.
+        // Starting near the top and stepping down in finer increments still fails closed the
+        // same way, but actually uses the bytes maxBytes already allotted. Confirmed against
+        // nozzlecast-relay's identical fix (PR #24, v1.0.0-beta8): same pixel dimensions, same
+        // byte ceiling, ~2x the bytes actually used.
+        var quality: CGFloat = 0.95
         var jpeg = resized.jpegData(compressionQuality: quality)
-        while let data = jpeg, data.count > maxBytes, quality > 0.1 {
-            quality -= 0.1
+        while let data = jpeg, data.count > maxBytes, quality > 0.05 {
+            quality -= 0.05
             jpeg = resized.jpegData(compressionQuality: quality)
         }
         guard let jpeg, jpeg.count <= maxBytes else { return nil }
