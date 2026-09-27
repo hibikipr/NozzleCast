@@ -34,6 +34,24 @@ final class PushNotificationManager: NSObject {
     /// The push-to-start token most recently registered with the relay, if any — reflects intent
     /// (a register call was issued), not delivery confirmation, same caveat as `subscribedTopic`.
     private(set) var registeredPushToStartToken: String?
+
+    /// Durable counterpart to `registeredPushToStartToken`, surviving relaunches — needed so a
+    /// token rotation can be told apart from "first registration ever" across process restarts.
+    /// Apple rotates the push-to-start token periodically (delivered via
+    /// `pushToStartTokenUpdates`), and the relay's token store is a flat list keyed only by token
+    /// string with no device identity: it keeps every token this device has ever registered until
+    /// APNs explicitly rejects one (410), and sends push-to-start to *all* of them on every print
+    /// start. Without this, a rotation just adds a second live token for the same device instead
+    /// of replacing the first, and both fire — two separate Live Activities for one print.
+    /// Confirmed live: a token from 2026-09-04 still sitting on the relay alongside a fresh one
+    /// from 2026-09-26 for the same install. UserDefaults, not Keychain: this token is already
+    /// sent to the relay in the open and isn't a credential, and — unlike the Bambuddy/relay
+    /// config — nothing here needs to survive a locked-device background wake before first unlock.
+    private static let lastRegisteredPushToStartTokenDefaultsKey = "PushNotificationManager.lastRegisteredPushToStartToken"
+    private static var persistedLastRegisteredPushToStartToken: String? {
+        get { UserDefaults.standard.string(forKey: lastRegisteredPushToStartTokenDefaultsKey) }
+        set { UserDefaults.standard.set(newValue, forKey: lastRegisteredPushToStartTokenDefaultsKey) }
+    }
     private var pushToStartObservationTask: Task<Void, Never>?
     private var activityDiscoveryTask: Task<Void, Never>?
     /// One push-token-observing child task per discovered activity, keyed by `Activity.id` — so a
@@ -115,6 +133,7 @@ final class PushNotificationManager: NSObject {
         }
         let token = tokenData.map { String(format: "%02x", $0) }.joined()
         let environment = APNSEnvironment.current
+        let previousToken = Self.persistedLastRegisteredPushToStartToken
 
         var request = URLRequest(url: config.url.appendingPathComponent("register"))
         request.httpMethod = "POST"
@@ -134,8 +153,38 @@ final class PushNotificationManager: NSObject {
             // handset was guesswork every time it mattered today.
             NSLog("NCDEBUG relay token registration succeeded (environment=%@, token ...%@)", environment, String(token.suffix(8)))
             registeredPushToStartToken = token
+            Self.persistedLastRegisteredPushToStartToken = token
+
+            // Best-effort cleanup of the token this device previously had registered — see
+            // `persistedLastRegisteredPushToStartToken`'s doc for why leaving it registered
+            // duplicates Live Activities. If this DELETE fails, the persisted value has already
+            // moved on to `token`, so a future rotation retries against *that* token, not this
+            // one — a delete failure here can leave one stale entry behind permanently rather
+            // than compounding, with the relay's own APNs-410 cleanup as the remaining fallback.
+            if let previousToken, previousToken != token {
+                await deregisterPushToStartToken(previousToken, config: config)
+            }
         } catch {
             NSLog("NCDEBUG relay token registration failed: %@", String(describing: error))
+        }
+    }
+
+    /// DELETEs a push-to-start token this device no longer uses from the relay's `/register`
+    /// endpoint, per its documented cleanup contract. Only ever called with a token this device
+    /// itself previously registered and has since replaced — never a token another device owns.
+    private func deregisterPushToStartToken(_ token: String, config: RelayConfigStore.Config) async {
+        var request = URLRequest(url: config.url.appendingPathComponent("register"))
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(["token": token])
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            NSLog("NCDEBUG stale push-to-start token deregistration HTTP %d (token ...%@)", status, String(token.suffix(8)))
+        } catch {
+            NSLog("NCDEBUG stale push-to-start token deregistration failed: %@", String(describing: error))
         }
     }
 
