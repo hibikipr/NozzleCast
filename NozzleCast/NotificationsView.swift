@@ -53,15 +53,45 @@ struct NotificationsView: View {
         }
     }
 
-    @ViewBuilder
     private func thumbnail(for entry: PushSharedStore.HistoryEntry) -> some View {
-        if let data = PushSharedStore.loadHistoryImage(id: entry.id), let uiImage = UIImage(data: data) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        HistoryThumbnail(entryID: entry.id)
+    }
+}
+
+/// A notification's attached photo, loaded and decoded at display size off the main thread.
+/// Previously every row read its full-size image from disk and decoded it synchronously inside
+/// `body`, on the main thread, for a 52pt thumbnail — on every re-render of the list.
+private struct HistoryThumbnail: View {
+    var entryID: String
+    @State private var image: UIImage?
+    @State private var hasImage = true
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else if hasImage {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(NCColor.cardFill)
+            }
         }
+        .frame(width: hasImage ? 52 : 0, height: hasImage ? 52 : 0)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .task(id: entryID) {
+            guard let data = await Self.loadData(entryID) else {
+                hasImage = false
+                return
+            }
+            image = await ImageDownsampling.image(from: data, maxPixelSize: 52 * 3)
+            hasImage = image != nil
+        }
+    }
+
+    @concurrent
+    private nonisolated static func loadData(_ id: String) async -> Data? {
+        PushSharedStore.loadHistoryImage(id: id)
     }
 }
 

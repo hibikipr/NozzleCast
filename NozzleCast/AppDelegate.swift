@@ -59,6 +59,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     /// on every activation is idempotent.
     func applicationDidBecomeActive(_ application: UIApplication) {
         store.config.reloadIfStorageWasUnavailable()
+        // Foreground means unlocked, so the relay config is readable — mirror whether it exists
+        // for the notification extension, which can't read the app's own container.
+        PushSharedStore.relayConfigured = RelayConfigStore.isConfigured
         PushNotificationManager.shared.startObservingActivityKitTokens()
         // Not forced: this runs on every return from the app switcher, and a POST each time would
         // be noise. A token that actually changed still re-registers here immediately.
@@ -99,6 +102,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         store.config.reloadIfStorageWasUnavailable()
         PushNotificationManager.shared.startObservingActivityKitTokens()
 
+        // iOS allows roughly 30s for this handler; overrunning it gets the app killed and makes
+        // the system ration future background wakes more tightly — exactly the wakes the relay
+        // relies on to collect activity tokens. Every step below is network-bound (a refresh is
+        // several dependent rounds of requests), so the work is raced against a hard deadline and
+        // the completion handler is called exactly once, whichever finishes first. Retries are
+        // only started while there is clearly time left for one to finish.
+        let wakeStartedAt = Date()
+        let completion = BackgroundFetchCompletion(completionHandler)
+        Task {
+            try? await Task.sleep(for: .seconds(25))
+            if completion.finish(.failed) {
+                NSLog("NCDEBUG AppDelegate background sync hit its 25s deadline, completing early")
+            }
+        }
+
         Task {
             await store.refresh()
             NSLog("NCDEBUG AppDelegate background sync complete (printingCount=%d)", store.printers.filter { $0.state == .printing }.count)
@@ -124,12 +142,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
             var registered = await PushNotificationManager.shared.recheckActivityTokens()
             for attempt in 1...2 where registered == 0 {
+                guard Date().timeIntervalSince(wakeStartedAt) < 12 else {
+                    NSLog("NCDEBUG AppDelegate skipping token recheck retry %d: not enough background time left", attempt)
+                    break
+                }
                 try? await Task.sleep(for: .seconds(5))
                 await store.refresh()
                 registered = await PushNotificationManager.shared.recheckActivityTokens()
                 NSLog("NCDEBUG AppDelegate token recheck retry %d (registered=%d)", attempt, registered)
             }
-            completionHandler(.newData)
+            completion.finish(.newData)
         }
     }
 }
@@ -139,5 +161,26 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     /// alerts the user would otherwise miss until they background/reopen the app.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound, .list]
+    }
+}
+
+/// Calls a background-fetch completion handler at most once, for the deadline race in
+/// `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)` — calling it twice is a
+/// programming error UIKit reports, and not calling it at all costs future background time.
+@MainActor
+private final class BackgroundFetchCompletion {
+    private var handler: ((UIBackgroundFetchResult) -> Void)?
+
+    init(_ handler: @escaping (UIBackgroundFetchResult) -> Void) {
+        self.handler = handler
+    }
+
+    /// Returns whether this call was the one that completed.
+    @discardableResult
+    func finish(_ result: UIBackgroundFetchResult) -> Bool {
+        guard let handler else { return false }
+        self.handler = nil
+        handler(result)
+        return true
     }
 }

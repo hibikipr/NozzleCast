@@ -37,14 +37,34 @@ enum PushSharedStore {
     private static var historyURL: URL { containerURL.appendingPathComponent("notification-history.json") }
     private static let historyLimit = 100
 
+    /// Read-modify-write of the history file under an `NSFileCoordinator` write lock. The app
+    /// (mark-all-read, clear) and the notification extension (one append per push, possibly
+    /// several at once) are separate processes rewriting the same file; uncoordinated, whichever
+    /// wrote last silently discarded the other's change — a lost history entry, or a
+    /// mark-all-read that didn't stick.
+    private static func updateHistory(_ transform: (inout [HistoryEntry]) -> Void) {
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: historyURL, options: .forMerging, error: &coordinationError) { url in
+            var entries: [HistoryEntry] = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([HistoryEntry].self, from: $0) } ?? []
+            transform(&entries)
+            guard let data = try? JSONEncoder().encode(entries) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+        if let coordinationError {
+            NSLog("NCDEBUG notification history coordination failed: %@", coordinationError.localizedDescription)
+        }
+    }
+
     static func appendHistory(_ entry: HistoryEntry) {
-        var entries = loadHistory()
-        entries.removeAll { $0.id == entry.id }
-        entries.insert(entry, at: 0)
-        let dropped = entries.count > historyLimit ? entries.suffix(entries.count - historyLimit) : []
-        if !dropped.isEmpty { entries.removeLast(dropped.count) }
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: historyURL, options: .atomic)
+        var dropped: [HistoryEntry] = []
+        updateHistory { entries in
+            entries.removeAll { $0.id == entry.id }
+            entries.insert(entry, at: 0)
+            if entries.count > historyLimit {
+                dropped = Array(entries.suffix(entries.count - historyLimit))
+                entries.removeLast(dropped.count)
+            }
+        }
         for old in dropped { deleteHistoryImage(id: old.id) }
     }
 
@@ -89,5 +109,14 @@ enum PushSharedStore {
     static var liveActivityCameraPreviewEnabled: Bool {
         get { sharedDefaults.object(forKey: "liveActivityCameraPreviewEnabled") as? Bool ?? true }
         set { sharedDefaults.set(newValue, forKey: "liveActivityCameraPreviewEnabled") }
+    }
+
+    /// Whether a `nozzlecast-relay` is configured — mirrored here by the app (`RelayConfigStore`
+    /// lives in the app's own container, which the notification extension can't read). With a
+    /// relay, it is the Live Activity's only content writer and the extension must leave
+    /// activities alone; see `NotificationService.updateLiveActivity`.
+    static var relayConfigured: Bool {
+        get { sharedDefaults.bool(forKey: "relayConfigured") }
+        set { sharedDefaults.set(newValue, forKey: "relayConfigured") }
     }
 }

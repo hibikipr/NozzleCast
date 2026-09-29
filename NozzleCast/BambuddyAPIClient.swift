@@ -280,6 +280,10 @@ struct BambuddyAPIClient {
         if !query.isEmpty { components.queryItems = query }
         var req = URLRequest(url: components.url!)
         req.httpMethod = method
+        // URLSession's default is 60s. Most calls run inside a refresh made of several dependent
+        // rounds of requests, sometimes from a background wake with ~30s to live in total, where
+        // one stalled request at the default would outlast the whole budget on its own.
+        req.timeoutInterval = 15
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         if let body {
             req.httpBody = body
