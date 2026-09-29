@@ -737,14 +737,13 @@ final class AppStore {
     }
 
     /// Fetches the rendered plate preview (angled 3D view) for a printer's current or most
-    /// recently finished job — same stream-token auth as `cameraSnapshot`. `maxPixelSize` nil
-    /// keeps full resolution (the zoomable viewer wants it).
+    /// recently finished job. Unlike `cameraSnapshot`, no stream token — see
+    /// `BambuddyAPIClient.coverImageData`. `maxPixelSize` nil keeps full resolution (the zoomable
+    /// viewer wants it).
     func printerCoverImage(printerID: String, maxPixelSize: CGFloat? = nil) async -> UIImage? {
         guard let client, let bbID = bambuddyID(printerID) else { return nil }
         do {
-            let data = try await fetchWithStreamToken(using: client) { token in
-                try await client.coverImageData(printerID: bbID, token: token)
-            }
+            let data = try await client.coverImageData(printerID: bbID)
             return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
         } catch {
             return nil

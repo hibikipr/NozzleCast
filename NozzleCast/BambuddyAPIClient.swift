@@ -455,9 +455,15 @@ struct BambuddyAPIClient {
     }
 
     /// The rendered plate preview for the current (or most recently finished) print job —
-    /// the angled 3D perspective view by default. Shares the camera stream-token auth flow.
-    func coverImageData(printerID: Int, token: String) async throws -> Data {
-        try await send(request("/api/v1/printers/\(printerID)/cover", query: [URLQueryItem(name: "token", value: token)]))
+    /// the angled 3D perspective view by default.
+    ///
+    /// Authenticated by the API key's Bearer header alone, like every other printer read — no
+    /// camera stream token. Bambuddy moved `/cover` from `camera:view` (via the stream token) to
+    /// `printers:read` (its #3025: seeing what's on the plate isn't a camera permission), and the
+    /// relay confirmed live that a plain Bearer request succeeds with no token (nozzlecast-relay
+    /// #23). Minting a token first was a wasted request per cover fetch.
+    func coverImageData(printerID: Int) async throws -> Data {
+        try await send(request("/api/v1/printers/\(printerID)/cover"))
     }
 
     // MARK: Inventory mutations
