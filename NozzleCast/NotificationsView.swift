@@ -40,7 +40,9 @@ struct NotificationsView: View {
             if !entries.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Clear") {
-                        PushSharedStore.clearHistory()
+                        Task {
+                            await PushSharedStore.clearHistory()
+                        }
                         entries = []
                     }
                 }
@@ -48,8 +50,10 @@ struct NotificationsView: View {
         }
         .onAppear {
             entries = PushSharedStore.loadHistory()
-            PushSharedStore.markAllRead()
-            Task { try? await UNUserNotificationCenter.current().setBadgeCount(0) }
+            Task {
+                await PushSharedStore.markAllRead()
+                try? await UNUserNotificationCenter.current().setBadgeCount(0)
+            }
         }
     }
 
