@@ -174,29 +174,40 @@ final class AppStore {
         return true
     }
 
-    /// The refresh currently running, if any, and whether another was asked for while it ran.
-    /// Refreshes are triggered from many independent places (the foreground poll, scenePhase,
-    /// every action's follow-up, the detail menu, background wakes); running them concurrently
-    /// multiplied the request fan-out and let an older response land after a newer one.
-    private var refreshTask: Task<Void, Never>?
+    /// The refresh cycle currently running, if any, and whether another refresh was asked for
+    /// while it ran. Refreshes are triggered from many independent places (the foreground poll,
+    /// scenePhase, every action's follow-up, the detail menu, background wakes); running them
+    /// concurrently multiplied the request fan-out and let an older response land after a newer
+    /// one.
+    private var refreshCycle: Task<Void, Never>?
     private var refreshRequestedDuringRun = false
 
-    /// Coalesces concurrent calls: a call made while a refresh is running doesn't start a second
-    /// one in parallel — it waits, and exactly one more refresh runs afterwards to pick up
-    /// whatever changed in the meantime (e.g. the action that asked for it).
+    /// Coalesces concurrent calls: a call made while a cycle is running doesn't start a second one
+    /// in parallel — it flags that another pass is wanted and waits for the cycle, which runs
+    /// exactly one more pass before finishing to pick up whatever changed in the meantime (e.g.
+    /// the action that asked for it).
+    ///
+    /// The follow-up pass lives *inside* the cycle task, and every caller awaits that one task
+    /// once. The first version kept the rerun loop in the first caller and had later callers wait
+    /// with `while let running = refreshTask { await running.value }` — but awaiting an
+    /// already-finished task returns without suspending, so a waiter spun on the main actor
+    /// forever and the first caller never got back on to clear `refreshTask`. Any two overlapping
+    /// refreshes (launch + foreground, poll + action) froze the whole UI.
     func refresh() async {
-        if refreshTask != nil {
+        if let cycle = refreshCycle {
             refreshRequestedDuringRun = true
-            while let running = refreshTask { await running.value }
+            await cycle.value
             return
         }
-        repeat {
-            refreshRequestedDuringRun = false
-            let task = Task { await performRefresh() }
-            refreshTask = task
-            await task.value
-            refreshTask = nil
-        } while refreshRequestedDuringRun
+        let cycle = Task {
+            repeat {
+                refreshRequestedDuringRun = false
+                await performRefresh()
+            } while refreshRequestedDuringRun
+            refreshCycle = nil
+        }
+        refreshCycle = cycle
+        await cycle.value
     }
 
     private func performRefresh() async {
