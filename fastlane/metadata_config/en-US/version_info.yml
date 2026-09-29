@@ -23,9 +23,15 @@ promotional_text: Live Activities for your Bambu printers — real progress, rea
   and HMS alerts on your Lock Screen, driven by your own self-hosted server.
 marketing_url: https://nozzlecast.townsville.cc
 support_url: https://nozzlecast.townsville.cc
-# whats_new intentionally omitted: Apple's API rejects it with a 409
-# STATE_ERROR ("Attribute 'whatsNew' cannot be edited at this time") on a
-# version that has never been released -- there's nothing for "what's new"
-# to compare against yet. Confirmed live against NozzleCast's first (rejected,
-# never-released) 1.0 submission. Add this field back once NozzleCast has a
-# live version and this becomes an update.
+whats_new: |-
+  FILAMENT FINISHES AT A GLANCE
+  Spools now show their finish — Glow, Matte, Sparkle and more — right next to the material, so two spools of the same color and material are no longer impossible to tell apart. Finish effects also appear on the color swatch itself, in the AMS spool picker, and when confirming a scanned spool.
+
+  REFRESHED INVENTORY CARDS
+  Each spool's color name now sits in a label on its swatch, with material and finish as the headline underneath, and the list view shows color, brand, and location together on one line.
+
+  SHARPER LIVE ACTIVITIES
+  Cover images and camera snapshots on the Lock Screen and in the Dynamic Island are now noticeably crisper.
+
+  FIXES
+  Fixed an issue where a single print could occasionally start more than one Live Activity.
