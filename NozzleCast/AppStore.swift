@@ -135,6 +135,7 @@ final class AppStore {
             loadMockData()
             return false
         }
+        let statusBeforeCheck = connectionStatus
         connectionStatus = .connecting
         do {
             let me = try await client.me()
@@ -144,6 +145,16 @@ final class AppStore {
             await refresh()
             return true
         } catch {
+            // A cancelled check says nothing about the server. `.refreshable` cancels its task
+            // when the user pulls again (or lets go early), which cancels this in-flight request —
+            // treating that as a failure flashed "Couldn't reach your server" over a server that
+            // was answering fine. Put back whatever the status was before this check; the next
+            // refresh settles it.
+            if Self.isCancellation(error) {
+                NSLog("NCDEBUG Bambuddy connection check cancelled, restoring status %@", String(describing: statusBeforeCheck))
+                connectionStatus = statusBeforeCheck
+                return false
+            }
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("NCDEBUG Bambuddy connection failed: %@", msg)
             connectionStatus = .failed(msg)
@@ -324,6 +335,13 @@ final class AppStore {
             NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
             connectionStatus = .failed(msg)
         }
+    }
+
+    /// Whether an error only means the awaiting task was cancelled, not that a request failed.
+    nonisolated private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
     }
 
     /// Identifies one print job for `coverFetchFailedJobs` — a new job on the same printer gets a
