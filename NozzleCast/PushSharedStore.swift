@@ -60,28 +60,41 @@ nonisolated enum PushSharedStore {
     /// several at once) are separate processes rewriting the same file; uncoordinated, whichever
     /// wrote last silently discarded the other's change — a lost history entry, or a
     /// mark-all-read that didn't stick.
-    private static func updateHistory(_ transform: (inout [HistoryEntry]) -> Void) {
+    ///
+    /// `@concurrent`, not just `async`: `coordinate(writingItemAt:...)` blocks its calling thread
+    /// until the lock is free, and a plain nonisolated `async` function runs on the caller's
+    /// actor by default (`SWIFT_APPROACHABLE_CONCURRENCY`). Every caller here is a `@MainActor`
+    /// SwiftUI view, so without this the wait for the NSE's write lock happened on the main
+    /// thread — the app hung while the extension held the file.
+    /// `transform` returns the entries that fell out of the update (dropped for exceeding
+    /// `historyLimit`, or empty) rather than reporting them through a captured var — a closure
+    /// passed into a `@concurrent` function runs in a different isolation domain than its
+    /// caller, so mutating a var the caller captured would be a data race.
+    @discardableResult
+    @concurrent
+    private static func updateHistory(_ transform: @Sendable (inout [HistoryEntry]) -> [HistoryEntry]) async -> [HistoryEntry] {
         var coordinationError: NSError?
+        var dropped: [HistoryEntry] = []
         NSFileCoordinator().coordinate(writingItemAt: historyURL, options: .forMerging, error: &coordinationError) { url in
             var entries: [HistoryEntry] = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([HistoryEntry].self, from: $0) } ?? []
-            transform(&entries)
+            dropped = transform(&entries)
             guard let data = try? JSONEncoder().encode(entries) else { return }
             try? data.write(to: url, options: .atomic)
         }
         if let coordinationError {
             NSLog("NCDEBUG notification history coordination failed: %@", coordinationError.localizedDescription)
         }
+        return dropped
     }
 
-    static func appendHistory(_ entry: HistoryEntry) {
-        var dropped: [HistoryEntry] = []
-        updateHistory { entries in
+    static func appendHistory(_ entry: HistoryEntry) async {
+        let dropped = await updateHistory { entries in
             entries.removeAll { $0.id == entry.id }
             entries.insert(entry, at: 0)
-            if entries.count > historyLimit {
-                dropped = Array(entries.suffix(entries.count - historyLimit))
-                entries.removeLast(dropped.count)
-            }
+            guard entries.count > historyLimit else { return [] }
+            let dropped = Array(entries.suffix(entries.count - historyLimit))
+            entries.removeLast(dropped.count)
+            return dropped
         }
         for old in dropped { deleteHistoryImage(id: old.id) }
     }
@@ -91,8 +104,8 @@ nonisolated enum PushSharedStore {
         return (try? JSONDecoder().decode([HistoryEntry].self, from: data)) ?? []
     }
 
-    static func clearHistory() {
-        updateHistory { $0.removeAll() }
+    static func clearHistory() async {
+        await updateHistory { $0.removeAll(); return [] }
         try? FileManager.default.removeItem(at: historyImagesDir)
     }
 
@@ -100,10 +113,11 @@ nonisolated enum PushSharedStore {
         loadHistory().filter(\.isUnread).count
     }
 
-    static func markAllRead() {
+    static func markAllRead() async {
         guard loadHistory().contains(where: \.isUnread) else { return }
-        updateHistory { entries in
+        await updateHistory { entries in
             for i in entries.indices { entries[i].isRead = true }
+            return []
         }
     }
 

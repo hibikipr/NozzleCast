@@ -135,6 +135,7 @@ final class AppStore {
             loadMockData()
             return false
         }
+        let statusBeforeCheck = connectionStatus
         connectionStatus = .connecting
         do {
             let me = try await client.me()
@@ -144,6 +145,16 @@ final class AppStore {
             await refresh()
             return true
         } catch {
+            // A cancelled check says nothing about the server. `.refreshable` cancels its task
+            // when the user pulls again (or lets go early), which cancels this in-flight request —
+            // treating that as a failure flashed "Couldn't reach your server" over a server that
+            // was answering fine. Put back whatever the status was before this check; the next
+            // refresh settles it.
+            if Self.isCancellation(error) {
+                NSLog("NCDEBUG Bambuddy connection check cancelled, restoring status %@", String(describing: statusBeforeCheck))
+                connectionStatus = statusBeforeCheck
+                return false
+            }
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("NCDEBUG Bambuddy connection failed: %@", msg)
             connectionStatus = .failed(msg)
@@ -174,29 +185,40 @@ final class AppStore {
         return true
     }
 
-    /// The refresh currently running, if any, and whether another was asked for while it ran.
-    /// Refreshes are triggered from many independent places (the foreground poll, scenePhase,
-    /// every action's follow-up, the detail menu, background wakes); running them concurrently
-    /// multiplied the request fan-out and let an older response land after a newer one.
-    private var refreshTask: Task<Void, Never>?
+    /// The refresh cycle currently running, if any, and whether another refresh was asked for
+    /// while it ran. Refreshes are triggered from many independent places (the foreground poll,
+    /// scenePhase, every action's follow-up, the detail menu, background wakes); running them
+    /// concurrently multiplied the request fan-out and let an older response land after a newer
+    /// one.
+    private var refreshCycle: Task<Void, Never>?
     private var refreshRequestedDuringRun = false
 
-    /// Coalesces concurrent calls: a call made while a refresh is running doesn't start a second
-    /// one in parallel — it waits, and exactly one more refresh runs afterwards to pick up
-    /// whatever changed in the meantime (e.g. the action that asked for it).
+    /// Coalesces concurrent calls: a call made while a cycle is running doesn't start a second one
+    /// in parallel — it flags that another pass is wanted and waits for the cycle, which runs
+    /// exactly one more pass before finishing to pick up whatever changed in the meantime (e.g.
+    /// the action that asked for it).
+    ///
+    /// The follow-up pass lives *inside* the cycle task, and every caller awaits that one task
+    /// once. The first version kept the rerun loop in the first caller and had later callers wait
+    /// with `while let running = refreshTask { await running.value }` — but awaiting an
+    /// already-finished task returns without suspending, so a waiter spun on the main actor
+    /// forever and the first caller never got back on to clear `refreshTask`. Any two overlapping
+    /// refreshes (launch + foreground, poll + action) froze the whole UI.
     func refresh() async {
-        if refreshTask != nil {
+        if let cycle = refreshCycle {
             refreshRequestedDuringRun = true
-            while let running = refreshTask { await running.value }
+            await cycle.value
             return
         }
-        repeat {
-            refreshRequestedDuringRun = false
-            let task = Task { await performRefresh() }
-            refreshTask = task
-            await task.value
-            refreshTask = nil
-        } while refreshRequestedDuringRun
+        let cycle = Task {
+            repeat {
+                refreshRequestedDuringRun = false
+                await performRefresh()
+            } while refreshRequestedDuringRun
+            refreshCycle = nil
+        }
+        refreshCycle = cycle
+        await cycle.value
     }
 
     private func performRefresh() async {
@@ -313,6 +335,13 @@ final class AppStore {
             NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
             connectionStatus = .failed(msg)
         }
+    }
+
+    /// Whether an error only means the awaiting task was cancelled, not that a request failed.
+    nonisolated private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
     }
 
     /// Identifies one print job for `coverFetchFailedJobs` — a new job on the same printer gets a
