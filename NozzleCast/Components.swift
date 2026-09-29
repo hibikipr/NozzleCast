@@ -71,6 +71,9 @@ struct FlowLayout: Layout {
 struct LiveCameraView: View {
     var printerID: String
     var pollInterval: Double = 3
+    /// Longest edge, in pixels, frames are decoded at — pass roughly the displayed size × screen
+    /// scale. Decoding full camera frames for a small thumbnail was pure main-thread waste.
+    var maxPixelSize: CGFloat = 1200
     /// Shows the underlying failure reason under the placeholder icon instead of just the
     /// icon alone — only worth doing where there's room to read it (the detail view header),
     /// not the small Monitor-list thumbnail. Only used when there's no cover fallback to show
@@ -97,7 +100,7 @@ struct LiveCameraView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else if let jobIdentity = coverFallbackJobIdentity {
-                PrinterCoverImage(printerID: printerID, jobIdentity: jobIdentity)
+                PrinterCoverImage(printerID: printerID, jobIdentity: jobIdentity, maxPixelSize: maxPixelSize)
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: "camera.fill")
@@ -116,7 +119,7 @@ struct LiveCameraView: View {
             image = nil
             isShowingLiveFrame = false
             while !Task.isCancelled {
-                if let frame = await store.cameraSnapshot(printerID: printerID) {
+                if let frame = await store.cameraSnapshot(printerID: printerID, maxPixelSize: maxPixelSize) {
                     image = frame
                     isShowingLiveFrame = true
                 } else {
@@ -137,6 +140,8 @@ struct PrinterCoverImage: View {
     /// Identifies the current job so the view knows when to refetch — pass something that
     /// changes when the job does, e.g. the job filename (or printer id alone if idle).
     var jobIdentity: String
+    /// Longest edge, in pixels, to decode the render at (see `LiveCameraView.maxPixelSize`).
+    var maxPixelSize: CGFloat = 600
 
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
@@ -153,7 +158,7 @@ struct PrinterCoverImage: View {
             }
         }
         .task(id: "\(printerID)-\(jobIdentity)") {
-            image = await store.printerCoverImage(printerID: printerID)
+            image = await store.printerCoverImage(printerID: printerID, maxPixelSize: maxPixelSize)
         }
     }
 }
@@ -421,6 +426,42 @@ struct DemoDataBanner: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityHint(Text("Opens Settings to connect your server", comment: "Demo data banner accessibility hint"))
+    }
+}
+
+/// Shown above Monitor/Inventory while a configured server can't be reached — the data below it
+/// (if any) is the last successful refresh, kept on screen rather than swapped for sample data.
+/// Tapping it opens Settings, same as `DemoDataBanner`.
+struct ServerUnreachableBanner: View {
+    var message: String
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(NCColor.statusWarning)
+                Text(message)
+                    .ncFont(size: 13, relativeTo: .footnote)
+                    .foregroundStyle(NCColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(NCColor.statusWarning.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(NCColor.statusWarning.opacity(0.35), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(Text("Opens Settings to check your server", comment: "Server unreachable banner accessibility hint"))
     }
 }
 

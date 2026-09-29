@@ -43,11 +43,13 @@ enum RelayConfigStore {
         let config = Config(url: url, authSecret: trimmedSecret)
         let data = try JSONEncoder().encode(config)
         try data.write(to: storedURL, options: .atomic)
+        PushSharedStore.relayConfigured = true
         return config
     }
 
     static func clear() {
         try? FileManager.default.removeItem(at: storedURL)
+        PushSharedStore.relayConfigured = false
     }
 
     static func load() -> Config? {

@@ -33,6 +33,18 @@ struct RootView: View {
         .onChange(of: store.pendingDeepLinkPrinterID) { _, id in
             if id != nil { selectedTab = .monitor }
         }
+        .alert(
+            Text("Couldn't Complete That", comment: "Alert title when a printer/inventory action fails"),
+            isPresented: Binding(
+                get: { store.actionError != nil },
+                set: { if !$0 { store.actionError = nil } }
+            ),
+            presenting: store.actionError
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
+        }
     }
 }
 

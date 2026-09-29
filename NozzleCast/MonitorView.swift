@@ -49,6 +49,9 @@ struct MonitorView: View {
                     if store.isShowingDemoData {
                         DemoDataBanner(connectionStatus: store.connectionStatus) { selectedTab = .settings }
                             .padding(.horizontal, 16)
+                    } else if let message = store.serverUnreachableMessage {
+                        ServerUnreachableBanner(message: message) { selectedTab = .settings }
+                            .padding(.horizontal, 16)
                     }
 
                     if isConnecting {
@@ -246,7 +249,7 @@ struct PrinterCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(NCColor.printerWell)
             if state == .printing {
-                LiveCameraView(printerID: id, pollInterval: 5, coverFallbackJobIdentity: jobFileName ?? id, isShowingLiveFrame: $isCameraLive)
+                LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: 180, coverFallbackJobIdentity: jobFileName ?? id, isShowingLiveFrame: $isCameraLive)
                     .font(.system(size: 20))
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

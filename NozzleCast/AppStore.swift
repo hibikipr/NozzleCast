@@ -51,11 +51,36 @@ final class AppStore {
 
     var isLive: Bool { config.isConfigured && connectionStatusIsUsable }
 
-    /// True whenever `printers`/`spools` hold `MockData` rather than the user's own — both with no
-    /// server configured and after a configured server failed to connect, since
-    /// `testConnectionAndRefresh()` falls back to `loadMockData()` in either case. Drives the
-    /// `DemoDataBanner`, so sample printers are never mistaken for real ones.
-    var isShowingDemoData: Bool { !isLive }
+    /// True whenever `printers`/`spools` hold `MockData` rather than the user's own — which now
+    /// only happens with no server configured. Drives the `DemoDataBanner`, so sample printers are
+    /// never mistaken for real ones.
+    ///
+    /// A configured server that can't be reached used to fall back to demo data too. For a
+    /// self-hosted, often LAN-only Bambuddy that is the everyday case of opening the app away from
+    /// home, and it replaced the user's real fleet with sample printers — and wrote those sample
+    /// printers into the home-screen AMS widget. A configured install now keeps its last real data
+    /// and says it's stale instead (`serverUnreachableMessage`).
+    private(set) var isShowingDemoData = false
+
+    /// When `printers`/`spools` last came from a successful refresh — for the stale-data banner.
+    private(set) var lastSuccessfulRefreshAt: Date?
+
+    /// Non-nil while a configured server can't be reached — the banner text explaining that what's
+    /// on screen (if anything) is the last known state, not live.
+    var serverUnreachableMessage: String? {
+        guard config.isConfigured, case .failed = connectionStatus else { return nil }
+        if let lastSuccessfulRefreshAt {
+            let age = lastSuccessfulRefreshAt.formatted(.relative(presentation: .named))
+            return String(localized: "Couldn't reach your server. Showing data from \(age). Pull to retry.", comment: "Server unreachable banner, with stale data on screen")
+        }
+        return String(localized: "Couldn't reach your server. Pull to retry, or check it in Settings.", comment: "Server unreachable banner, nothing loaded yet")
+    }
+
+    /// The most recent failure of a user-initiated action (pause, light, assign, …), shown as an
+    /// alert. Kept separate from `connectionStatus` on purpose: one rejected action — e.g. a 403
+    /// because the API key lacks that permission — used to mark the whole app disconnected, which
+    /// hid every control and put up the demo-data banner until the next reconnect.
+    var actionError: String?
 
     private var connectionStatusIsUsable: Bool {
         if case .failed = connectionStatus { return false }
@@ -88,6 +113,7 @@ final class AppStore {
     func loadMockData() {
         printers = MockData.makePrinters()
         spools = MockData.makeSpools()
+        isShowingDemoData = true
         resolvePendingDeepLink()
         AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
         WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
@@ -114,13 +140,21 @@ final class AppStore {
             let me = try await client.me()
             grantedPermissions = Set(me.permissions)
             connectionStatus = .connected(username: me.username)
+            lastConnectedUsername = me.username
             await refresh()
             return true
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("NCDEBUG Bambuddy connection failed: %@", msg)
             connectionStatus = .failed(msg)
-            loadMockData()
+            // Keep whatever real data is on screen (see `isShowingDemoData`). Sample data left over
+            // from before a server was configured is dropped, though: it would now read as the
+            // user's own printers behind an "unreachable" banner.
+            if isShowingDemoData {
+                printers = []
+                spools = []
+                isShowingDemoData = false
+            }
             return false
         }
     }
@@ -140,7 +174,32 @@ final class AppStore {
         return true
     }
 
+    /// The refresh currently running, if any, and whether another was asked for while it ran.
+    /// Refreshes are triggered from many independent places (the foreground poll, scenePhase,
+    /// every action's follow-up, the detail menu, background wakes); running them concurrently
+    /// multiplied the request fan-out and let an older response land after a newer one.
+    private var refreshTask: Task<Void, Never>?
+    private var refreshRequestedDuringRun = false
+
+    /// Coalesces concurrent calls: a call made while a refresh is running doesn't start a second
+    /// one in parallel — it waits, and exactly one more refresh runs afterwards to pick up
+    /// whatever changed in the meantime (e.g. the action that asked for it).
     func refresh() async {
+        if refreshTask != nil {
+            refreshRequestedDuringRun = true
+            while let running = refreshTask { await running.value }
+            return
+        }
+        repeat {
+            refreshRequestedDuringRun = false
+            let task = Task { await performRefresh() }
+            refreshTask = task
+            await task.value
+            refreshTask = nil
+        } while refreshRequestedDuringRun
+    }
+
+    private func performRefresh() async {
         guard let client else { return }
         isRefreshing = true
         defer { isRefreshing = false }
@@ -205,7 +264,11 @@ final class AppStore {
 
             // The cover render is static for the whole print, so only fetch it once per job
             // rather than on every refresh — the Live Activity manager tells us who already has one.
-            let printersNeedingCover = printers.filter { $0.state == .printing && !PrintLiveActivityManager.shared.hasCoverImage(printerName: $0.name) }
+            let printersNeedingCover = printers.filter {
+                $0.state == .printing
+                    && !PrintLiveActivityManager.shared.hasCoverImage(printerName: $0.name)
+                    && !coverFetchFailedJobs.contains(Self.coverJobKey($0))
+            }
             var coverImages: [String: Data] = [:]
             if !printersNeedingCover.isEmpty {
                 await withTaskGroup(of: (String, Data?).self) { group in
@@ -213,12 +276,19 @@ final class AppStore {
                         group.addTask {
                             // The API call itself still needs Bambuddy's real numeric id; only the
                             // dictionary key handed to the Live Activity manager uses the name-based one.
-                            let image = await self.printerCoverImage(printerID: printer.id)
-                            return (PrintActivityAttributes.normalizedID(printer.name), image.flatMap { PrintLiveActivityManager.downscaledCoverImage($0) })
+                            let image = await self.printerCoverImage(printerID: printer.id, maxPixelSize: 144)
+                            return (Self.coverJobKey(printer), image.flatMap { PrintLiveActivityManager.downscaledCoverImage($0) })
                         }
                     }
-                    for await (id, data) in group {
-                        if let data { coverImages[id] = data }
+                    for await (jobKey, data) in group {
+                        guard let printer = printersNeedingCover.first(where: { Self.coverJobKey($0) == jobKey }) else { continue }
+                        if let data {
+                            coverImages[PrintActivityAttributes.normalizedID(printer.name)] = data
+                        } else {
+                            // A job with no fetchable (or no budget-fitting) render won't grow one
+                            // later; retrying it cost a token mint and an image fetch per refresh.
+                            coverFetchFailedJobs.insert(jobKey)
+                        }
                     }
                 }
             }
@@ -228,6 +298,14 @@ final class AppStore {
                 .filter { $0.archivedAt == nil }
                 .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog) }
 
+            isShowingDemoData = false
+            lastSuccessfulRefreshAt = Date()
+            // A failed refresh drops connectionStatus to .failed; a later successful one must lift
+            // it again, or the unreachable banner would outlive the outage.
+            if case .failed = connectionStatus, let username = lastConnectedUsername {
+                connectionStatus = .connected(username: username)
+            }
+
             AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
             WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
         } catch {
@@ -236,6 +314,15 @@ final class AppStore {
             connectionStatus = .failed(msg)
         }
     }
+
+    /// Identifies one print job for `coverFetchFailedJobs` — a new job on the same printer gets a
+    /// fresh attempt.
+    nonisolated private static func coverJobKey(_ printer: Printer) -> String {
+        "\(printer.id)|\(printer.jobFileName ?? "")"
+    }
+
+    private var coverFetchFailedJobs: Set<String> = []
+    private var lastConnectedUsername: String?
 
     // MARK: - Mapping
 
@@ -581,130 +668,174 @@ final class AppStore {
     /// a live feed isn't loading instead of silently falling back to a placeholder icon.
     private(set) var cameraErrors: [String: String] = [:]
 
-    /// Fetches one live snapshot for a printer's chamber camera. Mints a fresh stream token
-    /// per call since the API gives no expiry, and snapshots are only polled every few seconds.
-    func cameraSnapshot(printerID: String) async -> UIImage? {
+    /// Only writes when the value actually changes: every camera view reads this dictionary, and
+    /// an `@Observable` property invalidates its readers on every assignment — clearing an
+    /// already-nil entry on each successful frame redrew every camera view every few seconds.
+    private func setCameraError(_ message: String?, for printerID: String) {
+        guard cameraErrors[printerID] != message else { return }
+        cameraErrors[printerID] = message
+    }
+
+    /// Camera stream tokens are shared by every camera view instead of minted per frame, which
+    /// doubled the request count of every poll (mint + fetch) for every visible camera. Reused for
+    /// at most `streamTokenMaxAge`, and re-minted immediately if the server rejects one — the API
+    /// documents no expiry, so the age cap is a conservative guess, not a known lifetime.
+    private var streamTokenTask: Task<String, Error>?
+    private var streamTokenMintedAt: Date?
+    private static let streamTokenMaxAge: TimeInterval = 30
+
+    private func streamToken(using client: BambuddyAPIClient, forceFresh: Bool = false) async throws -> String {
+        if !forceFresh, let task = streamTokenTask, let mintedAt = streamTokenMintedAt,
+           Date().timeIntervalSince(mintedAt) < Self.streamTokenMaxAge {
+            if let token = try? await task.value { return token }
+        }
+        let task = Task { try await client.cameraStreamToken() }
+        streamTokenTask = task
+        streamTokenMintedAt = Date()
+        do {
+            return try await task.value
+        } catch {
+            // Never cache a failure.
+            if streamTokenTask == task { streamTokenTask = nil; streamTokenMintedAt = nil }
+            throw error
+        }
+    }
+
+    /// Fetches with the shared stream token, retrying once with a fresh one if the server
+    /// rejects it as expired/invalid.
+    private func fetchWithStreamToken(using client: BambuddyAPIClient, _ fetch: (String) async throws -> Data) async throws -> Data {
+        do {
+            return try await fetch(try await streamToken(using: client))
+        } catch BambuddyAPIError.http(let code, _) where code == 401 || code == 403 {
+            return try await fetch(try await streamToken(using: client, forceFresh: true))
+        }
+    }
+
+    /// Fetches one live snapshot for a printer's chamber camera, decoded off the main thread and
+    /// downsampled to `maxPixelSize` (the longest edge the caller actually displays). Full-size
+    /// camera frames were decoded on the main thread every few seconds just to fill a 60pt
+    /// thumbnail.
+    func cameraSnapshot(printerID: String, maxPixelSize: CGFloat) async -> UIImage? {
         guard let client, let bbID = bambuddyID(printerID) else {
-            cameraErrors[printerID] = String(localized: "Not connected to a server.")
+            setCameraError(String(localized: "Not connected to a server."), for: printerID)
             return nil
         }
         do {
-            let token = try await client.cameraStreamToken()
-            let data = try await client.cameraSnapshotData(printerID: bbID, token: token)
-            guard let image = UIImage(data: data) else {
-                cameraErrors[printerID] = String(localized: "Server sent \(data.count) bytes that aren't a decodable image.")
+            let data = try await fetchWithStreamToken(using: client) { token in
+                try await client.cameraSnapshotData(printerID: bbID, token: token)
+            }
+            guard let image = await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize) else {
+                setCameraError(String(localized: "Server sent \(data.count) bytes that aren't a decodable image."), for: printerID)
                 return nil
             }
-            cameraErrors[printerID] = nil
+            setCameraError(nil, for: printerID)
             return image
         } catch {
-            cameraErrors[printerID] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            setCameraError((error as? LocalizedError)?.errorDescription ?? error.localizedDescription, for: printerID)
             return nil
         }
     }
 
     /// Fetches the rendered plate preview (angled 3D view) for a printer's current or most
-    /// recently finished job — same stream-token auth as `cameraSnapshot`.
-    func printerCoverImage(printerID: String) async -> UIImage? {
+    /// recently finished job — same stream-token auth as `cameraSnapshot`. `maxPixelSize` nil
+    /// keeps full resolution (the zoomable viewer wants it).
+    func printerCoverImage(printerID: String, maxPixelSize: CGFloat? = nil) async -> UIImage? {
         guard let client, let bbID = bambuddyID(printerID) else { return nil }
         do {
-            let token = try await client.cameraStreamToken()
-            let data = try await client.coverImageData(printerID: bbID, token: token)
-            return UIImage(data: data)
+            let data = try await fetchWithStreamToken(using: client) { token in
+                try await client.coverImageData(printerID: bbID, token: token)
+            }
+            return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
         } catch {
             return nil
+        }
+    }
+
+    // MARK: - Actions
+
+    /// Runs one user-initiated server action.
+    ///
+    /// - Demo data: only `localChange` runs, so the sample UI stays interactive.
+    /// - Configured but not currently connected: nothing changes locally (an optimistic change
+    ///   would just be a lie nothing ever sends) and the user is told why.
+    /// - Otherwise: `localChange` is applied optimistically, the request is sent, and on success
+    ///   the state is refreshed if `refreshAfter`. On failure the error goes to `actionError` —
+    ///   never `connectionStatus`, see its doc — and a refresh restores the server's real state
+    ///   in place of the optimistic change.
+    private func performAction(
+        refreshAfter: Bool = true,
+        localChange: () -> Void = {},
+        _ operation: @escaping (BambuddyAPIClient) async throws -> Void
+    ) {
+        if isShowingDemoData {
+            localChange()
+            return
+        }
+        guard isLive, let client else {
+            actionError = String(localized: "Not connected to your server. Pull to refresh and try again.")
+            return
+        }
+        localChange()
+        Task {
+            do {
+                try await operation(client)
+                if refreshAfter { await refresh() }
+            } catch {
+                actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                await refresh()
+            }
         }
     }
 
     // MARK: - Printer controls
 
     func togglePause(_ printerID: String) {
-        guard let idx = printers.firstIndex(where: { $0.id == printerID }) else { return }
+        guard let idx = printers.firstIndex(where: { $0.id == printerID }), let bbID = bambuddyID(printerID) ?? (isShowingDemoData ? 0 : nil) else { return }
         let wasPrinting = printers[idx].state == .printing
-        printers[idx].state = wasPrinting ? .paused : .printing
-
-        guard isLive, let client, let bbID = bambuddyID(printerID) else { return }
-        Task {
-            do {
-                if wasPrinting { try await client.pause(printerID: bbID) } else { try await client.resume(printerID: bbID) }
-                await refresh()
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            }
+        performAction(localChange: { self.printers[idx].state = wasPrinting ? .paused : .printing }) { client in
+            if wasPrinting { try await client.pause(printerID: bbID) } else { try await client.resume(printerID: bbID) }
         }
     }
 
     func stop(_ printerID: String) {
-        guard let idx = printers.firstIndex(where: { $0.id == printerID }) else { return }
-        printers[idx].state = .idle
-        printers[idx].jobFileName = nil
-        printers[idx].progress = nil
-        printers[idx].etaMinutesRemaining = nil
-
-        guard isLive, let client, let bbID = bambuddyID(printerID) else { return }
-        Task {
-            do {
-                try await client.stop(printerID: bbID)
-                await refresh()
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            }
+        guard let idx = printers.firstIndex(where: { $0.id == printerID }), let bbID = bambuddyID(printerID) ?? (isShowingDemoData ? 0 : nil) else { return }
+        performAction(localChange: {
+            self.printers[idx].state = .idle
+            self.printers[idx].jobFileName = nil
+            self.printers[idx].progress = nil
+            self.printers[idx].etaMinutesRemaining = nil
+        }) { client in
+            try await client.stop(printerID: bbID)
         }
     }
 
     func toggleLight(_ printerID: String) {
-        guard let idx = printers.firstIndex(where: { $0.id == printerID }) else { return }
-        printers[idx].lightOn.toggle()
-        let newValue = printers[idx].lightOn
-
-        guard isLive, let client, let bbID = bambuddyID(printerID) else { return }
-        Task {
-            do {
-                try await client.setChamberLight(printerID: bbID, on: newValue)
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            }
+        guard let idx = printers.firstIndex(where: { $0.id == printerID }), let bbID = bambuddyID(printerID) ?? (isShowingDemoData ? 0 : nil) else { return }
+        let newValue = !printers[idx].lightOn
+        performAction(refreshAfter: false, localChange: { self.printers[idx].lightOn = newValue }) { client in
+            try await client.setChamberLight(printerID: bbID, on: newValue)
         }
     }
 
     func toggleSmartPlug(_ printerID: String) {
         guard let idx = printers.firstIndex(where: { $0.id == printerID }), let plug = printers[idx].smartPlug else { return }
         let newValue = !plug.isOn
-        printers[idx].smartPlug?.isOn = newValue
-
-        guard isLive, let client else { return }
-        Task {
-            do {
-                try await client.setSmartPlug(plugID: plug.id, on: newValue)
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            }
+        performAction(refreshAfter: false, localChange: { self.printers[idx].smartPlug?.isOn = newValue }) { client in
+            try await client.setSmartPlug(plugID: plug.id, on: newValue)
         }
     }
 
     func homeAxes(_ printerID: String) {
-        guard isLive, let client, let bbID = bambuddyID(printerID) else { return }
-        Task {
-            do {
-                try await client.homeAxes(printerID: bbID)
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            }
+        guard let bbID = bambuddyID(printerID) else { return }
+        performAction(refreshAfter: false) { client in
+            try await client.homeAxes(printerID: bbID)
         }
     }
 
     func clearPlate(_ printerID: String) {
-        guard let idx = printers.firstIndex(where: { $0.id == printerID }) else { return }
-        printers[idx].awaitingPlateClear = false
-
-        guard isLive, let client, let bbID = bambuddyID(printerID) else { return }
-        Task {
-            do {
-                try await client.clearPlate(printerID: bbID)
-                await refresh()
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            }
+        guard let idx = printers.firstIndex(where: { $0.id == printerID }), let bbID = bambuddyID(printerID) ?? (isShowingDemoData ? 0 : nil) else { return }
+        performAction(localChange: { self.printers[idx].awaitingPlateClear = false }) { client in
+            try await client.clearPlate(printerID: bbID)
         }
     }
 
@@ -735,63 +866,49 @@ final class AppStore {
     // MARK: - AMS assignment
 
     func assign(spoolID: String, toPrinter printerID: String, amsIndex: Int, trayIndex: Int) {
-        for i in printers.indices {
-            for t in printers[i].amsUnits.indices {
-                for s in printers[i].amsUnits[t].trays.indices where printers[i].amsUnits[t].trays[s].spoolID == spoolID {
-                    printers[i].amsUnits[t].trays[s].spoolID = nil
+        let bbPrinterID = bambuddyID(printerID) ?? 0
+        let bbSpoolID = bambuddyID(spoolID) ?? 0
+        guard isShowingDemoData || (bambuddyID(printerID) != nil && bambuddyID(spoolID) != nil) else { return }
+        performAction(localChange: {
+            for i in self.printers.indices {
+                for t in self.printers[i].amsUnits.indices {
+                    for s in self.printers[i].amsUnits[t].trays.indices where self.printers[i].amsUnits[t].trays[s].spoolID == spoolID {
+                        self.printers[i].amsUnits[t].trays[s].spoolID = nil
+                    }
                 }
             }
-        }
-        guard let idx = printers.firstIndex(where: { $0.id == printerID }),
-              let unitIdx = printers[idx].amsUnits.firstIndex(where: { $0.index == amsIndex }),
-              let trayIdx = printers[idx].amsUnits[unitIdx].trays.firstIndex(where: { $0.trayIndex == trayIndex }) else { return }
-        printers[idx].amsUnits[unitIdx].trays[trayIdx].spoolID = spoolID
-
-        if let sIdx = spools.firstIndex(where: { $0.id == spoolID }) {
-            spools[sIdx].location = .ams(printerID: printerID, amsIndex: amsIndex, trayIndex: trayIndex)
-        }
-
-        guard isLive, let client, let bbPrinterID = bambuddyID(printerID), let bbSpoolID = bambuddyID(spoolID) else { return }
-        Task {
-            do {
-                try await client.assignSpool(spoolID: bbSpoolID, printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)
-                await refresh()
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            guard let idx = self.printers.firstIndex(where: { $0.id == printerID }),
+                  let unitIdx = self.printers[idx].amsUnits.firstIndex(where: { $0.index == amsIndex }),
+                  let trayIdx = self.printers[idx].amsUnits[unitIdx].trays.firstIndex(where: { $0.trayIndex == trayIndex }) else { return }
+            self.printers[idx].amsUnits[unitIdx].trays[trayIdx].spoolID = spoolID
+            if let sIdx = self.spools.firstIndex(where: { $0.id == spoolID }) {
+                self.spools[sIdx].location = .ams(printerID: printerID, amsIndex: amsIndex, trayIndex: trayIndex)
             }
+        }) { client in
+            try await client.assignSpool(spoolID: bbSpoolID, printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)
         }
     }
 
     func unassign(printerID: String, amsIndex: Int, trayIndex: Int) {
         guard let idx = printers.firstIndex(where: { $0.id == printerID }),
               let unitIdx = printers[idx].amsUnits.firstIndex(where: { $0.index == amsIndex }),
-              let trayIdx = printers[idx].amsUnits[unitIdx].trays.firstIndex(where: { $0.trayIndex == trayIndex }) else { return }
+              let trayIdx = printers[idx].amsUnits[unitIdx].trays.firstIndex(where: { $0.trayIndex == trayIndex }),
+              let bbPrinterID = bambuddyID(printerID) ?? (isShowingDemoData ? 0 : nil) else { return }
         let spoolID = printers[idx].amsUnits[unitIdx].trays[trayIdx].spoolID
-        printers[idx].amsUnits[unitIdx].trays[trayIdx].spoolID = nil
-        if let spoolID, let sIdx = spools.firstIndex(where: { $0.id == spoolID }) {
-            spools[sIdx].location = .storage(name: nil)
-        }
-
-        guard isLive, let client, let bbPrinterID = bambuddyID(printerID) else { return }
-        Task {
-            do {
-                try await client.unassign(printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)
-                await refresh()
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        performAction(localChange: {
+            self.printers[idx].amsUnits[unitIdx].trays[trayIdx].spoolID = nil
+            if let spoolID, let sIdx = self.spools.firstIndex(where: { $0.id == spoolID }) {
+                self.spools[sIdx].location = .storage(name: nil)
             }
+        }) { client in
+            try await client.unassign(printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)
         }
     }
 
     func rereadRFID(printerID: String, amsIndex: Int, trayIndex: Int) {
-        guard isLive, let client, let bbPrinterID = bambuddyID(printerID) else { return }
-        Task {
-            do {
-                try await client.rereadRFID(printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)
-                await refresh()
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            }
+        guard let bbPrinterID = bambuddyID(printerID) else { return }
+        performAction { client in
+            try await client.rereadRFID(printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)
         }
     }
 
@@ -799,20 +916,8 @@ final class AppStore {
 
     @discardableResult
     func addSpool(material: String, colorName: String, colorHex: String, brand: String, netWeightGrams: Int) -> Spool {
-        if isLive, let client {
-            let rgba = colorHex.replacingOccurrences(of: "#", with: "").uppercased() + "FF"
-            Task {
-                do {
-                    _ = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams)
-                    await refresh()
-                } catch {
-                    connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-                }
-            }
-        }
-
         let spool = Spool(
-            id: isLive ? "pending-\(UUID().uuidString)" : "mock-spool-\(UUID().uuidString)",
+            id: isShowingDemoData ? "mock-spool-\(UUID().uuidString)" : "pending-\(UUID().uuidString)",
             material: material,
             colorName: colorName,
             colorHex: colorHex,
@@ -821,7 +926,12 @@ final class AppStore {
             netWeightGrams: netWeightGrams,
             location: .storage(name: nil)
         )
-        spools.insert(spool, at: 0)
+        let rgba = colorHex.replacingOccurrences(of: "#", with: "").uppercased() + "FF"
+        // The pending placeholder is replaced by the real record on the follow-up refresh — or,
+        // if creation failed, dropped by the failure path's own refresh.
+        performAction(localChange: { self.spools.insert(spool, at: 0) }) { client in
+            _ = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams)
+        }
         return spool
     }
 
@@ -843,21 +953,8 @@ final class AppStore {
         category: String?,
         note: String?
     ) {
-        guard let idx = spools.firstIndex(where: { $0.id == spoolID }) else { return }
-        spools[idx].material = material
-        spools[idx].colorName = colorName
-        spools[idx].colorHex = colorHex
-        spools[idx].extraColorHexes = extraColorHexes
-        spools[idx].brand = brand
-        spools[idx].subtype = subtype
-        spools[idx].netWeightGrams = netWeightGrams
-        spools[idx].nozzleTempMin = nozzleTempMin
-        spools[idx].nozzleTempMax = nozzleTempMax
-        spools[idx].costPerKg = costPerKg
-        spools[idx].category = category
-        spools[idx].note = note
-
-        guard isLive, let client, let bbID = bambuddyID(spoolID) else { return }
+        guard let idx = spools.firstIndex(where: { $0.id == spoolID }),
+              let bbID = bambuddyID(spoolID) ?? (isShowingDemoData ? 0 : nil) else { return }
         let rgba = colorHex.replacingOccurrences(of: "#", with: "").uppercased() + "FF"
         let update = BambuddySpoolUpdateBody(
             material: material,
@@ -874,13 +971,21 @@ final class AppStore {
             category: category,
             note: note
         )
-        Task {
-            do {
-                try await client.updateSpool(spoolID: bbID, update)
-                await refresh()
-            } catch {
-                connectionStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            }
+        performAction(localChange: {
+            self.spools[idx].material = material
+            self.spools[idx].colorName = colorName
+            self.spools[idx].colorHex = colorHex
+            self.spools[idx].extraColorHexes = extraColorHexes
+            self.spools[idx].brand = brand
+            self.spools[idx].subtype = subtype
+            self.spools[idx].netWeightGrams = netWeightGrams
+            self.spools[idx].nozzleTempMin = nozzleTempMin
+            self.spools[idx].nozzleTempMax = nozzleTempMax
+            self.spools[idx].costPerKg = costPerKg
+            self.spools[idx].category = category
+            self.spools[idx].note = note
+        }) { client in
+            _ = try await client.updateSpool(spoolID: bbID, update)
         }
     }
 }

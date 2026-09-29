@@ -201,22 +201,31 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         // activities further — `PrintLiveActivityManager.sync()` (the main app, on its next
         // refresh) is what actually ends any that are already running.
         guard PushSharedStore.liveActivitiesEnabled else { return }
-        let haystack = PrintActivityAttributes.normalizedID((message.title ?? "") + " " + (message.message ?? ""))
+        // With a relay configured, the relay is the activity's single content writer — the same
+        // rule `PrintLiveActivityManager.sync` follows for the app. This path used to keep writing
+        // anyway, from values it parses out of alert text (including Bambuddy's raw remaining
+        // time, which the relay deliberately filters), so whichever of the two wrote last won and
+        // the card flickered between their versions. The relay already pushes its own camera
+        // frame and its own end event.
+        guard !PushSharedStore.relayConfigured else { return }
+        let text = (message.title ?? "") + " " + (message.message ?? "")
         let terminalLabel = terminalStateLabel(forTitle: message.title ?? "")
         let progress = progressFraction(forTitle: message.title ?? "")
         let remainingMinutes = remainingMinutes(fromMessage: message.message ?? "")
 
         let allActivities = Activity<PrintActivityAttributes>.activities
-        NSLog("NCDEBUG NSE update haystack=%@ terminalLabel=%@ allActivities=%@", haystack, terminalLabel ?? "nil",
+        NSLog("NCDEBUG NSE update terminalLabel=%@ allActivities=%@", terminalLabel ?? "nil",
               allActivities.map { "id=\($0.id) printerID=\($0.attributes.printerID) state=\($0.activityState)" }.description)
 
         // Only `.active` activities count as a match — an already-ended one still lingers in
         // `.activities` through its dismissal window (up to 30 minutes), and without this a new
         // print starting on the same printer within that window would find the old, dismissing
         // activity, update it instead of the relay's fresh one, and never show a new card at all.
-        for activity in allActivities where activity.activityState == .active {
-            guard haystack.contains(activity.attributes.printerID) else {
-                NSLog("NCDEBUG NSE no match: printerID=%@ not in haystack", activity.attributes.printerID)
+        let active = allActivities.filter { $0.activityState == .active }
+        let matchedIDs = matchingPrinterIDs(in: text, candidates: active.map(\.attributes.printerID))
+        for activity in active {
+            guard matchedIDs.contains(activity.attributes.printerID) else {
+                NSLog("NCDEBUG NSE no match: printerID=%@ not named in this message", activity.attributes.printerID)
                 continue
             }
             NSLog("NCDEBUG NSE matched activity id=%@ printerID=%@", activity.id, activity.attributes.printerID)
@@ -248,7 +257,10 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 // extension to make any of its own network calls.
                 if let progress {
                     state.progress = progress
-                    if let remainingMinutes {
+                    // Same plausibility rule as the app and relay (`RemainingTimeTrust`): Bambuddy's
+                    // near-zero placeholder must not become a countdown to "now". An untrusted value
+                    // leaves the previous estimate alone rather than clearing it.
+                    if let remainingMinutes, RemainingTimeTrust.isTrustworthy(remainingMinutes: Double(remainingMinutes), progress: progress) {
                         state.estimatedEndAt = Date().addingTimeInterval(TimeInterval(remainingMinutes * 60))
                     }
                 }
@@ -257,42 +269,53 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         }
     }
 
-    /// Bambuddy's titles for these are plain and consistent enough to substring-match: "Complete"
-    /// and "Print Completed" both contain "complete", as does the later, harmless-to-also-match
-    /// "Bed Cooldown Complete" (which only ever fires after printing is already done, so ending
-    /// the activity again there is a no-op). Failure/stop titles aren't confirmed against real
-    /// traffic yet, but Bambuddy's own event flags (on_print_failed, on_print_stopped) strongly
-    /// imply similarly plain wording.
+    /// Which of `candidates` (normalized printer ids) the message text actually names.
     ///
-    /// Critical guard: Bambuddy's own progress-milestone titles ("Print 50% Complete") *also*
-    /// contain the word "complete" — without excluding any title carrying a percentage, every
-    /// progress push was mistaken for the print's actual completion, ending the Live Activity at
-    /// the very first milestone. Confirmed as a real bug in practice: progress stayed frozen at
-    /// its initial value (the update branch was never reached) and the real final "Print
-    /// Completed" push later had no visible effect (the activity was already `.ended`, so the
-    /// `.active`-only filter in `updateLiveActivity` skipped it entirely). A percentage in the
-    /// title unambiguously marks it as a progress update, never the terminal event.
+    /// Bambuddy's messages carry no printer id, only the name somewhere in the text — sometimes
+    /// the display name ("Vic H2C"), sometimes the slug ("vic-h2c"). Matching used to test whether
+    /// the whole normalized text *contained* an id as a substring, so a printer "P1S" also matched
+    /// every message about "P1S 2" or "P1S Combo" — and "Print Completed" on one ended the other's
+    /// Live Activity. Now an id must equal a run of whole consecutive words (normalized the same
+    /// way), and when two candidates both match, one that is merely part of the other's longer
+    /// name ("p1s" inside "p1s2") is dropped: the message is about the longer-named printer.
+    static func matchingPrinterIDs(in text: String, candidates: [String]) -> Set<String> {
+        let words = text.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+        var runs: Set<String> = []
+        for start in words.indices {
+            var run = ""
+            for end in start..<min(words.count, start + 6) {
+                run += words[end]
+                runs.insert(run)
+            }
+        }
+        let matched = Set(candidates.filter { runs.contains($0) })
+        return matched.filter { id in !matched.contains { $0 != id && $0.contains(id) } }
+    }
+
+    /// Whether a title announces the print itself ending, and how.
     ///
-    /// Same problem, different title: Bambuddy's "First Layer Complete" milestone (fired almost
-    /// immediately after a print starts) also contains "complete" but carries no percentage, so
-    /// the guard above doesn't catch it — confirmed as a second real instance of this exact bug:
-    /// it ended the Live Activity within moments of starting, before any of the print's real
-    /// progress could ever be applied. Excluding any title mentioning "layer" closes this
-    /// specifically, since none of Bambuddy's genuine completion titles do.
-    private static func terminalStateLabel(forTitle title: String) -> String? {
+    /// This used to be a bare substring search for "complete"/"fail"/"cancel"/"stop" in *any*
+    /// title, which kept ending Live Activities mid-print: progress milestones ("Print 50%
+    /// Complete"), "First Layer Complete", and any other alert that happened to contain one of
+    /// those words (an AI "failure detected" warning, a drying cycle "complete", …). Now the title
+    /// must be about the print ("print"/"printing" as a word), must not be a percentage milestone
+    /// or a layer milestone, and must use one of the actual end-state words as a whole word.
+    static func terminalStateLabel(forTitle title: String) -> String? {
         guard progressFraction(forTitle: title) == nil else { return nil }
-        let t = title.lowercased()
-        guard !t.contains("layer") else { return nil }
-        if t.contains("complete") { return "Complete" }
-        if t.contains("fail") { return "Failed" }
-        if t.contains("cancel") { return "Cancelled" }
-        if t.contains("stop") { return "Stopped" }
+        let words = Set(title.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+        guard words.contains("print") || words.contains("printing"), !words.contains("layer") else { return nil }
+        if !words.isDisjoint(with: ["complete", "completed", "finished"]) { return "Complete" }
+        if words.contains("failed") { return "Failed" }
+        if !words.isDisjoint(with: ["cancelled", "canceled"]) { return "Cancelled" }
+        if words.contains("stopped") { return "Stopped" }
         return nil
     }
 
     /// Bambuddy's progress titles are consistently "Print {N}% Complete" — pulls the first
     /// integer immediately before a "%" and normalizes it to a 0...1 fraction for `ContentState`.
-    private static func progressFraction(forTitle title: String) -> Double? {
+    static func progressFraction(forTitle title: String) -> Double? {
         guard let match = title.range(of: #"\d+(?=%)"#, options: .regularExpression),
               let percent = Int(title[match])
         else { return nil }

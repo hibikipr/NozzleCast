@@ -83,6 +83,24 @@ final class PrintLiveActivityManager {
 
     private let creationGate = ActivityCreationGate()
 
+    /// Per printer, when a sync first saw it printing with no activity — the clock for
+    /// `relayStartGracePeriod`. In-memory only: a relaunch just restarts the wait.
+    private var firstSeenPrintingWithoutActivity: [String: Date] = [:]
+
+    /// With a relay configured, how long a printing printer may go without an activity before the
+    /// app creates one itself.
+    ///
+    /// The relay push-to-starts every print it sees begin, and it notices within one poll
+    /// (~15s). Creating locally the moment a foreground refresh saw the print — which often won
+    /// the race — produced two activities for one print, and the local one then froze: the
+    /// relay's start handler resets the printer's token list, dropping the token the local
+    /// activity had already registered, and the app itself never writes to an activity while a
+    /// relay is configured. Waiting lets the relay's activity arrive first. What's left after the
+    /// wait is a print the relay will never push-to-start (e.g. one already running when the relay
+    /// restarted); a local activity created then registers its token *after* the relay's reset,
+    /// so the relay keeps it updated.
+    private static let relayStartGracePeriod: TimeInterval = 90
+
     /// Whether a printer's activity already has a cover image cached, so callers can skip
     /// re-fetching it (it's static for the whole print, unlike `liveSnapshot`).
     func hasCoverImage(printerName: String) -> Bool {
@@ -243,7 +261,21 @@ final class PrintLiveActivityManager {
         lastFingerprints = lastFingerprints.filter { activePrinterIDs.contains($0.key) }
         teardownAnchors = teardownAnchors.filter { activePrinterIDs.contains($0.key) }
 
-        let newPrinters = printingByID.values.filter { !activePrinterIDs.contains(PrintActivityAttributes.normalizedID($0.name)) }
+        let printersWithoutActivity = printingByID.filter { !activePrinterIDs.contains($0.key) }
+        firstSeenPrintingWithoutActivity = firstSeenPrintingWithoutActivity.filter { printersWithoutActivity[$0.key] != nil }
+        for id in printersWithoutActivity.keys where firstSeenPrintingWithoutActivity[id] == nil {
+            firstSeenPrintingWithoutActivity[id] = now
+        }
+        let relayConfigured = RelayConfigStore.isConfigured
+        let newPrinters = printersWithoutActivity.filter { id, _ in
+            guard relayConfigured, let firstSeen = firstSeenPrintingWithoutActivity[id] else { return true }
+            let waited = now.timeIntervalSince(firstSeen)
+            if waited < Self.relayStartGracePeriod {
+                NSLog("NCDEBUG sync: printerID=%@ printing without an activity for %.0fs -- leaving push-to-start to the relay for now", id, waited)
+                return false
+            }
+            return true
+        }.map(\.value)
         guard !newPrinters.isEmpty else { return }
 
         let appState = UIApplication.shared.applicationState
