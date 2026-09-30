@@ -195,7 +195,7 @@ private struct SpoolRow: View {
                 Text("\(spool.materialWithEffect) · \(spool.colorName)")
                     .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
-                Text("\(spool.brand) · \(spool.locationCaption(printerName: store.printerName))")
+                Text("\(spool.brand) · \(spool.locationCaption(printerName: store.printerName, amsUnitName: store.amsUnitName))")
                     .ncFont(size: 11.5, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
             }

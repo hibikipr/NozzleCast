@@ -127,6 +127,7 @@ final class AppStore {
 
     func printer(_ id: String) -> Printer? { printers.first { $0.id == id } }
     func printerName(_ id: String) -> String? { printer(id)?.name }
+    func amsUnitName(printerID: String, amsIndex: Int) -> String? { printer(printerID)?.amsUnitName(amsIndex: amsIndex) }
     func spool(_ id: String?) -> Spool? {
         guard let id else { return nil }
         return spools.first { $0.id == id }
