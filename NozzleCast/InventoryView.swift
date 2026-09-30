@@ -378,7 +378,7 @@ struct SpoolCard: View {
                 }
                 .padding(.top, 2)
 
-                Text(spool.locationCaption(printerName: store.printerName))
+                Text(spool.locationCaption(printerName: store.printerName, amsUnitName: store.amsUnitName))
                     .ncFont(size: 10.5, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textTertiary)
                     .padding(.top, 2)
@@ -428,7 +428,7 @@ struct SpoolListRow: View {
                 Text(spool.materialWithEffect)
                     .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
-                Text("\(spool.colorName) · \(spool.brand) · \(spool.locationCaption(printerName: store.printerName))")
+                Text("\(spool.colorName) · \(spool.brand) · \(spool.locationCaption(printerName: store.printerName, amsUnitName: store.amsUnitName))")
                     .ncFont(size: 11.5, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
                     .lineLimit(1)

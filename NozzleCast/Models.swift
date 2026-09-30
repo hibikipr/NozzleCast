@@ -76,6 +76,14 @@ struct AMSUnit: Identifiable, Equatable {
             ? String(localized: "AMS-HT", comment: "Label for Bambu's high-temperature AMS unit")
             : String(localized: "AMS \(position + 1)", comment: "Label for a numbered AMS unit, e.g. 'AMS 1'")
     }
+
+    /// A best-effort name from a raw unit id alone, for when the printer's units aren't loaded:
+    /// Bambu numbers regular AMS units from 0 and AMS HT units from 128.
+    static func fallbackName(rawID: Int) -> String {
+        rawID >= 128
+            ? String(localized: "AMS-HT", comment: "Label for Bambu's high-temperature AMS unit")
+            : String(localized: "AMS \(rawID + 1)", comment: "Label for a numbered AMS unit, e.g. 'AMS 1'")
+    }
 }
 
 /// A physical spool bay on a dual-nozzle printer's automatic nozzle-changer rack.
@@ -310,7 +318,12 @@ struct Spool: Identifiable, Equatable {
 
     var isArchived: Bool { archivedAt != nil }
 
-    func locationCaption(printerName: (String) -> String?) -> String {
+    /// - Parameters:
+    ///   - printerName: Resolves a printer id to its display name.
+    ///   - amsUnitName: Resolves (printer id, raw AMS unit id) to the unit's display name —
+    ///     `Printer.amsUnitName(amsIndex:)`. Bambuddy's raw unit ids aren't positions: an AMS HT
+    ///     unit reports 128+, which the old `amsIndex + 1` turned into "AMS 129".
+    func locationCaption(printerName: (String) -> String?, amsUnitName: (String, Int) -> String? = { _, _ in nil }) -> String {
         if let archivedAt {
             // The year only when it isn't this year: "Archived · Sep 30", "Archived · Apr 11, 2025".
             let sameYear = Calendar.current.isDate(archivedAt, equalTo: .now, toGranularity: .year)
@@ -327,8 +340,20 @@ struct Spool: Identifiable, Equatable {
             return String(localized: "In storage", comment: "Spool location: unnamed storage")
         case .ams(let printerID, let amsIndex, let trayIndex):
             let name = printerName(printerID) ?? String(localized: "Printer", comment: "Fallback name for a printer with no known name")
-            let slotLabel = String(localized: "AMS \(amsIndex + 1) · Slot \(trayIndex + 1)", comment: "AMS unit and slot number, e.g. 'AMS 1 · Slot 3'")
+            let unitName = amsUnitName(printerID, amsIndex) ?? AMSUnit.fallbackName(rawID: amsIndex)
+            let slotLabel = String(localized: "\(unitName) · Slot \(trayIndex + 1)", comment: "AMS unit name and slot number, e.g. 'AMS 1 · Slot 3' or 'AMS-HT · Slot 1'")
             return String(localized: "\(name) · \(slotLabel)", comment: "Spool location: printer name and AMS slot")
         }
+    }
+}
+
+extension Printer {
+    /// The display name of this printer's AMS unit with the given raw id — the same naming every
+    /// AMS screen uses: regular units numbered by their order among the regular units ("AMS 1",
+    /// "AMS 2"), an AMS HT unit labelled "AMS-HT" regardless of its raw id (128+).
+    func amsUnitName(amsIndex: Int) -> String? {
+        guard let unit = amsUnits.first(where: { $0.index == amsIndex }) else { return nil }
+        let position = amsUnits.filter { !$0.isHT }.firstIndex { $0.index == amsIndex } ?? 0
+        return unit.displayName(position: position)
     }
 }
