@@ -652,8 +652,22 @@ final class AppStore {
             nozzleTempMax: dto.nozzleTempMax,
             costPerKg: dto.costPerKg,
             category: dto.category,
-            note: dto.note
+            note: dto.note,
+            archivedAt: dto.archivedAt.flatMap(Self.parseBambuddyTimestamp)
         )
+    }
+
+    /// Parses Bambuddy's timestamps, e.g. `2026-09-30T00:29:03.208491` — ISO 8601 with
+    /// microseconds and, as served by its Python backend, no UTC offset (these are UTC). Also
+    /// accepts the same shape with an offset or without the fractional part, so a format change
+    /// on Bambuddy's side degrades to "no date" rather than a crash.
+    nonisolated static func parseBambuddyTimestamp(_ raw: String) -> Date? {
+        let withOffset = raw.range(of: #"(Z|[+-]\d{2}:?\d{2})$"#, options: .regularExpression) != nil
+        let normalized = withOffset ? raw : raw + "Z"
+        // Date.ISO8601FormatStyle handles at most millisecond fractions; trim the rest.
+        let trimmed = normalized.replacingOccurrences(of: #"(\.\d{3})\d+"#, with: "$1", options: .regularExpression)
+        let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+        return (try? fractional.parse(trimmed)) ?? (try? Date.ISO8601FormatStyle().parse(trimmed))
     }
 
     static func makeAMSSnapshots(printers: [Printer], spools: [Spool]) -> [PrinterAMSSnapshot] {
@@ -1059,7 +1073,9 @@ final class AppStore {
         guard let spool = spool(spoolID), let bbID = bambuddyID(spoolID) ?? (isShowingDemoData ? 0 : nil) else { return }
         performAction(localChange: {
             self.removeSpoolLocally(spoolID)
-            self.archivedSpools.insert(spool, at: 0)
+            var archived = spool
+            archived.archivedAt = Date()
+            self.archivedSpools.insert(archived, at: 0)
             self.recentlyArchivedSpool = spool
         }) { client in
             try await client.archiveSpool(spoolID: bbID)
@@ -1072,7 +1088,9 @@ final class AppStore {
         if recentlyArchivedSpool?.id == spoolID { recentlyArchivedSpool = nil }
         performAction(localChange: {
             self.archivedSpools.removeAll { $0.id == spoolID }
-            if !self.spools.contains(where: { $0.id == spoolID }) { self.spools.insert(spool, at: 0) }
+            var restored = spool
+            restored.archivedAt = nil
+            if !self.spools.contains(where: { $0.id == spoolID }) { self.spools.insert(restored, at: 0) }
         }) { client in
             try await client.restoreSpool(spoolID: bbID)
         }

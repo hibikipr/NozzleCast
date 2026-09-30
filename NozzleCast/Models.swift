@@ -304,8 +304,21 @@ struct Spool: Identifiable, Equatable {
     var costPerKg: Double? = nil
     var category: String? = nil
     var note: String? = nil
+    /// When Bambuddy archived this spool; nil for an active one. An archived spool's physical
+    /// location is no longer meaningful, so `locationCaption` shows this instead.
+    var archivedAt: Date? = nil
+
+    var isArchived: Bool { archivedAt != nil }
 
     func locationCaption(printerName: (String) -> String?) -> String {
+        if let archivedAt {
+            // The year only when it isn't this year: "Archived · Sep 30", "Archived · Apr 11, 2025".
+            let sameYear = Calendar.current.isDate(archivedAt, equalTo: .now, toGranularity: .year)
+            let date = archivedAt.formatted(sameYear
+                ? .dateTime.month(.abbreviated).day()
+                : .dateTime.month(.abbreviated).day().year())
+            return String(localized: "Archived · \(date)", comment: "Spool location for an archived spool, with the date it was archived")
+        }
         switch location {
         case .storage(let name):
             if let name {

@@ -326,6 +326,10 @@ struct SpoolCard: View {
             }
             .frame(height: 60)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .opacity(dimming)
+            .overlay(alignment: .bottomTrailing) {
+                if spool.isArchived { ArchivedBadge().padding(6) }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(spool.materialWithEffect)
@@ -358,10 +362,15 @@ struct SpoolCard: View {
                     .foregroundStyle(NCColor.textTertiary)
                     .padding(.top, 2)
             }
+            .opacity(dimming)
         }
         .padding(10)
         .glassCard(cornerRadius: 16)
     }
+
+    /// An archived spool's swatch and text are dimmed so it reads as inactive, while the card
+    /// outline and the archived badge stay at full strength.
+    private var dimming: Double { spool.isArchived ? ArchivedBadge.contentOpacity : 1 }
 
     /// Bambuddy's own spool cards put the color name in a pill on the swatch itself, with
     /// material/subtype as the headline below — matching that here so the color's identity
@@ -389,6 +398,10 @@ struct SpoolListRow: View {
             spool.swatch
                 .frame(width: 44, height: 44)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .opacity(dimming)
+                .overlay(alignment: .bottomTrailing) {
+                    if spool.isArchived { ArchivedBadge(size: 16).offset(x: 4, y: 4) }
+                }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(spool.materialWithEffect)
@@ -417,11 +430,33 @@ struct SpoolListRow: View {
                 }
                 .padding(.top, 2)
             }
+            .opacity(dimming)
 
             Spacer()
         }
         .padding(10)
         .glassCard(cornerRadius: 14)
+    }
+
+    private var dimming: Double { spool.isArchived ? ArchivedBadge.contentOpacity : 1 }
+}
+
+/// Small archive-box marker on an archived spool's swatch, so the card says "archived" on its
+/// own — not only through the Archived filter it happens to be listed under.
+private struct ArchivedBadge: View {
+    var size: CGFloat = 20
+
+    /// How far an archived spool's card contents are dimmed.
+    static let contentOpacity = 0.55
+
+    var body: some View {
+        Image(systemName: "archivebox.fill")
+            .font(.system(size: size * 0.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Color.black.opacity(0.7)))
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
+            .accessibilityLabel(Text("Archived", comment: "Accessibility label for the archived spool badge"))
     }
 }
 
