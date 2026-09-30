@@ -47,10 +47,10 @@ struct InventoryView: View {
             case .all, .archived: matchesFilter = true
             case .inAMS: if case .ams = spool.location { matchesFilter = true } else { matchesFilter = false }
             case .inStorage: if case .storage = spool.location { matchesFilter = true } else { matchesFilter = false }
-            case .pla: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.pla.rawValue) == .orderedSame
-            case .petg: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.petg.rawValue) == .orderedSame
-            case .abs: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.abs.rawValue) == .orderedSame
-            case .tpu: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.tpu.rawValue) == .orderedSame
+            case .pla: matchesFilter = Self.material(spool.material, isIn: .pla)
+            case .petg: matchesFilter = Self.material(spool.material, isIn: .petg)
+            case .abs: matchesFilter = Self.material(spool.material, isIn: .abs)
+            case .tpu: matchesFilter = Self.material(spool.material, isIn: .tpu)
             }
 
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,6 +61,16 @@ struct InventoryView: View {
 
             return matchesFilter && matchesSearch
         }
+    }
+
+    /// Whether a spool's free-form material belongs to a filter's material family: its first
+    /// word, split on spaces and hyphens, must be the family name. Bambuddy stores variants as
+    /// their own material strings — "TPU for AMS", "PLA-CF", "PETG-HF" — and the filters used to
+    /// require an exact "TPU", silently leaving those out. Matching the first word rather than
+    /// "contains" keeps "Support for PLA" (a support material) out of the PLA filter.
+    static func material(_ material: String, isIn family: FilamentMaterial) -> Bool {
+        guard let first = material.split(whereSeparator: { $0 == " " || $0 == "-" }).first else { return false }
+        return first.caseInsensitiveCompare(family.rawValue) == .orderedSame
     }
 
     private static func gramsOnHand(_ spools: [Spool]) -> Int {
