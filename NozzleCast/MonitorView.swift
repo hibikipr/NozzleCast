@@ -24,7 +24,8 @@ struct MonitorView: View {
                                 if isConnecting {
                                     Text("Connecting to server…")
                                 } else {
-                                    Text("\(printingCount) printing · \(store.printers.count) printers")
+                                    // Automatic grammar agreement: "1 printer", "2 printers".
+                                    Text("\(printingCount) printing · ^[\(store.printers.count) printer](inflect: true)")
                                 }
                             }
                             .ncFont(size: 15, relativeTo: .subheadline)
