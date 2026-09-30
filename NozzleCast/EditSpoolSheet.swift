@@ -74,6 +74,7 @@ struct EditSpoolSheet: View {
                     weightCostSection
                     tempSection
                     notesSection
+                    removeSection
                 }
                 .padding(16)
                 .padding(.bottom, 40)
@@ -92,6 +93,54 @@ struct EditSpoolSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+        .confirmationDialog(
+            Text("Delete this spool?", comment: "Delete spool confirmation title"),
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button(role: .destructive) {
+                store.deleteSpool(spool.id)
+                dismiss()
+            } label: {
+                Text("Delete Permanently", comment: "Delete spool confirmation button")
+            }
+            Button(role: .cancel) {} label: { Text("Cancel") }
+        } message: {
+            Text("\(spool.brand) \(spool.material) \(spool.colorName) will be removed from your inventory for good, including its usage history. Archive it instead to keep the record.", comment: "Delete spool confirmation message")
+        }
+    }
+
+    @State private var isConfirmingDelete = false
+
+    /// Archive (reversible — the inventory shows an Undo bar) and permanent delete, kept at the
+    /// bottom of the sheet away from the fields and from Save.
+    private var removeSection: some View {
+        VStack(spacing: 10) {
+            Button {
+                store.archiveSpool(spool.id)
+                dismiss()
+            } label: {
+                Label("Archive Spool", systemImage: "archivebox")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+
+            Button(role: .destructive) {
+                isConfirmingDelete = true
+            } label: {
+                Label("Delete Spool…", systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.statusError.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(NCColor.statusError)
+        }
+        .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
+        .padding(.top, 8)
     }
 
     private var colorSection: some View {

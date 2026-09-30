@@ -14,6 +14,11 @@ enum ConnectionStatus: Equatable {
 final class AppStore {
     var printers: [Printer] = []
     var spools: [Spool] = []
+    /// Spools Bambuddy has archived (soft-deleted), kept separately so they stay out of every
+    /// count, filter and AMS lookup that `spools` feeds, but can still be listed, restored or
+    /// deleted from the inventory's Archived filter. Without this, the Undo bar was the only way
+    /// back from an archive once it had timed out, short of Bambuddy's web UI.
+    private(set) var archivedSpools: [Spool] = []
     var config: BambuddyConfig
     var connectionStatus: ConnectionStatus = .notConfigured
     var grantedPermissions: Set<String> = []
@@ -113,6 +118,7 @@ final class AppStore {
     func loadMockData() {
         printers = MockData.makePrinters()
         spools = MockData.makeSpools()
+        archivedSpools = []
         isShowingDemoData = true
         resolvePendingDeepLink()
         AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
@@ -164,6 +170,7 @@ final class AppStore {
             if isShowingDemoData {
                 printers = []
                 spools = []
+                archivedSpools = []
                 isShowingDemoData = false
             }
             return false
@@ -319,6 +326,11 @@ final class AppStore {
             spools = spoolList
                 .filter { $0.archivedAt == nil }
                 .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog) }
+            // Newest archive first — Bambuddy's `archived_at` is ISO 8601, so it sorts as a string.
+            archivedSpools = spoolList
+                .filter { $0.archivedAt != nil }
+                .sorted { ($0.archivedAt ?? "") > ($1.archivedAt ?? "") }
+                .map { Self.mapSpool($0, assignment: nil, locationNames: locationNames, colorCatalog: colorCatalog) }
 
             isShowingDemoData = false
             lastSuccessfulRefreshAt = Date()
@@ -1014,6 +1026,72 @@ final class AppStore {
             self.spools[idx].note = note
         }) { client in
             _ = try await client.updateSpool(spoolID: bbID, update)
+        }
+    }
+
+    // MARK: - Archive / delete
+
+    /// The spool most recently archived from this device, for the inventory screen's Undo bar.
+    /// Cleared by `restoreArchivedSpool()`, by the bar timing out, or by the next archive.
+    var recentlyArchivedSpool: Spool?
+
+    func archivedSpool(_ id: String) -> Spool? {
+        archivedSpools.first { $0.id == id }
+    }
+
+    /// Takes a spool out of every local slot and both inventory lists — what archiving and
+    /// deleting look like on screen until the follow-up refresh confirms it.
+    private func removeSpoolLocally(_ spoolID: String) {
+        spools.removeAll { $0.id == spoolID }
+        archivedSpools.removeAll { $0.id == spoolID }
+        for i in printers.indices {
+            for u in printers[i].amsUnits.indices {
+                for t in printers[i].amsUnits[u].trays.indices where printers[i].amsUnits[u].trays[t].spoolID == spoolID {
+                    printers[i].amsUnits[u].trays[t].spoolID = nil
+                }
+            }
+        }
+    }
+
+    /// Archives a spool (Bambuddy's soft delete). It moves from the inventory to the Archived
+    /// filter, and the Undo bar offers `restoreArchivedSpool()` for a few seconds.
+    func archiveSpool(_ spoolID: String) {
+        guard let spool = spool(spoolID), let bbID = bambuddyID(spoolID) ?? (isShowingDemoData ? 0 : nil) else { return }
+        performAction(localChange: {
+            self.removeSpoolLocally(spoolID)
+            self.archivedSpools.insert(spool, at: 0)
+            self.recentlyArchivedSpool = spool
+        }) { client in
+            try await client.archiveSpool(spoolID: bbID)
+        }
+    }
+
+    /// Brings an archived spool back into the inventory.
+    func restoreSpool(_ spoolID: String) {
+        guard let spool = archivedSpool(spoolID), let bbID = bambuddyID(spoolID) ?? (isShowingDemoData ? 0 : nil) else { return }
+        if recentlyArchivedSpool?.id == spoolID { recentlyArchivedSpool = nil }
+        performAction(localChange: {
+            self.archivedSpools.removeAll { $0.id == spoolID }
+            if !self.spools.contains(where: { $0.id == spoolID }) { self.spools.insert(spool, at: 0) }
+        }) { client in
+            try await client.restoreSpool(spoolID: bbID)
+        }
+    }
+
+    /// Undoes the most recent `archiveSpool`, from the Undo bar.
+    func restoreArchivedSpool() {
+        guard let spool = recentlyArchivedSpool else { return }
+        restoreSpool(spool.id)
+    }
+
+    /// Permanently deletes a spool, active or archived. The UI must confirm before calling this —
+    /// there is no undo.
+    func deleteSpool(_ spoolID: String) {
+        guard spool(spoolID) != nil || archivedSpool(spoolID) != nil,
+              let bbID = bambuddyID(spoolID) ?? (isShowingDemoData ? 0 : nil) else { return }
+        if recentlyArchivedSpool?.id == spoolID { recentlyArchivedSpool = nil }
+        performAction(localChange: { self.removeSpoolLocally(spoolID) }) { client in
+            try await client.deleteSpool(spoolID: bbID)
         }
     }
 }

@@ -489,6 +489,22 @@ struct BambuddyAPIClient {
     }
 
     @discardableResult
+    /// Soft delete: Bambuddy sets the spool's `archived_at`, and it drops out of the inventory
+    /// list (`AppStore.refresh()` filters archived spools). Reversible with `restoreSpool`.
+    func archiveSpool(spoolID: Int) async throws {
+        _ = try await send(request("/api/v1/inventory/spools/\(spoolID)/archive", method: "POST"))
+    }
+
+    /// Clears `archived_at` on a spool archived with `archiveSpool`.
+    func restoreSpool(spoolID: Int) async throws {
+        _ = try await send(request("/api/v1/inventory/spools/\(spoolID)/restore", method: "POST"))
+    }
+
+    /// Permanently deletes the spool record. Not reversible — callers confirm first.
+    func deleteSpool(spoolID: Int) async throws {
+        _ = try await send(request("/api/v1/inventory/spools/\(spoolID)", method: "DELETE"))
+    }
+
     func updateSpool(spoolID: Int, _ update: BambuddySpoolUpdateBody) async throws -> BambuddySpoolDTO {
         let body = try encoder.encode(update)
         let data = try await send(request("/api/v1/inventory/spools/\(spoolID)", method: "PATCH", body: body))

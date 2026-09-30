@@ -1,7 +1,9 @@
 import SwiftUI
 
 enum InventoryFilter: Hashable, CaseIterable {
-    case all, inAMS, inStorage, pla, petg, abs, tpu
+    /// `archived` is last and, unlike the rest, lists `AppStore.archivedSpools` rather than a
+    /// subset of the active inventory.
+    case all, inAMS, inStorage, pla, petg, abs, tpu, archived
 
     var title: String {
         switch self {
@@ -12,6 +14,7 @@ enum InventoryFilter: Hashable, CaseIterable {
         case .petg: FilamentMaterial.petg.rawValue
         case .abs: FilamentMaterial.abs.rawValue
         case .tpu: FilamentMaterial.tpu.rawValue
+        case .archived: String(localized: "Archived", comment: "Inventory filter: spools that have been archived")
         }
     }
 }
@@ -26,6 +29,9 @@ struct InventoryView: View {
     @State private var searchText = ""
     @State private var layout: InventoryLayout = .grid
     @State private var editingSpool: Spool?
+    /// Set by a card's "Delete…" menu item; drives the confirmation dialog. Deleting is permanent,
+    /// so it never happens straight from the menu tap.
+    @State private var spoolPendingDeletion: Spool?
     @Binding var selectedTab: RootTab
 
     /// Recomputed via `onChange`/`onAppear` below rather than as a computed property, so
@@ -34,10 +40,11 @@ struct InventoryView: View {
     @State private var filtered: [Spool] = []
 
     private func recomputeFiltered() {
-        filtered = store.spools.filter { spool in
+        let source = filter == .archived ? store.archivedSpools : store.spools
+        filtered = source.filter { spool in
             let matchesFilter: Bool
             switch filter {
-            case .all: matchesFilter = true
+            case .all, .archived: matchesFilter = true
             case .inAMS: if case .ams = spool.location { matchesFilter = true } else { matchesFilter = false }
             case .inStorage: if case .storage = spool.location { matchesFilter = true } else { matchesFilter = false }
             case .pla: matchesFilter = spool.material.caseInsensitiveCompare(FilamentMaterial.pla.rawValue) == .orderedSame
@@ -76,7 +83,8 @@ struct InventoryView: View {
                                 if isConnecting {
                                     Text("Connecting to server…")
                                 } else {
-                                    Text("\(store.spools.count) spools · \(totalGrams) g on hand")
+                                    // Automatic grammar agreement: "1 spool", "2 spools".
+                                    Text("^[\(store.spools.count) spool](inflect: true) · \(totalGrams) g on hand")
                                 }
                             }
                             .ncFont(size: 15, relativeTo: .subheadline)
@@ -117,9 +125,19 @@ struct InventoryView: View {
                             }
                             .padding(.horizontal, 16)
 
+                            if filter == .archived && !filtered.isEmpty {
+                                Text("Long-press a spool to restore it or delete it for good.", comment: "Hint above the archived spools list")
+                                    .ncFont(size: 12, relativeTo: .caption)
+                                    .foregroundStyle(NCColor.textTertiary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 16)
+                            }
+
                             if filtered.isEmpty {
                                 Group {
-                                    if searchText.isEmpty {
+                                    if filter == .archived && searchText.isEmpty {
+                                        Text("No archived spools.", comment: "Empty state of the Archived inventory filter")
+                                    } else if searchText.isEmpty {
                                         Text("No spools match this filter.")
                                     } else {
                                         Text("No spools match \"\(searchText)\".")
@@ -132,10 +150,11 @@ struct InventoryView: View {
                             } else if layout == .grid {
                                 LazyVGrid(columns: columns, spacing: 12) {
                                     ForEach(filtered) { spool in
-                                        Button { editingSpool = spool } label: {
+                                        Button { edit(spool) } label: {
                                             SpoolCard(spool: spool)
                                         }
                                         .buttonStyle(.plain)
+                                        .contextMenu { spoolActions(spool) }
                                     }
                                 }
                                 .padding(.horizontal, 16)
@@ -143,10 +162,11 @@ struct InventoryView: View {
                             } else {
                                 LazyVStack(spacing: 8) {
                                     ForEach(filtered) { spool in
-                                        Button { editingSpool = spool } label: {
+                                        Button { edit(spool) } label: {
                                             SpoolListRow(spool: spool)
                                         }
                                         .buttonStyle(.plain)
+                                        .contextMenu { spoolActions(spool) }
                                     }
                                 }
                                 .padding(.horizontal, 16)
@@ -173,14 +193,82 @@ struct InventoryView: View {
                 .padding(.trailing, 20)
                 .padding(.bottom, 96)
             }
+            .overlay(alignment: .bottomLeading) {
+                if let archived = store.recentlyArchivedSpool {
+                    ArchivedSpoolUndoBar(spool: archived) { store.restoreArchivedSpool() }
+                        .padding(.leading, 16)
+                        .padding(.trailing, 88) // clear of the floating add button
+                        .padding(.bottom, 100)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy, value: store.recentlyArchivedSpool?.id)
+            // The Undo bar is only offered briefly; the archive itself already happened.
+            .task(id: store.recentlyArchivedSpool?.id) {
+                guard let id = store.recentlyArchivedSpool?.id else { return }
+                try? await Task.sleep(for: .seconds(8))
+                if store.recentlyArchivedSpool?.id == id { store.recentlyArchivedSpool = nil }
+            }
             .sheet(item: $editingSpool) { spool in
                 EditSpoolSheet(spool: spool)
+            }
+            .confirmationDialog(
+                Text("Delete this spool?", comment: "Delete spool confirmation title"),
+                isPresented: Binding(
+                    get: { spoolPendingDeletion != nil },
+                    set: { if !$0 { spoolPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: spoolPendingDeletion
+            ) { spool in
+                Button(role: .destructive) {
+                    store.deleteSpool(spool.id)
+                } label: {
+                    Text("Delete Permanently", comment: "Delete spool confirmation button")
+                }
+                Button(role: .cancel) {} label: { Text("Cancel") }
+            } message: { spool in
+                // Suggesting "archive it instead" only makes sense for a spool that isn't already.
+                if store.archivedSpool(spool.id) != nil {
+                    Text("\(spool.brand) \(spool.material) \(spool.colorName) will be removed for good, including its usage history.", comment: "Delete confirmation message for an already-archived spool")
+                } else {
+                    Text("\(spool.brand) \(spool.material) \(spool.colorName) will be removed from your inventory for good, including its usage history. Archive it instead to keep the record.", comment: "Delete spool confirmation message")
+                }
             }
         }
         .onAppear { recomputeFiltered() }
         .onChange(of: store.spools) { recomputeFiltered() }
+        .onChange(of: store.archivedSpools) { recomputeFiltered() }
         .onChange(of: filter) { recomputeFiltered() }
         .onChange(of: searchText) { recomputeFiltered() }
+    }
+
+    /// Long-press actions on a spool card or row. Archive is the everyday "done with this spool"
+    /// action (reversible from the Undo bar); Delete is permanent and always confirms first.
+    @ViewBuilder
+    private func spoolActions(_ spool: Spool) -> some View {
+        if store.archivedSpool(spool.id) != nil {
+            Button { store.restoreSpool(spool.id) } label: {
+                Label("Restore", systemImage: "arrow.uturn.backward")
+            }
+        } else {
+            Button { editingSpool = spool } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            Button { store.archiveSpool(spool.id) } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+        }
+        Button(role: .destructive) { spoolPendingDeletion = spool } label: {
+            Label("Delete…", systemImage: "trash")
+        }
+    }
+
+    /// Opens the editor for an active spool. Archived spools aren't editable (Bambuddy's own UI
+    /// doesn't offer it either); their actions live in the long-press menu instead.
+    private func edit(_ spool: Spool) {
+        guard store.archivedSpool(spool.id) == nil else { return }
+        editingSpool = spool
     }
 
     private var layoutToggle: some View {
@@ -341,4 +429,36 @@ struct SpoolListRow: View {
     InventoryView(selectedTab: .constant(.inventory))
         .environment(AppStore(config: BambuddyConfig()))
         .preferredColorScheme(.dark)
+}
+
+/// Brief confirmation after archiving a spool, with the only way back: archived spools are hidden
+/// everywhere in the app, so without Undo a mis-tap would mean a trip to Bambuddy's web UI.
+private struct ArchivedSpoolUndoBar: View {
+    var spool: Spool
+    var undo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "archivebox.fill")
+                .foregroundStyle(NCColor.textSecondary)
+            Text("Archived \(spool.colorName) \(spool.material)", comment: "Undo bar after archiving a spool, e.g. 'Archived Jade White PLA'")
+                .ncFont(size: 14, weight: .medium, relativeTo: .subheadline)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button(action: undo) {
+                Text("Undo", comment: "Undo archiving a spool")
+                    .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(NCColor.accentLight)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Capsule().fill(Color(hex: "#2C2C2E")))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: Text("Undo")) { undo() }
+    }
 }
