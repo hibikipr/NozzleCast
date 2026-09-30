@@ -357,8 +357,12 @@ struct BambuddyAPIClient {
         try await get("/api/v1/smart-plugs/\(plugID)/status")
     }
 
+    /// Every spool, archived ones included. Bambuddy's list excludes archived spools unless
+    /// `include_archived=true` is passed, and `AppStore.refresh()` splits the result into
+    /// `spools` and `archivedSpools` itself. Without the flag the Archived filter was always
+    /// empty, however many spools were actually archived.
     func spools() async throws -> [BambuddySpoolDTO] {
-        try await get("/api/v1/inventory/spools")
+        try await get("/api/v1/inventory/spools", query: [URLQueryItem(name: "include_archived", value: "true")])
     }
 
     func assignments() async throws -> [BambuddyAssignmentDTO] {
