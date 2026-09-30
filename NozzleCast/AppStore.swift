@@ -564,6 +564,7 @@ final class AppStore {
             doorOpen: status?.doorOpen ?? false,
             fanSpeeds: FanSpeeds(partCooling: status?.coolingFanSpeed, auxiliary: status?.bigFan1Speed, chamber: status?.bigFan2Speed),
             awaitingPlateClear: status?.awaitingPlateClear ?? false,
+            lacksDeveloperMode: status?.developerMode == false,
             nozzles: nozzles,
             nozzleRack: nozzleRack,
             totalPrintHours: extras.maintenance?.totalPrintHours,
@@ -738,7 +739,9 @@ final class AppStore {
     /// documents no expiry, so the age cap is a conservative guess, not a known lifetime.
     private var streamTokenTask: Task<String, Error>?
     private var streamTokenMintedAt: Date?
-    private static let streamTokenMaxAge: TimeInterval = 30
+    /// Bambuddy issues stream tokens valid for 60 minutes (`create_stream_token`); reuse one for
+    /// 50 to stay clear of the expiry edge. A rejected token is still re-minted immediately.
+    private static let streamTokenMaxAge: TimeInterval = 50 * 60
 
     private func streamToken(using client: BambuddyAPIClient, forceFresh: Bool = false) async throws -> String {
         if !forceFresh, let task = streamTokenTask, let mintedAt = streamTokenMintedAt,
@@ -806,6 +809,30 @@ final class AppStore {
         }
     }
 
+    /// URL of the printer's live MJPEG camera stream, carrying a (shared, reused) stream token.
+    func liveStreamURL(printerID: String) async -> URL? {
+        guard let client, let bbID = bambuddyID(printerID),
+              let token = try? await streamToken(using: client) else { return nil }
+        return client.cameraStreamURL(printerID: bbID, token: token)
+    }
+
+    /// Best-effort: tells Bambuddy the in-app live viewer closed (see `stopCameraStream`).
+    func stopLiveStream(printerID: String) {
+        guard let client, let bbID = bambuddyID(printerID) else { return }
+        Task { try? await client.stopCameraStream(printerID: bbID) }
+    }
+
+    /// True while a refresh the user explicitly asked for (the "Refresh Status" menu item) runs —
+    /// for a visible indicator. The periodic background refresh deliberately doesn't set it:
+    /// a spinner flashing every 30 seconds would be noise.
+    private(set) var isUserRefreshing = false
+
+    func refreshFromUser() async {
+        isUserRefreshing = true
+        await refresh()
+        isUserRefreshing = false
+    }
+
     // MARK: - Actions
 
     /// Runs one user-initiated server action.
@@ -844,15 +871,56 @@ final class AppStore {
 
     // MARK: - Printer controls
 
+    /// Bambuddy answers a print command with success as soon as it has *published* it over MQTT;
+    /// a printer that then ignores it (Developer LAN mode off, not always reported by Bambuddy —
+    /// confirmed live: a pause returned 200 "Print pause command sent" while the printer stayed
+    /// RUNNING) produced no error at all, so the button just silently did nothing. After sending,
+    /// watch the printer's reported state for up to `timeout`; if it never gets there, fail with
+    /// an explanation instead (which also refreshes the real state over the optimistic one).
+    nonisolated private static func confirmPrinterReaches(
+        client: BambuddyAPIClient,
+        printerID: Int,
+        timeout: Duration = .seconds(20),
+        _ reached: @Sendable (String) -> Bool
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            try await Task.sleep(for: .seconds(3))
+            if let status = try? await client.status(printerID: printerID), reached(status.state.uppercased()) {
+                return
+            }
+        }
+        throw PrinterCommandIgnoredError()
+    }
+
+    struct PrinterCommandIgnoredError: LocalizedError {
+        var errorDescription: String? {
+            String(localized: "The printer didn't respond to the command. Developer LAN mode is probably off on the printer; turn it on in its LAN settings to control it from NozzleCast.")
+        }
+    }
+
+    /// Message for a control the printer will refuse because Developer LAN mode is off — shown if
+    /// one is somehow invoked anyway (the UI disables them). See `Printer.lacksDeveloperMode`.
+    private func refuseWithoutDeveloperMode(_ printerID: String) -> Bool {
+        guard printer(printerID)?.lacksDeveloperMode == true else { return false }
+        actionError = String(localized: "Developer LAN mode is off on this printer, so it won't accept this command. Turn it on in the printer's LAN settings.")
+        return true
+    }
+
     func togglePause(_ printerID: String) {
+        guard !refuseWithoutDeveloperMode(printerID) else { return }
         guard let idx = printers.firstIndex(where: { $0.id == printerID }), let bbID = bambuddyID(printerID) ?? (isShowingDemoData ? 0 : nil) else { return }
         let wasPrinting = printers[idx].state == .printing
         performAction(localChange: { self.printers[idx].state = wasPrinting ? .paused : .printing }) { client in
             if wasPrinting { try await client.pause(printerID: bbID) } else { try await client.resume(printerID: bbID) }
+            try await Self.confirmPrinterReaches(client: client, printerID: bbID) { state in
+                wasPrinting ? state == "PAUSE" : state == "RUNNING"
+            }
         }
     }
 
     func stop(_ printerID: String) {
+        guard !refuseWithoutDeveloperMode(printerID) else { return }
         guard let idx = printers.firstIndex(where: { $0.id == printerID }), let bbID = bambuddyID(printerID) ?? (isShowingDemoData ? 0 : nil) else { return }
         performAction(localChange: {
             self.printers[idx].state = .idle
@@ -861,6 +929,9 @@ final class AppStore {
             self.printers[idx].etaMinutesRemaining = nil
         }) { client in
             try await client.stop(printerID: bbID)
+            try await Self.confirmPrinterReaches(client: client, printerID: bbID) { state in
+                state != "RUNNING" && state != "PAUSE"
+            }
         }
     }
 
@@ -881,6 +952,7 @@ final class AppStore {
     }
 
     func homeAxes(_ printerID: String) {
+        guard !refuseWithoutDeveloperMode(printerID) else { return }
         guard let bbID = bambuddyID(printerID) else { return }
         performAction(refreshAfter: false) { client in
             try await client.homeAxes(printerID: bbID)
@@ -892,12 +964,6 @@ final class AppStore {
         performAction(localChange: { self.printers[idx].awaitingPlateClear = false }) { client in
             try await client.clearPlate(printerID: bbID)
         }
-    }
-
-    /// Deep link into Bambuddy's own web UI for this printer's live camera page.
-    func webCameraURL(printerID: String) -> URL? {
-        guard let serverURL = config.serverURL, let bbID = bambuddyID(printerID) else { return nil }
-        return serverURL.appendingPathComponent("camera/\(bbID)")
     }
 
     // MARK: - Deep linking
@@ -961,6 +1027,7 @@ final class AppStore {
     }
 
     func rereadRFID(printerID: String, amsIndex: Int, trayIndex: Int) {
+        guard !refuseWithoutDeveloperMode(printerID) else { return }
         guard let bbPrinterID = bambuddyID(printerID) else { return }
         performAction { client in
             try await client.rereadRFID(printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)

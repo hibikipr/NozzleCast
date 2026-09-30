@@ -66,6 +66,30 @@ struct FlowLayout: Layout {
     }
 }
 
+/// An image that fills whatever space it's offered, cropping the overflow, without ever asking
+/// for more.
+///
+/// A bare `.resizable().aspectRatio(contentMode: .fill)` sizes itself to *cover* its proposal,
+/// so in a container constrained only in height it grows sideways: the printer detail header is
+/// 250pt tall with no width limit, and a 16:9 camera frame (a P1S's 1280×720) filled it at 444pt
+/// wide — wider than the screen, which widened and shifted the entire detail page left. A 4:3-ish
+/// frame (an H2C's 1680×1080) happened to fit, which is why only some printers showed it. Letting
+/// `Color.clear` take the proposed size and drawing the image as an overlay keeps the layout at
+/// exactly the offered size.
+struct FillingImage: View {
+    var image: UIImage
+
+    var body: some View {
+        Color.clear
+            .overlay {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
+            .clipped()
+    }
+}
+
 /// Polls a printer's chamber camera snapshot endpoint and shows the latest frame, falling back
 /// to a dim camera glyph when live mode is off or no frame has loaded yet.
 struct LiveCameraView: View {
@@ -96,9 +120,7 @@ struct LiveCameraView: View {
     var body: some View {
         ZStack {
             if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
+                FillingImage(image: image)
             } else if let jobIdentity = coverFallbackJobIdentity {
                 PrinterCoverImage(printerID: printerID, jobIdentity: jobIdentity, maxPixelSize: maxPixelSize)
             } else {
@@ -149,9 +171,7 @@ struct PrinterCoverImage: View {
     var body: some View {
         ZStack {
             if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
+                FillingImage(image: image)
             } else {
                 Image(systemName: "shippingbox.fill")
                     .foregroundStyle(NCColor.textTertiary)
@@ -579,6 +599,7 @@ struct ControlButton: View {
     var isActive: Bool = false
     var isDestructiveHint: Bool = false
     var action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
@@ -597,6 +618,8 @@ struct ControlButton: View {
                     .ncFont(size: 11, weight: .medium, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textSecondary)
             }
+            // `.plain` buttons don't dim themselves when disabled.
+            .opacity(isEnabled ? 1 : 0.35)
         }
         .buttonStyle(.plain)
     }

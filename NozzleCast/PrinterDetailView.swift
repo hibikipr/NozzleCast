@@ -8,6 +8,7 @@ struct PrinterDetailView: View {
     @State private var showCoverFullscreen = false
     @State private var isCameraLive = false
     @State private var showAIDetection = false
+    @State private var showLiveStream = false
 
     private var printer: Printer? { store.printer(printerID) }
 
@@ -19,8 +20,12 @@ struct PrinterDetailView: View {
                 assignTray: $assignTray,
                 showWarnings: $showWarnings,
                 showAIDetection: $showAIDetection,
-                showCoverFullscreen: $showCoverFullscreen
+                showCoverFullscreen: $showCoverFullscreen,
+                showLiveStream: $showLiveStream
             )
+            .fullScreenCover(isPresented: $showLiveStream) {
+                LiveCameraStreamView(printerID: printer.id, printerName: printer.name)
+            }
             .sheet(item: $assignTray) { tray in
                 AMSAssignSheet(printerID: printerID, amsIndex: tray.amsIndex, trayIndex: tray.trayIndex)
             }
@@ -51,15 +56,27 @@ struct PrinterDetailContent: View {
     @Binding var showWarnings: Bool
     @Binding var showAIDetection: Bool
     @Binding var showCoverFullscreen: Bool
+    @Binding var showLiveStream: Bool
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PrinterVideoHeader(printerID: printer.id, state: printer.state, jobFileName: printer.jobFileName, isCameraLive: $isCameraLive)
+                PrinterVideoHeader(printerID: printer.id, state: printer.state, jobFileName: printer.jobFileName, isCameraLive: $isCameraLive, showLiveStream: $showLiveStream)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(printer.name)
-                        .ncFont(size: 24, weight: .bold, relativeTo: .title)
+                    HStack(spacing: 10) {
+                        Text(printer.name)
+                            .ncFont(size: 24, weight: .bold, relativeTo: .title)
+                        // Feedback for the "Refresh Status" menu item, which otherwise changed
+                        // nothing visible when the data was already current.
+                        if store.isUserRefreshing {
+                            ProgressView().controlSize(.small).tint(NCColor.accentLight)
+                            Text("Refreshing…", comment: "Shown next to the printer name while a user-requested refresh runs")
+                                .ncFont(size: 12, relativeTo: .caption)
+                                .foregroundStyle(NCColor.textTertiary)
+                        }
+                    }
                     Text(printer.statusSubtitle)
                         .ncFont(size: 15, relativeTo: .subheadline)
                         .foregroundStyle(NCColor.textSecondary)
@@ -89,7 +106,7 @@ struct PrinterDetailContent: View {
                         .padding(.horizontal, 16)
                 }
 
-                PrinterControlsRow(printerID: printer.id, state: printer.state, lightOn: printer.lightOn)
+                PrinterControlsRow(printerID: printer.id, state: printer.state, lightOn: printer.lightOn, lacksDeveloperMode: printer.lacksDeveloperMode, showLiveStream: $showLiveStream)
                     .padding(.horizontal, 16)
 
                 PrinterTemperaturesSection(nozzle: printer.nozzle, rightNozzle: printer.rightNozzle, bed: printer.bed, chamber: printer.chamber)
@@ -132,12 +149,12 @@ struct PrinterDetailContent: View {
 /// Only needs the printer's id, not the whole `Printer`.
 struct PrinterMoreMenuItems: View {
     var printerID: String
+    @Binding var showLiveStream: Bool
     @Environment(AppStore.self) private var store
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Button {
-            Task { await store.refresh() }
+            Task { await store.refreshFromUser() }
         } label: {
             Label("Refresh Status", systemImage: "arrow.clockwise")
         }
@@ -148,13 +165,15 @@ struct PrinterMoreMenuItems: View {
             } label: {
                 Label("Home Axes", systemImage: "house")
             }
+            .disabled(store.printer(printerID)?.lacksDeveloperMode == true)
 
-            if let url = store.webCameraURL(printerID: printerID) {
-                Button {
-                    openURL(url)
-                } label: {
-                    Label("Open Camera in Browser", systemImage: "safari")
-                }
+            // In-app, rather than Bambuddy's /camera/<id> page in Safari: that page only gets a
+            // stream token in a browser logged in to Bambuddy, so opened from here it loaded with
+            // no video at all.
+            Button {
+                showLiveStream = true
+            } label: {
+                Label("Live Camera", systemImage: "video")
             }
         }
     }
@@ -165,6 +184,7 @@ struct PrinterVideoHeader: View {
     var state: PrinterState
     var jobFileName: String?
     @Binding var isCameraLive: Bool
+    @Binding var showLiveStream: Bool
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -185,7 +205,7 @@ struct PrinterVideoHeader: View {
                 GlassIconButton(systemName: "chevron.left") { dismiss() }
                 Spacer()
                 Menu {
-                    PrinterMoreMenuItems(printerID: printerID)
+                    PrinterMoreMenuItems(printerID: printerID, showLiveStream: $showLiveStream)
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 15, weight: .semibold))
@@ -392,9 +412,32 @@ struct PrinterControlsRow: View {
     var printerID: String
     var state: PrinterState
     var lightOn: Bool
+    /// See `Printer.lacksDeveloperMode`: pause/resume and stop are disabled, with a note saying
+    /// why; the light keeps working without Developer LAN mode.
+    var lacksDeveloperMode: Bool
+    @Binding var showLiveStream: Bool
     @Environment(AppStore.self) private var store
+    /// Stop cancels the print outright and it can't be resumed, so it always asks first — a stray
+    /// tap next to Pause shouldn't be able to end a job.
+    @State private var isConfirmingStop = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            controls
+            if lacksDeveloperMode {
+                Label {
+                    Text("Developer LAN mode is off on this printer, so it won't accept pause, stop, homing or RFID re-reads from NozzleCast. Turn it on in the printer's LAN settings.", comment: "Explains why printer controls are disabled")
+                } icon: {
+                    Image(systemName: "lock.fill")
+                }
+                .ncFont(size: 12, relativeTo: .caption)
+                .foregroundStyle(NCColor.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var controls: some View {
         HStack(spacing: 16) {
             ControlButton(
                 systemName: state == .printing ? "pause.fill" : "play.fill",
@@ -406,14 +449,30 @@ struct PrinterControlsRow: View {
             ) {
                 store.togglePause(printerID)
             }
+            .disabled(lacksDeveloperMode)
             ControlButton(systemName: "stop.fill", label: String(localized: "Stop", comment: "Printer control button")) {
-                store.stop(printerID)
+                isConfirmingStop = true
+            }
+            .disabled(lacksDeveloperMode)
+            .confirmationDialog(
+                Text("Stop this print?", comment: "Stop print confirmation title"),
+                isPresented: $isConfirmingStop,
+                titleVisibility: .visible
+            ) {
+                Button(role: .destructive) {
+                    store.stop(printerID)
+                } label: {
+                    Text("Stop Print", comment: "Stop print confirmation button")
+                }
+                Button(role: .cancel) {} label: { Text("Cancel") }
+            } message: {
+                Text("The print will be cancelled and can't be resumed.", comment: "Stop print confirmation message")
             }
             ControlButton(systemName: "lightbulb.fill", label: String(localized: "Light", comment: "Printer control button"), isActive: lightOn) {
                 store.toggleLight(printerID)
             }
             Menu {
-                PrinterMoreMenuItems(printerID: printerID)
+                PrinterMoreMenuItems(printerID: printerID, showLiveStream: $showLiveStream)
             } label: {
                 VStack(spacing: 6) {
                     Image(systemName: "ellipsis")
@@ -576,6 +635,8 @@ struct PrinterAMSSection: View {
                                 } label: {
                                     Label("Re-read RFID", systemImage: "wave.3.right")
                                 }
+                                // Refused by the printer without Developer LAN mode.
+                                .disabled(store.printer(printerID)?.lacksDeveloperMode == true)
                             }
                         }
                     }
