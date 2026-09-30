@@ -187,6 +187,11 @@ struct Printer: Identifiable, Equatable {
     var doorOpen: Bool = false
     var fanSpeeds: FanSpeeds = FanSpeeds()
     var awaitingPlateClear: Bool = false
+    /// True only when the printer positively reports Developer LAN mode as off — pause/resume,
+    /// stop and homing are then refused by the printer, so the app disables them instead of
+    /// letting them fail silently. Unknown (not reported) stays false: nothing is disabled on a
+    /// guess.
+    var lacksDeveloperMode: Bool = false
 
     /// Nozzle type/diameter per installed nozzle, ordered left-to-right on dual-nozzle printers.
     var nozzles: [NozzleInfo] = []

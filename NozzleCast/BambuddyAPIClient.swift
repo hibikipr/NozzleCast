@@ -82,6 +82,10 @@ struct BambuddyStatusDTO: Codable {
     var wifiSignal: Int?
     var doorOpen: Bool?
     var firmwareVersion: String?
+    /// The printer's Developer LAN mode: true = on, false = off, nil = not reported. With it off,
+    /// Bambu firmware rejects print-control commands (pause/resume/stop, homing) over LAN, while
+    /// reads, the camera and the chamber light keep working.
+    var developerMode: Bool?
     var hmsErrors: [BambuddyHMSErrorDTO]?
     var nozzles: [BambuddyNozzleDTO]?
     var nozzleRack: [BambuddyNozzleRackSlotDTO]?
@@ -452,6 +456,22 @@ struct BambuddyAPIClient {
         } catch {
             throw BambuddyAPIError.decoding(error)
         }
+    }
+
+    /// The live MJPEG stream (`multipart/x-mixed-replace`) for a printer's camera. Authenticated
+    /// by the stream token in the URL alone, so it can be loaded directly in a web view — unlike
+    /// Bambuddy's `/camera/<id>` page, which only gets a token when the browser is logged in.
+    func cameraStreamURL(printerID: Int, token: String, fps: Int = 15) -> URL? {
+        var components = URLComponents(url: baseURL.appendingPathComponent("/api/v1/printers/\(printerID)/camera/stream"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "fps", value: String(fps)), URLQueryItem(name: "token", value: token)]
+        return components?.url
+    }
+
+    /// Tells Bambuddy this viewer is done with the printer's stream, as its own camera page does
+    /// on close. Reference-counted server-side: it never cuts off another viewer, and Bambuddy
+    /// also shuts an unwatched stream down on its own after a few seconds.
+    func stopCameraStream(printerID: Int) async throws {
+        _ = try await send(request("/api/v1/printers/\(printerID)/camera/stop", method: "POST"))
     }
 
     func cameraSnapshotData(printerID: Int, token: String) async throws -> Data {
