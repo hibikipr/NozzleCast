@@ -63,8 +63,30 @@ struct InventoryView: View {
         }
     }
 
-    private var totalGrams: Int {
-        store.spools.reduce(0) { $0 + Int(Double($1.netWeightGrams) * Double($1.remainingPercent) / 100) }
+    private static func gramsOnHand(_ spools: [Spool]) -> Int {
+        spools.reduce(0) { $0 + Int(Double($1.netWeightGrams) * Double($1.remainingPercent) / 100) }
+    }
+
+    /// The line under "Filament", describing what's actually on screen rather than the whole
+    /// inventory: it used to say "59 spools" even while showing the Archived filter or a search.
+    /// When only part of a list is shown it says so ("12 of 59 spools"), and grams only apply to
+    /// active spools — archived ones aren't on hand. Inflection handles "1 spool" vs "2 spools".
+    @ViewBuilder
+    private var headerSummary: some View {
+        let grams = Self.gramsOnHand(filtered)
+        let isNarrowed = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if filter == .archived {
+            let total = store.archivedSpools.count
+            if isNarrowed {
+                Text("\(filtered.count) of ^[\(total) archived spool](inflect: true)", comment: "Inventory header: archived spools matching a search, e.g. '3 of 10 archived spools'")
+            } else {
+                Text("^[\(total) archived spool](inflect: true)", comment: "Inventory header: number of archived spools")
+            }
+        } else if filter != .all || isNarrowed {
+            Text("\(filtered.count) of ^[\(store.spools.count) spool](inflect: true) · \(grams) g on hand", comment: "Inventory header when a filter or search is active, e.g. '12 of 59 spools · 6200 g on hand'")
+        } else {
+            Text("^[\(store.spools.count) spool](inflect: true) · \(grams) g on hand", comment: "Inventory header: all active spools and their remaining weight")
+        }
     }
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
@@ -83,8 +105,7 @@ struct InventoryView: View {
                                 if isConnecting {
                                     Text("Connecting to server…")
                                 } else {
-                                    // Automatic grammar agreement: "1 spool", "2 spools".
-                                    Text("^[\(store.spools.count) spool](inflect: true) · \(totalGrams) g on hand")
+                                    headerSummary
                                 }
                             }
                             .ncFont(size: 15, relativeTo: .subheadline)
