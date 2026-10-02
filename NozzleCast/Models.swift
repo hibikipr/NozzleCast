@@ -134,6 +134,23 @@ struct HMSError: Identifiable, Equatable {
         }
     }
 
+    /// The alert level as shown to the user, including the levels `tier` deliberately ignores.
+    enum Level: Int, Comparable {
+        /// Ordered most to least severe, so sorting by level puts errors first.
+        case error = 0, warning, notification, unknown
+
+        static func < (lhs: Level, rhs: Level) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
+    var level: Level {
+        switch severity {
+        case 1: .error
+        case 2: .warning
+        case 3: .notification
+        default: .unknown
+        }
+    }
+
     /// The code grouped into Bambu's standard four 4-hex-digit fields (module/type/subtype/code),
     /// e.g. "0500-0500-0001-0007" — this is also the form the Bambu wiki keys its HMS lookup
     /// pages on. Nil if `fullCode` isn't the expected 16 hex digits.

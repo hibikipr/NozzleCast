@@ -87,6 +87,7 @@ struct PrinterDetailContent: View {
                     model: printer.model,
                     wifiSignalDBm: printer.wifiSignalDBm,
                     hmsErrorCount: printer.hmsErrors.count,
+                    hmsWorstLevel: printer.hmsErrors.map(\.level).min(),
                     aiDetectionEnabled: printer.aiDetectionEnabled,
                     aiMonitoringActive: printer.aiMonitoringActive,
                     firmwareVersion: printer.firmwareVersion,
@@ -245,6 +246,9 @@ struct PrinterInfoPillRow: View {
     var model: String
     var wifiSignalDBm: Int?
     var hmsErrorCount: Int
+    /// The most severe active alert, which colors the alert pill — red for a fault that stopped
+    /// the print, orange for one that paused it, blue when only notifications are active.
+    var hmsWorstLevel: HMSError.Level?
     var aiDetectionEnabled: Bool
     var aiMonitoringActive: Bool
     var firmwareVersion: String?
@@ -269,7 +273,7 @@ struct PrinterInfoPillRow: View {
                 Button {
                     showWarnings = true
                 } label: {
-                    InfoPill(icon: "exclamationmark.triangle.fill", text: "\(hmsErrorCount)", tint: NCColor.statusWarning)
+                    InfoPill(icon: (hmsWorstLevel ?? .warning).symbol, text: "\(hmsErrorCount)", tint: (hmsWorstLevel ?? .warning).color)
                 }
                 .buttonStyle(.plain)
             }
