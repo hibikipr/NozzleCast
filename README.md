@@ -10,7 +10,8 @@ account system, or analytics of any kind.
   for every printer on your Bambuddy server, with a live camera feed (falling back to the job's
   cover/plate render when the camera isn't available).
 - **AMS management** — tap a slot to assign inventory to it (with a material-mismatch warning
-  matching Bambuddy's own UI); long-press a slot to re-read its RFID tag.
+  matching Bambuddy's own UI); long-press a slot to re-read its RFID tag. Works with Bambuddy's
+  built-in inventory and with its Spoolman mode — the app follows whichever the server uses.
 - **Filament inventory** — browse, edit, and scan-to-add spools (barcode or label-photo lookup via
   OFD/SpoolmanDB-Community), with type-or-pick fields matching Bambuddy's own input UX.
 - **Push notifications** — Bambuddy's own alerts (progress, completion, errors, AMS/humidity
@@ -59,11 +60,10 @@ split this way, plus the reasoning behind the rest of the app's design decisions
 
 ## Notable non-features
 
-- **No "configure" push to AMS hardware.** NozzleCast can *assign* inventory to a slot (a
-  database-only link, matching what Bambuddy's own UI does by default) but deliberately never
-  sends the `configure` command that pushes real `ams_filament_setting` MQTT commands to the
-  physical AMS — that's judged too risky for an unattended client action. See
-  [ARCHITECTURE.md](ARCHITECTURE.md#assign-vs-configure).
+- **No separate "configure" action for AMS hardware.** NozzleCast *assigns* inventory to a slot
+  and never calls Bambuddy's slot-configure endpoint itself. Note that current Bambuddy versions
+  push the assigned spool's filament settings to the printer as part of the assignment anyway, so
+  an assignment does reach the AMS. See [ARCHITECTURE.md](ARCHITECTURE.md#assign-vs-configure).
 - **No background polling.** The app only refreshes printer state when it's open (app launch,
   pull-to-refresh, or after an in-app action). Between those moments, Live Activity accuracy is
   carried by Bambuddy's own push events reaching the notification extension directly — not by any

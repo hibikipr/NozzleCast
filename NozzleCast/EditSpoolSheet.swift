@@ -72,7 +72,8 @@ struct EditSpoolSheet: View {
                     colorSection
                     filamentSection
                     weightCostSection
-                    tempSection
+                    // Spoolman stores no per-spool nozzle temperatures — see `isSpoolman`.
+                    if !isSpoolman { tempSection }
                     notesSection
                     removeSection
                 }
@@ -159,6 +160,7 @@ struct EditSpoolSheet: View {
 
             labeledField("Color name", text: $colorName)
 
+            if !isSpoolman {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Extra colors")
                     .ncFont(size: 12, weight: .medium, relativeTo: .caption)
@@ -187,6 +189,7 @@ struct EditSpoolSheet: View {
                     .ncFont(size: 11, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textTertiary)
             }
+            }
         }
     }
 
@@ -206,9 +209,17 @@ struct EditSpoolSheet: View {
                 labeledField("Label weight (g)", text: $netWeightGrams, keyboardType: .numberPad)
                 labeledField("Cost per kg", text: $costPerKg, keyboardType: .decimalPad)
             }
-            labeledField("Category", text: $category)
+            if !isSpoolman {
+                labeledField("Category", text: $category)
+            }
         }
     }
+
+    /// True when Bambuddy serves its inventory from Spoolman. Spoolman's spool record has no
+    /// field for extra color stops, nozzle temperatures or a category, and Bambuddy's Spoolman
+    /// proxy drops them on save — so those fields are hidden there rather than shown and then
+    /// silently discarded. Everything else edits the same way in both modes.
+    private var isSpoolman: Bool { store.inventoryBackend == .spoolman }
 
     private var tempSection: some View {
         VStack(alignment: .leading, spacing: 10) {

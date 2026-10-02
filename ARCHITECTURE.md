@@ -349,3 +349,24 @@ than maintaining that nested plist structure by hand alongside a `GENERATE_INFOP
 project. The primary icon (what a fresh install gets, and what "Default" represents in the picker)
 can change over time — it currently is "Steel" — without needing any Info.plist changes, only
 swapping which image sits in `AppIcon.appiconset`.
+
+## Assign vs. configure
+
+NozzleCast assigns spools to AMS slots through Bambuddy's assignment endpoints
+(`/inventory/assignments`, or `/spoolman/inventory/slot-assignments` in Spoolman mode) and
+deliberately never calls Bambuddy's slot *configure* endpoint (`/printers/{id}/slots/{ams}/{tray}/configure`)
+itself — pushing arbitrary filament settings to physical hardware is judged too risky for an
+app action.
+
+That no longer means an assignment stays in the database. Confirmed live on 2026-10-02 against
+Bambuddy 1.2.5.7 (Spoolman mode, H2C): assigning a spool made Bambuddy publish
+`ams_filament_setting` (type, color, temperatures) and `extrusion_cali_sel` (K profile) to that
+slot. So:
+
+- **A mismatched assignment reconfigures the slot.** The material-mismatch warning says so, and
+  compares material *families* (`MaterialFamily`) so "PLA Matte" in a tray reported as "PLA" is
+  not flagged.
+- **Without Developer LAN mode the printer rejects both commands** ("mqtt message verify failed")
+  and raises HMS `0500-0500-0001-0007`, "MQTT Command verification failed". The assignment itself
+  still saves. The assign sheet explains this on printers Bambuddy reports with Developer LAN
+  mode off. Unassigning sends nothing to the printer.

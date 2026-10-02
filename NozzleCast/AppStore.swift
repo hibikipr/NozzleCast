@@ -112,8 +112,15 @@ final class AppStore {
 
     private var client: BambuddyAPIClient? {
         guard let url = config.serverURL, !config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return BambuddyAPIClient(baseURL: url, apiKey: config.apiKey)
+        return BambuddyAPIClient(baseURL: url, apiKey: config.apiKey, inventory: inventoryBackend)
     }
+
+    /// Which inventory the server is serving — Bambuddy's own, or Spoolman through Bambuddy's
+    /// proxy. Re-detected at the start of every refresh, so flipping Bambuddy's Spoolman switch is
+    /// followed without any setting in the app; every spool and slot-assignment request goes
+    /// wherever this says. Nothing in the UI changes with it beyond hiding the edit fields
+    /// Spoolman can't store (`EditSpoolSheet`).
+    private(set) var inventoryBackend: InventoryBackend = .builtIn
 
     func loadMockData() {
         printers = MockData.makePrinters()
@@ -230,9 +237,19 @@ final class AppStore {
     }
 
     private func performRefresh() async {
-        guard let client else { return }
+        guard let unconfiguredClient = client else { return }
         isRefreshing = true
         defer { isRefreshing = false }
+        let backend = await unconfiguredClient.inventoryBackend()
+        if backend != inventoryBackend {
+            NSLog("NCDEBUG inventory backend is now %@", String(describing: backend))
+            inventoryBackend = backend
+            // Spool ids belong to the backend they came from; an Undo for a spool archived in
+            // the other one would point at the wrong record.
+            recentlyArchivedSpool = nil
+        }
+        // Immutable from here on: it's shared by the concurrent requests below.
+        let client = BambuddyAPIClient(baseURL: unconfiguredClient.baseURL, apiKey: unconfiguredClient.apiKey, inventory: backend)
         do {
             async let printerDTOs = client.printers()
             async let spoolDTOs = client.spools()
@@ -326,12 +343,12 @@ final class AppStore {
 
             spools = spoolList
                 .filter { $0.archivedAt == nil }
-                .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog) }
+                .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog, backend: backend) }
             // Newest archive first — Bambuddy's `archived_at` is ISO 8601, so it sorts as a string.
             archivedSpools = spoolList
                 .filter { $0.archivedAt != nil }
                 .sorted { ($0.archivedAt ?? "") > ($1.archivedAt ?? "") }
-                .map { Self.mapSpool($0, assignment: nil, locationNames: locationNames, colorCatalog: colorCatalog) }
+                .map { Self.mapSpool($0, assignment: nil, locationNames: locationNames, colorCatalog: colorCatalog, backend: backend) }
 
             isShowingDemoData = false
             lastSuccessfulRefreshAt = Date()
@@ -610,18 +627,28 @@ final class AppStore {
     /// way the hex is still real, and the catalog usually knows a name for it. Bambuddy's web UI
     /// shows "-" when even that fails; callers here fall back further to the material name, since
     /// an empty label reads as more broken in a spool card than a slightly redundant one.
-    private static func resolveSpoolColorName(colorName: String?, rgba: String?, catalog: [String: String]) -> String? {
-        if let colorName, !colorName.isEmpty, colorName.range(of: #"^[A-Z]\d+-[A-Z]\d+$"#, options: .regularExpression) == nil {
+    ///
+    /// `colorNameIsSynthesized` (Spoolman mode, where `colorName` is really the filament's name)
+    /// demotes the name to a last resort behind the catalog — Bambuddy's own rule, so a Spoolman
+    /// spool reads the same in the app as in its web UI.
+    private static func resolveSpoolColorName(colorName: String?, rgba: String?, catalog: [String: String], colorNameIsSynthesized: Bool = false) -> String? {
+        let readable: String? = {
+            guard let colorName, !colorName.isEmpty,
+                  colorName.range(of: #"^[A-Z]\d+-[A-Z]\d+$"#, options: .regularExpression) == nil else { return nil }
             return colorName
+        }()
+        if let readable, !colorNameIsSynthesized { return readable }
+        if let rgba {
+            let clean = rgba.trimmingCharacters(in: CharacterSet(charactersIn: "#")).lowercased()
+            if clean.count >= 6 {
+                if clean.count == 8, clean.suffix(2) == "00" { return "Clear" }
+                if let mapped = catalog[String(clean.prefix(6))] { return mapped }
+            }
         }
-        guard let rgba else { return nil }
-        let clean = rgba.trimmingCharacters(in: CharacterSet(charactersIn: "#")).lowercased()
-        guard clean.count >= 6 else { return nil }
-        if clean.count == 8, clean.suffix(2) == "00" { return "Clear" }
-        return catalog[String(clean.prefix(6))]
+        return readable
     }
 
-    private static func mapSpool(_ dto: BambuddySpoolDTO, assignment: BambuddyAssignmentDTO?, locationNames: [Int: String], colorCatalog: [String: String]) -> Spool {
+    private static func mapSpool(_ dto: BambuddySpoolDTO, assignment: BambuddyAssignmentDTO?, locationNames: [Int: String], colorCatalog: [String: String], backend: InventoryBackend = .builtIn) -> Spool {
         let percentRemaining: Int
         if let used = dto.weightUsed, let label = dto.labelWeight, label > 0 {
             percentRemaining = max(0, min(100, Int((100.0 * (1 - used / Double(label))).rounded())))
@@ -633,13 +660,24 @@ final class AppStore {
         if let assignment {
             location = .ams(printerID: "bb-\(assignment.printerId)", amsIndex: assignment.amsId, trayIndex: assignment.trayId)
         } else {
-            location = .storage(name: dto.locationId.flatMap { locationNames[$0] })
+            // Spoolman spools carry a free-text location that Bambuddy maps to one of its own
+            // locations when it can; show the text itself when it couldn't.
+            let storageText = dto.storageLocation?.trimmingCharacters(in: .whitespaces)
+            location = .storage(name: dto.locationId.flatMap { locationNames[$0] } ?? (storageText?.isEmpty == false ? storageText : nil))
         }
+
+        // Bambuddy's built-in inventory records when a spool was archived. Spoolman only has an
+        // `archived` flag, and Bambuddy fills `archived_at` from the spool's last use (or its
+        // registration) instead — so in that mode the spool is marked archived without a date.
+        // An unparseable timestamp still marks the spool archived rather than silently making
+        // it look active.
+        let archivedAt = dto.archivedAt.map { Self.parseBambuddyTimestamp($0) ?? .distantPast }
+        let archivedDateIsKnown = backend == .builtIn && dto.archivedAt.flatMap(Self.parseBambuddyTimestamp) != nil
 
         return Spool(
             id: "bb-\(dto.id)",
             material: dto.material,
-            colorName: resolveSpoolColorName(colorName: dto.colorName, rgba: dto.rgba, catalog: colorCatalog) ?? dto.material,
+            colorName: resolveSpoolColorName(colorName: dto.colorName, rgba: dto.rgba, catalog: colorCatalog, colorNameIsSynthesized: dto.colorNameIsSynthesized ?? false) ?? dto.material,
             colorHex: "#" + (dto.rgba?.prefix(6).uppercased() ?? "808080"),
             colorAlpha: Self.parseAlpha(dto.rgba),
             extraColorHexes: parseExtraColors(dto.extraColors),
@@ -655,7 +693,8 @@ final class AppStore {
             costPerKg: dto.costPerKg,
             category: dto.category,
             note: dto.note,
-            archivedAt: dto.archivedAt.flatMap(Self.parseBambuddyTimestamp)
+            archivedAt: archivedAt,
+            archivedDateIsKnown: archivedDateIsKnown
         )
     }
 
@@ -1016,13 +1055,15 @@ final class AppStore {
               let trayIdx = printers[idx].amsUnits[unitIdx].trays.firstIndex(where: { $0.trayIndex == trayIndex }),
               let bbPrinterID = bambuddyID(printerID) ?? (isShowingDemoData ? 0 : nil) else { return }
         let spoolID = printers[idx].amsUnits[unitIdx].trays[trayIdx].spoolID
+        // Spoolman mode removes an assignment by the spool's id rather than by its slot.
+        let bbSpoolID = spoolID.flatMap(bambuddyID)
         performAction(localChange: {
             self.printers[idx].amsUnits[unitIdx].trays[trayIdx].spoolID = nil
             if let spoolID, let sIdx = self.spools.firstIndex(where: { $0.id == spoolID }) {
                 self.spools[sIdx].location = .storage(name: nil)
             }
         }) { client in
-            try await client.unassign(printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex)
+            try await client.unassign(printerID: bbPrinterID, amsID: amsIndex, trayID: trayIndex, spoolID: bbSpoolID)
         }
     }
 
@@ -1143,6 +1184,7 @@ final class AppStore {
             self.removeSpoolLocally(spoolID)
             var archived = spool
             archived.archivedAt = Date()
+            archived.archivedDateIsKnown = self.inventoryBackend == .builtIn
             self.archivedSpools.insert(archived, at: 0)
             self.recentlyArchivedSpool = spool
         }) { client in
