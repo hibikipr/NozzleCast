@@ -342,10 +342,9 @@ final class PrintLiveActivityManager {
     }
 
     private static func issueInfo(for printer: Printer) -> (severity: String?, count: Int?) {
-        let qualifyingSeverities = printer.hmsErrors.map(\.severity).filter { $0 <= 3 }
-        guard !qualifyingSeverities.isEmpty else { return (nil, nil) }
-        let severity = qualifyingSeverities.contains { $0 <= 2 } ? "error" : "warning"
-        return (severity, qualifyingSeverities.count)
+        let tiers = printer.hmsErrors.compactMap(\.tier)
+        guard !tiers.isEmpty else { return (nil, nil) }
+        return (tiers.contains(.error) ? "error" : "warning", tiers.count)
     }
 
     private static func fingerprint(for printer: Printer, coverImage: Data?, liveSnapshot: Data?) -> SyncFingerprint {

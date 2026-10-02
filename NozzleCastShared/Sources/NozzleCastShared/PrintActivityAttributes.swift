@@ -35,16 +35,15 @@ public struct PrintActivityAttributes: ActivityAttributes {
         public var rightNozzleTempC: Int?
         public var bedTempC: Int?
 
-        /// Bambuddy's own HMS severity scale collapsed to two tiers for the badge: "error"
-        /// (severity 1-2, Bambuddy's Fatal/Serious) or "warning" (severity 3, Bambuddy's own
-        /// "Warning" label) — nil when there's no qualifying issue. Severity 4/Info (Bambuddy's
-        /// own default case) is deliberately excluded here, not just at nil-count: confirmed live
-        /// that a routine "Developer Mode not enabled" advisory is genuine severity 5, and Bambuddy's
-        /// own UI colors that blue/informational, never as a warning or error — surfacing it as a
-        /// print-affecting badge here would be a false positive, matching the false positive already
-        /// hit and fixed relay-side (see nozzlecast-relay's hms-severity-badge design doc).
+        /// Bambu's HMS alert level collapsed to two tiers for the badge: "error" (level 1, the task
+        /// was stopped) or "warning" (level 2, the task was paused) — nil when there's no qualifying
+        /// issue. Notifications (level 3) and the invalid level 0 never badge: a standing advisory
+        /// surfacing as a print-affecting badge was a real false positive, hit and fixed relay-side.
+        /// Bambuddy reports these levels since v1.2.5.7 (#2728); it used to send an unrelated number
+        /// (the fault's Part ID byte). Written by the relay's `hmsIssues.js` and the app's
+        /// `HMSError.tier`, which must agree.
         public var issueSeverity: String?
-        /// Count of currently active issues at `issueSeverity`'s tier or worse (severity <= 3).
+        /// Count of currently active qualifying issues (level 1 or 2).
         public var issueCount: Int?
 
         /// Extra detail about what the printer is actually doing right now, beyond `stateLabel`
