@@ -69,8 +69,7 @@ struct InventoryView: View {
     /// require an exact "TPU", silently leaving those out. Matching the first word rather than
     /// "contains" keeps "Support for PLA" (a support material) out of the PLA filter.
     static func material(_ material: String, isIn family: FilamentMaterial) -> Bool {
-        guard let first = material.split(whereSeparator: { $0 == " " || $0 == "-" }).first else { return false }
-        return first.caseInsensitiveCompare(family.rawValue) == .orderedSame
+        MaterialFamily.same(material, family.rawValue)
     }
 
     private static func gramsOnHand(_ spools: [Spool]) -> Int {

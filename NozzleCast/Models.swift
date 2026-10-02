@@ -292,6 +292,21 @@ enum FilamentMaterial: String, CaseIterable, Identifiable {
     }
 }
 
+/// Bambu-style material names put the base material first and any variant after it — "PLA Matte",
+/// "PLA-CF", "PETG HF", "TPU for AMS" — while printers report the plain base ("PLA") for an AMS
+/// tray. The family is that first word (split on spaces and hyphens), so a variant matches its
+/// base without "Support for PLA" counting as PLA.
+enum MaterialFamily {
+    static func of(_ material: String) -> String? {
+        material.split(whereSeparator: { $0 == " " || $0 == "-" }).first.map { $0.uppercased() }
+    }
+
+    static func same(_ a: String, _ b: String) -> Bool {
+        guard let fa = of(a), let fb = of(b) else { return false }
+        return fa == fb
+    }
+}
+
 enum SpoolLocation: Equatable {
     case ams(printerID: String, amsIndex: Int, trayIndex: Int)
     case storage(name: String?)

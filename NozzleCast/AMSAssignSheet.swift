@@ -27,8 +27,11 @@ struct AMSAssignSheet: View {
         return unit.displayName(position: standardUnitOrder[unit.id] ?? 0)
     }
 
+    /// Compares material families, not exact strings: a "PLA Matte" spool in a tray the printer
+    /// reports as "PLA" is the expected case, not a mismatch (see `MaterialFamily`). An empty tray
+    /// still warns, as before.
     private func attemptAssign(_ spool: Spool) {
-        if trayMaterial.caseInsensitiveCompare(spool.material) != .orderedSame {
+        if !MaterialFamily.same(trayMaterial, spool.material) {
             pendingSpool = spool
             showMismatchWarning = true
         } else {
@@ -104,6 +107,23 @@ struct AMSAssignSheet: View {
                         .ncFont(size: 13, relativeTo: .footnote)
                         .foregroundStyle(NCColor.textTertiary)
                 }
+
+                // Bambuddy doesn't only record an assignment: it also sends the spool's filament
+                // settings to this AMS slot (`ams_filament_setting` + `extrusion_cali_sel`). A
+                // printer without Developer LAN mode rejects those and raises "MQTT command
+                // verification failed" — confirmed live on an H2C. The assignment still saves, so
+                // this explains the fault up front rather than blocking anything.
+                if printer?.lacksDeveloperMode == true {
+                    Label {
+                        Text("Developer LAN mode is off on this printer. Assigning still saves, but the printer will reject the slot settings Bambuddy sends and show an \"MQTT command verification failed\" error.", comment: "Assign sheet note for a printer without Developer LAN mode")
+                    } icon: {
+                        Image(systemName: "lock.fill")
+                    }
+                    .ncFont(size: 12, relativeTo: .caption)
+                    .foregroundStyle(NCColor.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
@@ -145,7 +165,7 @@ struct AMSAssignSheet: View {
             Button("Assign Anyway") { performAssign(spool) }
         } message: { spool in
             Text(
-                "The selected spool's material \"\(spool.material)\" doesn't match the tray material \"\(trayMaterial)\" for \(slotLabel). This only updates NozzleCast's and your server's inventory record — it doesn't change what's physically loaded in the AMS. Assign anyway?",
+                "The selected spool's material \"\(spool.material)\" doesn't match the tray material \"\(trayMaterial)\" for \(slotLabel). Your server will also set this slot's filament settings on the printer to match the spool, so the printer will treat the slot as \"\(spool.material)\" even though the filament loaded there is unchanged. Assign anyway?",
                 comment: "Material mismatch confirmation when assigning a spool whose material differs from what the printer reports for that AMS slot"
             )
         }
