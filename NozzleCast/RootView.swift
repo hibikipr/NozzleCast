@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum RootTab: Hashable {
-    case monitor, inventory, scan, settings
+    case monitor, prints, inventory, scan, settings
 }
 
 struct RootView: View {
@@ -13,6 +13,10 @@ struct RootView: View {
             MonitorView(selectedTab: $selectedTab)
                 .tabItem { Label("Monitor", systemImage: "square.grid.2x2") }
                 .tag(RootTab.monitor)
+
+            PrintsView(selectedTab: $selectedTab)
+                .tabItem { Label("Prints", systemImage: "list.bullet.rectangle") }
+                .tag(RootTab.prints)
 
             InventoryView(selectedTab: $selectedTab)
                 .tabItem { Label("Inventory", systemImage: "circle.grid.cross") }

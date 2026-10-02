@@ -126,6 +126,9 @@ final class AppStore {
         printers = MockData.makePrinters()
         spools = MockData.makeSpools()
         archivedSpools = []
+        queue = MockData.makeQueue()
+        printHistory = Self.markingVerdictEligibility(MockData.makePrintHistory())
+        printHistoryTotal = printHistory.count
         isShowingDemoData = true
         resolvePendingDeepLink()
         AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
@@ -1221,5 +1224,281 @@ final class AppStore {
         performAction(localChange: { self.removeSpoolLocally(spoolID) }) { client in
             try await client.deleteSpool(spoolID: bbID)
         }
+    }
+
+    // MARK: - Print queue & history
+
+    /// Jobs still to come — the one printing first, then pending jobs in Bambuddy's queue order.
+    /// Loaded by `loadPrints()`, not by the periodic `refresh()`: only the Prints tab and the
+    /// printer detail's outcome card read it.
+    private(set) var queue: [QueuedPrint] = []
+    /// Newest first, paged in by `loadMorePrintHistory()`.
+    private(set) var printHistory: [PrintRecord] = []
+    /// Total records on the server, for knowing when the last page is in.
+    private(set) var printHistoryTotal = 0
+    private(set) var isLoadingPrints = false
+    private(set) var hasLoadedPrints = false
+    private(set) var printsLoadError: String?
+
+    static let printHistoryPageSize = 40
+
+    @ObservationIgnored private let printThumbnailCache = NSCache<NSString, UIImage>()
+    /// Thumbnails the server doesn't have (a print archived without one 404s), so a scrolling list
+    /// doesn't ask again every time a row reappears.
+    @ObservationIgnored private var missingPrintThumbnails: Set<String> = []
+
+    var hasMorePrintHistory: Bool { printHistory.count < printHistoryTotal }
+
+    /// Reloads the queue and the first page of history.
+    func loadPrints() async {
+        guard !isShowingDemoData, let client, !isLoadingPrints else { return }
+        isLoadingPrints = true
+        defer { isLoadingPrints = false }
+        do {
+            async let queueDTOs = client.queue()
+            async let firstPage = client.printLog(limit: Self.printHistoryPageSize, offset: 0)
+            let (queueItems, page) = try await (queueDTOs, firstPage)
+            queue = mapQueue(queueItems)
+            printHistory = Self.markingVerdictEligibility(page.items.map(mapPrintRecord))
+            printHistoryTotal = page.total
+            printsLoadError = nil
+            hasLoadedPrints = true
+        } catch {
+            printsLoadError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func loadMorePrintHistory() async {
+        guard !isShowingDemoData, let client, !isLoadingPrints, hasMorePrintHistory else { return }
+        isLoadingPrints = true
+        defer { isLoadingPrints = false }
+        do {
+            let page = try await client.printLog(limit: Self.printHistoryPageSize, offset: printHistory.count)
+            // A print finishing between pages shifts every offset by one, which would repeat the
+            // first row of this page — drop anything already listed.
+            let known = Set(printHistory.map(\.id))
+            let fresh = page.items.map(mapPrintRecord).filter { !known.contains($0.id) }
+            printHistory = Self.markingVerdictEligibility(printHistory + fresh)
+            printHistoryTotal = page.total
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// The printer's most recent print, if it finished in the last day and can still be given a
+    /// verdict — what the printer detail's "How did it come out?" card asks about.
+    func recentFinishedPrint(printerID: String) -> PrintRecord? {
+        guard let latest = printHistory.first(where: { $0.printerID == printerID }),
+              latest.acceptsVerdict,
+              let finishedAt = latest.finishedAt,
+              Date().timeIntervalSince(finishedAt) < 24 * 60 * 60 else { return nil }
+        return latest
+    }
+
+    /// Records "how did it come out" (nil clears it). Applied optimistically; a failure puts the
+    /// previous answer back.
+    func setVerdict(_ verdict: PrintVerdict?, forPrint recordID: String) {
+        guard let index = printHistory.firstIndex(where: { $0.id == recordID }),
+              printHistory[index].acceptsVerdict,
+              let archiveID = printHistory[index].archiveID else { return }
+        let previous = printHistory[index].verdict
+        guard previous != verdict else { return }
+        if isShowingDemoData {
+            printHistory[index].verdict = verdict
+            return
+        }
+        guard isLive, let client else {
+            actionError = String(localized: "Not connected to your server. Pull to refresh and try again.")
+            return
+        }
+        printHistory[index].verdict = verdict
+        Task {
+            do {
+                try await client.setVerdict(archiveID: archiveID, verdict: verdict?.rawValue)
+            } catch {
+                if let index = printHistory.firstIndex(where: { $0.id == recordID }) {
+                    printHistory[index].verdict = previous
+                }
+                actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    /// Releases a staged job so Bambuddy sends it to the printer once it's free. That dispatch is a
+    /// print command, so a printer without Developer LAN mode would refuse it.
+    func startQueuedPrint(_ itemID: String) {
+        guard let item = queue.first(where: { $0.id == itemID }), item.isStaged else { return }
+        if let printerID = item.printerID, refuseWithoutDeveloperMode(printerID) { return }
+        performQueueAction(localChange: {
+            if let index = self.queue.firstIndex(where: { $0.id == itemID }) { self.queue[index].isStaged = false }
+        }) { client in
+            try await client.startQueueItem(itemID: item.bambuddyID)
+        }
+    }
+
+    /// Takes a pending job out of the queue. Bambuddy keeps no undo — the UI confirms first.
+    func removeQueuedPrint(_ itemID: String) {
+        guard let item = queue.first(where: { $0.id == itemID }), item.status == .pending else { return }
+        performQueueAction(localChange: { self.queue.removeAll { $0.id == itemID } }) { client in
+            try await client.removeQueueItem(itemID: item.bambuddyID)
+        }
+    }
+
+    func canMoveQueuedPrint(_ itemID: String, by offset: Int) -> Bool {
+        let pending = queue.filter { $0.status == .pending }
+        guard let index = pending.firstIndex(where: { $0.id == itemID }) else { return false }
+        return pending.indices.contains(index + offset)
+    }
+
+    /// Swaps a pending job with its neighbour in Bambuddy's (global) queue order, then renumbers
+    /// every pending job so the positions sent are unique — Bambuddy rejects duplicates.
+    func moveQueuedPrint(_ itemID: String, by offset: Int) {
+        var pending = queue.filter { $0.status == .pending }
+        guard let index = pending.firstIndex(where: { $0.id == itemID }), pending.indices.contains(index + offset) else { return }
+        pending.swapAt(index, index + offset)
+        for i in pending.indices { pending[i].position = i + 1 }
+        let positions = pending.map { (id: $0.bambuddyID, position: $0.position) }
+        let printing = queue.filter { $0.status == .printing }
+        performQueueAction(localChange: { self.queue = printing + pending }) { client in
+            try await client.reorderQueue(positions)
+        }
+    }
+
+    /// Like `performAction`, but what it refreshes afterwards is the queue, not the printers.
+    private func performQueueAction(localChange: () -> Void, _ operation: @escaping (BambuddyAPIClient) async throws -> Void) {
+        if isShowingDemoData {
+            localChange()
+            return
+        }
+        guard isLive, let client else {
+            actionError = String(localized: "Not connected to your server. Pull to refresh and try again.")
+            return
+        }
+        localChange()
+        Task {
+            do {
+                try await operation(client)
+            } catch {
+                actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            await loadPrints()
+        }
+    }
+
+    func printThumbnail(for record: PrintRecord, maxPixelSize: CGFloat) async -> UIImage? {
+        await cachedPrintThumbnail(key: record.id, maxPixelSize: maxPixelSize) { client in
+            try await client.printLogThumbnailData(entryID: record.logID)
+        }
+    }
+
+    func queueThumbnail(for item: QueuedPrint, maxPixelSize: CGFloat) async -> UIImage? {
+        guard let thumbnail = item.thumbnail else { return nil }
+        return await cachedPrintThumbnail(key: item.id, maxPixelSize: maxPixelSize) { client in
+            switch thumbnail {
+            case .archive(let id): try await client.archiveThumbnailData(archiveID: id)
+            case .libraryFile(let id): try await client.libraryFileThumbnailData(fileID: id)
+            }
+        }
+    }
+
+    private func cachedPrintThumbnail(key: String, maxPixelSize: CGFloat, _ fetch: (BambuddyAPIClient) async throws -> Data) async -> UIImage? {
+        let cacheKey = "\(key)@\(Int(maxPixelSize))" as NSString
+        if let cached = printThumbnailCache.object(forKey: cacheKey) { return cached }
+        guard !missingPrintThumbnails.contains(key), let client else { return nil }
+        do {
+            let data = try await fetch(client)
+            guard let image = await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize) else { return nil }
+            printThumbnailCache.setObject(image, forKey: cacheKey)
+            return image
+        } catch BambuddyAPIError.http(404, _) {
+            missingPrintThumbnails.insert(key)
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    private func mapQueue(_ dtos: [BambuddyQueueItemDTO]) -> [QueuedPrint] {
+        dtos.compactMap { dto -> QueuedPrint? in
+            let status: QueuedPrint.Status
+            switch dto.status {
+            case "pending": status = .pending
+            case "printing": status = .printing
+            default: return nil // finished, failed, skipped and cancelled jobs belong to History
+            }
+            let printerID = dto.printerId.map { "bb-\($0)" }
+            let destination = printerID.flatMap { printer($0)?.name }
+                ?? dto.printerName
+                ?? dto.targetModel.map { String(localized: "Any \($0)", comment: "Queue job for any printer of a model, e.g. 'Any P1S'") }
+                ?? String(localized: "Any printer", comment: "Queue job with no printer chosen")
+            let thumbnail: QueuedPrint.Thumbnail? = dto.archiveId.map { .archive($0) } ?? dto.libraryFileId.map { .libraryFile($0) }
+            return QueuedPrint(
+                id: "q-\(dto.id)",
+                bambuddyID: dto.id,
+                name: Self.printDisplayName(dto.archiveName ?? dto.libraryFileName) ?? String(localized: "Print job \(dto.id)"),
+                printerID: printerID,
+                destination: destination,
+                status: status,
+                position: dto.position,
+                isStaged: dto.manualStart,
+                scheduledAt: dto.scheduledTime.flatMap(Self.parseBambuddyTimestamp),
+                waitingReason: dto.waitingReason,
+                estimatedDuration: dto.printTimeSeconds.map(TimeInterval.init),
+                filamentGrams: dto.filamentUsedGrams,
+                filamentType: dto.filamentType,
+                filamentColorHex: dto.filamentColor,
+                thumbnail: thumbnail
+            )
+        }
+        .sorted { ($0.status == .printing ? 0 : 1, $0.position) < ($1.status == .printing ? 0 : 1, $1.position) }
+    }
+
+    private func mapPrintRecord(_ dto: BambuddyPrintLogEntryDTO) -> PrintRecord {
+        let printerID = dto.printerId.map { "bb-\($0)" }
+        return PrintRecord(
+            id: "log-\(dto.id)",
+            logID: dto.id,
+            archiveID: dto.archiveId,
+            name: Self.printDisplayName(dto.printName) ?? String(localized: "Untitled print"),
+            printerID: printerID,
+            printerName: printerID.flatMap { printer($0)?.name } ?? dto.printerName,
+            outcome: PrintRecord.Outcome(dto.status),
+            startedAt: dto.startedAt.flatMap(Self.parseBambuddyTimestamp),
+            finishedAt: (dto.completedAt ?? dto.createdAt).flatMap(Self.parseBambuddyTimestamp),
+            duration: dto.durationSeconds.map(TimeInterval.init),
+            filamentGrams: dto.filamentUsedGrams,
+            filamentType: dto.filamentType,
+            filamentColorHex: dto.filamentColor,
+            cost: dto.cost,
+            failureReason: dto.failureReason,
+            verdict: dto.userVerdict.flatMap(PrintVerdict.init(rawValue:)),
+            acceptsVerdict: false
+        )
+    }
+
+    /// Sets `acceptsVerdict` on a newest-first list: only the newest completed run of each archive
+    /// can carry a verdict (see `PrintRecord.acceptsVerdict`).
+    static func markingVerdictEligibility(_ records: [PrintRecord]) -> [PrintRecord] {
+        var seenArchives: Set<Int> = []
+        return records.map { record in
+            var record = record
+            guard let archiveID = record.archiveID else {
+                record.acceptsVerdict = false
+                return record
+            }
+            let isLatestRun = seenArchives.insert(archiveID).inserted
+            record.acceptsVerdict = isLatestRun && record.outcome == .completed
+            return record
+        }
+    }
+
+    /// File names arrive as uploaded ("Benchy.gcode.3mf"); the slicer extensions are noise in a list.
+    nonisolated static func printDisplayName(_ raw: String?) -> String? {
+        guard var name = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        for suffix in [".gcode.3mf", ".3mf", ".gcode"] where name.lowercased().hasSuffix(suffix) {
+            name = String(name.dropLast(suffix.count))
+            break
+        }
+        return name.isEmpty ? nil : name
     }
 }

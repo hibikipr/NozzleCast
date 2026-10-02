@@ -90,4 +90,27 @@ enum MockData {
             ),
         ]
     }
+
+    static func makeQueue() -> [QueuedPrint] {
+        [
+            QueuedPrint(id: "mock-q-1", bambuddyID: 1, name: "Cable Clips x12", printerID: officeP1S, destination: "Office P1S", status: .pending, position: 1, isStaged: false, waitingReason: "Waiting for the printer to finish", estimatedDuration: 2 * 3600 + 40 * 60, filamentGrams: 38, filamentType: "PETG", filamentColorHex: "#1F2A44"),
+            QueuedPrint(id: "mock-q-2", bambuddyID: 2, name: "Headphone Stand", printerID: garageA1, destination: "Garage A1", status: .pending, position: 2, isStaged: true, estimatedDuration: 5 * 3600 + 10 * 60, filamentGrams: 142, filamentType: "PLA", filamentColorHex: "#E2E2E2"),
+            QueuedPrint(id: "mock-q-3", bambuddyID: 3, name: "Planter Insert", destination: "Any X1C", status: .pending, position: 3, isStaged: false, estimatedDuration: 3 * 3600, filamentGrams: 96, filamentType: "PLA", filamentColorHex: "#2E7D32"),
+        ]
+    }
+
+    static func makePrintHistory() -> [PrintRecord] {
+        let now = Date()
+        func record(_ n: Int, _ name: String, _ printer: String, _ printerName: String, hoursAgo: Double, minutes: Double, grams: Double, type: String, color: String, outcome: PrintRecord.Outcome = .completed, archive: Int, verdict: PrintVerdict? = nil, failure: String? = nil) -> PrintRecord {
+            PrintRecord(id: "mock-log-\(n)", logID: n, archiveID: archive, name: name, printerID: printer, printerName: printerName, outcome: outcome, startedAt: now.addingTimeInterval(-(hoursAgo * 3600 + minutes * 60)), finishedAt: now.addingTimeInterval(-hoursAgo * 3600), duration: minutes * 60, filamentGrams: grams, filamentType: type, filamentColorHex: color, cost: grams * 0.025, failureReason: failure, verdict: verdict, acceptsVerdict: false)
+        }
+        return [
+            record(6, "Phone Stand", officeP1S, "Office P1S", hoursAgo: 1.5, minutes: 95, grams: 41, type: "PLA", color: "#FF6B35", archive: 16),
+            record(5, "Gridfinity Bin 2x3", workshopX1C, "Workshop X1C", hoursAgo: 6, minutes: 140, grams: 64, type: "PLA", color: "#1E1E1E", archive: 15, verdict: .good),
+            record(4, "Vase Mode Lamp Shade", garageA1, "Garage A1", hoursAgo: 20, minutes: 210, grams: 88, type: "PETG", color: "#F5F5F5", outcome: .failed, archive: 14, failure: "Spaghetti detected"),
+            record(3, "Gridfinity Bin 2x3", workshopX1C, "Workshop X1C", hoursAgo: 30, minutes: 138, grams: 64, type: "PLA", color: "#1E1E1E", archive: 15, verdict: .reject),
+            record(2, "Cable Clips x12", officeP1S, "Office P1S", hoursAgo: 52, minutes: 160, grams: 38, type: "PETG", color: "#1F2A44", archive: 12, verdict: .good),
+            record(1, "Calibration Cube", garageA1, "Garage A1", hoursAgo: 70, minutes: 22, grams: 9, type: "PLA", color: "#4F7FE0", outcome: .cancelled, archive: 11),
+        ]
+    }
 }

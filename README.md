@@ -14,6 +14,10 @@ account system, or analytics of any kind.
   built-in inventory and with its Spoolman mode — the app follows whichever the server uses.
 - **Filament inventory** — browse, edit, and scan-to-add spools (barcode or label-photo lookup via
   OFD/SpoolmanDB-Community), with type-or-pick fields matching Bambuddy's own input UX.
+- **Print queue & history** — Bambuddy's print queue (start staged jobs, reorder, remove) and
+  its print history with plate thumbnails, time, filament and cost. Finished prints ask "How did it
+  come out?" (Good / Reject), in History and on the printer's screen; the answer is Bambuddy's own
+  post-print verdict, so it feeds the same statistics as answering in its web UI.
 - **Push notifications** — Bambuddy's own alerts (progress, completion, errors, AMS/humidity
   warnings, etc.), delivered via your existing self-hosted ntfy → Firebase → APNs relay. Includes
   the camera snapshot Bambuddy attaches, an in-app history, and an unread badge on both the app
