@@ -124,7 +124,12 @@ final class AppStore {
 
     func loadMockData() {
         printers = MockData.makePrinters()
-        spools = MockData.makeSpools()
+        // Demo spools carry a percentage rather than weights; at or under 20% counts as low.
+        spools = MockData.makeSpools().map { spool in
+            var spool = spool
+            spool.isLowStock = spool.remainingPercent <= 20
+            return spool
+        }
         archivedSpools = []
         queue = MockData.makeQueue()
         printHistory = Self.markingVerdictEligibility(MockData.makePrintHistory())
@@ -263,6 +268,10 @@ final class AppStore {
             async let obicoTask: BambuddyObicoStatusDTO? = try? client.obicoStatus()
             // Same best-effort shape, but only actually fetched once — see colorCatalog's doc.
             async let colorCatalogTask: [String: String]? = colorCatalog.isEmpty ? try? client.colorCatalogMap() : nil
+            // Best-effort too: reading settings needs a permission an API key may not have, and
+            // Bambuddy's own default (20%) is what applies then anyway.
+            async let lowStockThresholdTask: Double? = try? client.lowStockThreshold()
+            async let shoppingListTask: [BambuddyShoppingListItemDTO]? = try? client.shoppingList()
 
             let (printerList, spoolList, assignmentList, locationList) = try await (printerDTOs, spoolDTOs, assignmentDTOs, locationDTOs)
             let obico = await obicoTask
@@ -277,6 +286,9 @@ final class AppStore {
             }
 
             locationNames = Dictionary(uniqueKeysWithValues: locationList.map { ($0.id, $0.name) })
+            if let threshold = await lowStockThresholdTask { lowStockThreshold = threshold }
+            if let items = await shoppingListTask { shoppingList = items.map(Self.mapShoppingListItem) }
+            let lowStockThreshold = self.lowStockThreshold
 
             let extras: [Int: PrinterExtras] = try await withThrowingTaskGroup(of: (Int, PrinterExtras).self) { group in
                 for p in printerList {
@@ -346,12 +358,12 @@ final class AppStore {
 
             spools = spoolList
                 .filter { $0.archivedAt == nil }
-                .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog, backend: backend) }
+                .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog, lowStockThreshold: lowStockThreshold, backend: backend) }
             // Newest archive first — Bambuddy's `archived_at` is ISO 8601, so it sorts as a string.
             archivedSpools = spoolList
                 .filter { $0.archivedAt != nil }
                 .sorted { ($0.archivedAt ?? "") > ($1.archivedAt ?? "") }
-                .map { Self.mapSpool($0, assignment: nil, locationNames: locationNames, colorCatalog: colorCatalog, backend: backend) }
+                .map { Self.mapSpool($0, assignment: nil, locationNames: locationNames, colorCatalog: colorCatalog, lowStockThreshold: lowStockThreshold, backend: backend) }
 
             isShowingDemoData = false
             lastSuccessfulRefreshAt = Date()
@@ -589,6 +601,7 @@ final class AppStore {
             nozzleRack: nozzleRack,
             totalPrintHours: extras.maintenance?.totalPrintHours,
             maintenanceOK: extras.maintenance.map { $0.dueCount == 0 && $0.warningCount == 0 },
+            maintenanceTasks: (extras.maintenance?.maintenanceItems ?? []).filter(\.enabled).map(Self.mapMaintenanceTask).sorted(by: Self.isMoreUrgent),
             smartPlug: smartPlug,
             aiDetectionEnabled: obico?.enabled ?? false,
             aiMonitoringActive: obico?.perPrinter[String(dto.id)] != nil,
@@ -651,7 +664,17 @@ final class AppStore {
         return readable
     }
 
-    private static func mapSpool(_ dto: BambuddySpoolDTO, assignment: BambuddyAssignmentDTO?, locationNames: [Int: String], colorCatalog: [String: String], backend: InventoryBackend = .builtIn) -> Spool {
+    private static func mapSpool(_ dto: BambuddySpoolDTO, assignment: BambuddyAssignmentDTO?, locationNames: [Int: String], colorCatalog: [String: String], lowStockThreshold: Double, backend: InventoryBackend = .builtIn) -> Spool {
+        // Bambuddy's own "Low Stock" count, exactly: unrounded remaining percent of the label
+        // weight (0 for a spool with no label weight) below the spool's own threshold, else the
+        // server-wide one. Archived spools aren't stock.
+        let isLowStock: Bool = {
+            guard dto.archivedAt == nil else { return false }
+            let label = Double(dto.labelWeight ?? 0)
+            let remaining = max(0, label - (dto.weightUsed ?? 0))
+            let percent = label > 0 ? remaining / label * 100 : 0
+            return percent < (dto.lowStockThresholdPct.map(Double.init) ?? lowStockThreshold)
+        }()
         let percentRemaining: Int
         if let used = dto.weightUsed, let label = dto.labelWeight, label > 0 {
             percentRemaining = max(0, min(100, Int((100.0 * (1 - used / Double(label))).rounded())))
@@ -697,7 +720,13 @@ final class AppStore {
             category: dto.category,
             note: dto.note,
             archivedAt: archivedAt,
-            archivedDateIsKnown: archivedDateIsKnown
+            archivedDateIsKnown: archivedDateIsKnown,
+            isLowStock: isLowStock,
+            materialNumber: dto.materialNumber.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 },
+            suppliers: (dto.suppliers ?? []).map {
+                SpoolSupplier(name: $0.supplierName, articleNumber: $0.supplierArticleNumber, pricePerKg: $0.quotedPricePerKg, isPurchaseSource: $0.isPurchaseSource ?? false)
+            },
+            lastUsedAt: dto.lastUsed.flatMap(Self.parseBambuddyTimestamp)
         )
     }
 
@@ -1500,5 +1529,167 @@ final class AppStore {
             break
         }
         return name.isEmpty ? nil : name
+    }
+
+    // MARK: - Inventory insights
+
+    /// Bambuddy's server-wide low-stock alert level, percent remaining. Its default until the
+    /// server says otherwise.
+    private(set) var lowStockThreshold: Double = 20
+    /// Bambuddy's filament shopping list, newest first.
+    private(set) var shoppingList: [ShoppingListItem] = []
+
+    var lowStockSpools: [Spool] { spools.filter(\.isLowStock) }
+
+    /// Entries not yet received — what the shopping-list button counts.
+    var openShoppingListCount: Int { shoppingList.filter { $0.status != .received }.count }
+
+    /// The open shopping-list entry for this spool's filament, if there is one.
+    func shoppingListItem(for spool: Spool) -> ShoppingListItem? {
+        shoppingList.first { $0.status != .received && $0.describes(spool) }
+    }
+
+    func loadShoppingList() async {
+        guard !isShowingDemoData, let client else { return }
+        if let items = try? await client.shoppingList() {
+            shoppingList = items.map(Self.mapShoppingListItem)
+        }
+    }
+
+    /// Adds one spool of this spool's filament to the shopping list, unless it's already there.
+    func addToShoppingList(_ spool: Spool) {
+        guard shoppingListItem(for: spool) == nil else { return }
+        let body = ShoppingListItemCreateBody(
+            material: spool.material,
+            subtype: spool.subtype?.isEmpty == false ? spool.subtype : nil,
+            brand: spool.brand == "Unknown" ? nil : spool.brand,
+            colorName: spool.colorName,
+            quantitySpools: 1
+        )
+        let placeholder = ShoppingListItem(
+            id: "pending-\(UUID().uuidString)", bambuddyID: -1, material: body.material, subtype: body.subtype,
+            brand: body.brand, colorName: body.colorName, quantity: 1, status: .pending, addedAt: Date()
+        )
+        performShoppingListAction(localChange: { self.shoppingList.insert(placeholder, at: 0) }) { client in
+            try await client.addToShoppingList(body)
+        }
+    }
+
+    func setShoppingListStatus(_ itemID: String, to status: ShoppingListItem.Status) {
+        guard let item = shoppingList.first(where: { $0.id == itemID }), item.bambuddyID >= 0, item.status != status else { return }
+        performShoppingListAction(localChange: {
+            if let index = self.shoppingList.firstIndex(where: { $0.id == itemID }) { self.shoppingList[index].status = status }
+        }) { client in
+            try await client.setShoppingListStatus(itemID: item.bambuddyID, status: status.rawValue)
+        }
+    }
+
+    func removeFromShoppingList(_ itemID: String) {
+        guard let item = shoppingList.first(where: { $0.id == itemID }), item.bambuddyID >= 0 else { return }
+        performShoppingListAction(localChange: { self.shoppingList.removeAll { $0.id == itemID } }) { client in
+            try await client.removeFromShoppingList(itemID: item.bambuddyID)
+        }
+    }
+
+    /// Like `performAction`, refreshing only the shopping list afterwards.
+    private func performShoppingListAction(localChange: () -> Void, _ operation: @escaping (BambuddyAPIClient) async throws -> Void) {
+        if isShowingDemoData {
+            localChange()
+            return
+        }
+        guard isLive, let client else {
+            actionError = String(localized: "Not connected to your server. Pull to refresh and try again.")
+            return
+        }
+        localChange()
+        Task {
+            do {
+                try await operation(client)
+            } catch {
+                actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            await loadShoppingList()
+        }
+    }
+
+    /// The prints that drew on this spool, newest first. Nil when there's no history to ask for —
+    /// demo data, or Spoolman mode, where Bambuddy keeps none.
+    func spoolUsage(_ spoolID: String, limit: Int = 25) async -> [SpoolUsageRecord]? {
+        guard !isShowingDemoData, inventoryBackend == .builtIn, let client, let bbID = bambuddyID(spoolID) else { return nil }
+        guard let dtos = try? await client.spoolUsage(spoolID: bbID, limit: limit) else { return nil }
+        return dtos.map { dto in
+            SpoolUsageRecord(
+                id: dto.id,
+                printName: Self.printDisplayName(dto.printName) ?? String(localized: "Untitled print"),
+                printerName: dto.printerId.flatMap { printer("bb-\($0)")?.name },
+                grams: dto.weightUsed,
+                cost: dto.cost,
+                date: Self.parseBambuddyTimestamp(dto.createdAt),
+                outcome: PrintRecord.Outcome(dto.status)
+            )
+        }
+    }
+
+    private static func mapShoppingListItem(_ dto: BambuddyShoppingListItemDTO) -> ShoppingListItem {
+        ShoppingListItem(
+            id: "shop-\(dto.id)",
+            bambuddyID: dto.id,
+            material: dto.material,
+            subtype: dto.subtype,
+            brand: dto.brand,
+            colorName: dto.colorName,
+            quantity: dto.quantitySpools,
+            note: dto.note,
+            status: ShoppingListItem.Status(rawValue: dto.status) ?? .pending,
+            addedAt: dto.addedAt.flatMap(parseBambuddyTimestamp)
+        )
+    }
+
+    // MARK: - Maintenance
+
+    private static func mapMaintenanceTask(_ dto: BambuddyMaintenanceItemDTO) -> MaintenanceTask {
+        let isDays = dto.intervalType.lowercased() == "days"
+        return MaintenanceTask(
+            id: dto.id,
+            name: dto.maintenanceTypeName,
+            symbol: MaintenanceTask.symbol(forLucideIcon: dto.maintenanceTypeIcon),
+            wikiURL: dto.maintenanceTypeWikiUrl.flatMap { URL(string: $0) }.flatMap { ["http", "https"].contains($0.scheme?.lowercased()) ? $0 : nil },
+            interval: isDays ? .days(dto.intervalHours) : .printHours(dto.intervalHours),
+            elapsed: isDays ? (dto.daysSinceMaintenance ?? 0) : dto.hoursSinceMaintenance,
+            remaining: isDays ? (dto.daysUntilDue ?? 0) : dto.hoursUntilDue,
+            isDue: dto.isDue,
+            isWarning: dto.isWarning,
+            lastPerformedAt: dto.lastPerformedAt.flatMap(parseBambuddyTimestamp)
+        )
+    }
+
+    /// Due first, then warnings, then whatever is closest to due by share of its interval.
+    private static func isMoreUrgent(_ a: MaintenanceTask, _ b: MaintenanceTask) -> Bool {
+        func rank(_ task: MaintenanceTask) -> Int { task.isDue ? 0 : task.isWarning ? 1 : 2 }
+        if rank(a) != rank(b) { return rank(a) < rank(b) }
+        return a.progress > b.progress
+    }
+
+    /// Records a maintenance task as done now. Bambuddy restarts its interval and logs it in the
+    /// task's history; the refresh afterwards picks up its new due date.
+    func performMaintenance(printerID: String, taskID: Int) {
+        guard let printerIndex = printers.firstIndex(where: { $0.id == printerID }) else { return }
+        performAction(localChange: {
+            guard let taskIndex = self.printers[printerIndex].maintenanceTasks.firstIndex(where: { $0.id == taskID }) else { return }
+            var task = self.printers[printerIndex].maintenanceTasks[taskIndex]
+            switch task.interval {
+            case .printHours(let length), .days(let length): task.remaining = length
+            }
+            task.elapsed = 0
+            task.isDue = false
+            task.isWarning = false
+            task.lastPerformedAt = Date()
+            self.printers[printerIndex].maintenanceTasks[taskIndex] = task
+            let tasks = self.printers[printerIndex].maintenanceTasks
+            self.printers[printerIndex].maintenanceTasks = tasks.sorted(by: Self.isMoreUrgent)
+            self.printers[printerIndex].maintenanceOK = !tasks.contains { $0.isDue || $0.isWarning }
+        }) { client in
+            try await client.performMaintenance(itemID: taskID)
+        }
     }
 }

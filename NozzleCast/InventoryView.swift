@@ -3,13 +3,14 @@ import SwiftUI
 enum InventoryFilter: Hashable, CaseIterable {
     /// `archived` is last and, unlike the rest, lists `AppStore.archivedSpools` rather than a
     /// subset of the active inventory.
-    case all, inAMS, inStorage, pla, petg, abs, tpu, archived
+    case all, inAMS, inStorage, lowStock, pla, petg, abs, tpu, archived
 
     var title: String {
         switch self {
         case .all: String(localized: "All", comment: "Inventory filter: show all spools")
         case .inAMS: String(localized: "In AMS", comment: "Inventory filter: spools currently loaded in an AMS")
         case .inStorage: String(localized: "In Storage", comment: "Inventory filter: spools not loaded in an AMS")
+        case .lowStock: String(localized: "Low Stock", comment: "Inventory filter: spools below their low-stock level")
         case .pla: FilamentMaterial.pla.rawValue
         case .petg: FilamentMaterial.petg.rawValue
         case .abs: FilamentMaterial.abs.rawValue
@@ -32,6 +33,7 @@ struct InventoryView: View {
     /// Set by a card's "Delete…" menu item; drives the confirmation dialog. Deleting is permanent,
     /// so it never happens straight from the menu tap.
     @State private var spoolPendingDeletion: Spool?
+    @State private var showShoppingList = false
     @Binding var selectedTab: RootTab
 
     /// Recomputed via `onChange`/`onAppear` below rather than as a computed property, so
@@ -47,6 +49,7 @@ struct InventoryView: View {
             case .all, .archived: matchesFilter = true
             case .inAMS: if case .ams = spool.location { matchesFilter = true } else { matchesFilter = false }
             case .inStorage: if case .storage = spool.location { matchesFilter = true } else { matchesFilter = false }
+            case .lowStock: matchesFilter = spool.isLowStock
             case .pla: matchesFilter = Self.material(spool.material, isIn: .pla)
             case .petg: matchesFilter = Self.material(spool.material, isIn: .petg)
             case .abs: matchesFilter = Self.material(spool.material, isIn: .abs)
@@ -58,6 +61,7 @@ struct InventoryView: View {
                 || spool.colorName.localizedCaseInsensitiveContains(query)
                 || spool.brand.localizedCaseInsensitiveContains(query)
                 || spool.material.localizedCaseInsensitiveContains(query)
+                || (spool.materialNumber?.localizedCaseInsensitiveContains(query) ?? false)
 
             return matchesFilter && matchesSearch
         }
@@ -83,6 +87,7 @@ struct InventoryView: View {
     @ViewBuilder
     private var headerSummary: some View {
         let grams = Self.gramsOnHand(filtered)
+        let lowCount = store.lowStockSpools.count
         let isNarrowed = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if filter == .archived {
             let total = store.archivedSpools.count
@@ -93,6 +98,8 @@ struct InventoryView: View {
             }
         } else if filter != .all || isNarrowed {
             Text("\(filtered.count) of ^[\(store.spools.count) spool](inflect: true) · \(grams) g on hand", comment: "Inventory header when a filter or search is active, e.g. '12 of 59 spools · 6200 g on hand'")
+        } else if lowCount > 0 {
+            Text("^[\(store.spools.count) spool](inflect: true) · \(grams) g on hand · \(lowCount) low", comment: "Inventory header: all active spools, their remaining weight, and how many are low on stock")
         } else {
             Text("^[\(store.spools.count) spool](inflect: true) · \(grams) g on hand", comment: "Inventory header: all active spools and their remaining weight")
         }
@@ -107,18 +114,23 @@ struct InventoryView: View {
             ZStack(alignment: .bottomTrailing) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Filament")
-                                .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
-                            Group {
-                                if isConnecting {
-                                    Text("Connecting to server…")
-                                } else {
-                                    headerSummary
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Filament")
+                                    .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
+                                Group {
+                                    if isConnecting {
+                                        Text("Connecting to server…")
+                                    } else {
+                                        headerSummary
+                                    }
                                 }
+                                .ncFont(size: 15, relativeTo: .subheadline)
+                                .foregroundStyle(NCColor.textSecondary)
                             }
-                            .ncFont(size: 15, relativeTo: .subheadline)
-                            .foregroundStyle(NCColor.textSecondary)
+                            Spacer()
+                            shoppingListButton
+                                .padding(.top, 10)
                         }
                         .padding(.horizontal, 16)
 
@@ -242,6 +254,9 @@ struct InventoryView: View {
             .sheet(item: $editingSpool) { spool in
                 EditSpoolSheet(spool: spool)
             }
+            .sheet(isPresented: $showShoppingList) {
+                ShoppingListSheet()
+            }
             .confirmationDialog(
                 Text("Delete this spool?", comment: "Delete spool confirmation title"),
                 isPresented: Binding(
@@ -285,6 +300,16 @@ struct InventoryView: View {
             Button { editingSpool = spool } label: {
                 Label("Edit", systemImage: "pencil")
             }
+            if store.shoppingListItem(for: spool) == nil {
+                Button { store.addToShoppingList(spool) } label: {
+                    Label("Add to Shopping List", systemImage: "cart.badge.plus")
+                }
+            } else {
+                Button {} label: {
+                    Label("On Shopping List", systemImage: "cart")
+                }
+                .disabled(true)
+            }
             Button { store.archiveSpool(spool.id) } label: {
                 Label("Archive", systemImage: "archivebox")
             }
@@ -299,6 +324,33 @@ struct InventoryView: View {
     private func edit(_ spool: Spool) {
         guard store.archivedSpool(spool.id) == nil else { return }
         editingSpool = spool
+    }
+
+    /// Bambuddy's filament shopping list, with a count of what's still to buy or arrive.
+    private var shoppingListButton: some View {
+        Button {
+            showShoppingList = true
+        } label: {
+            Image(systemName: "cart")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(NCColor.cardFill))
+                .overlay(alignment: .topTrailing) {
+                    let count = store.openShoppingListCount
+                    if count > 0 {
+                        Text("\(count)")
+                            .ncFont(size: 10, weight: .bold, relativeTo: .caption2)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(Capsule().fill(NCColor.accent))
+                            .offset(x: 4, y: -4)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Shopping List", comment: "Opens the filament shopping list"))
     }
 
     private var layoutToggle: some View {
@@ -380,10 +432,7 @@ struct SpoolCard: View {
                                     .frame(width: geo.size.width * Double(spool.remainingPercent) / 100)
                             }
                         }
-                    Text(Double(spool.remainingPercent) / 100, format: .percent.precision(.fractionLength(0)))
-                        .ncFont(size: 9.5, weight: .semibold, relativeTo: .caption2)
-                        .foregroundStyle(NCColor.textSecondary)
-                        .fixedSize()
+                    RemainingLabel(spool: spool, size: 9.5)
                 }
                 .padding(.top, 2)
 
@@ -453,10 +502,7 @@ struct SpoolListRow: View {
                                     .frame(width: geo.size.width * Double(spool.remainingPercent) / 100)
                             }
                         }
-                    Text(Double(spool.remainingPercent) / 100, format: .percent.precision(.fractionLength(0)))
-                        .ncFont(size: 10.5, weight: .semibold, relativeTo: .caption2)
-                        .foregroundStyle(NCColor.textSecondary)
-                        .fixedSize()
+                    RemainingLabel(spool: spool, size: 10.5)
                 }
                 .padding(.top, 2)
             }
@@ -469,6 +515,27 @@ struct SpoolListRow: View {
     }
 
     private var dimming: Double { spool.isArchived ? ArchivedBadge.contentOpacity : 1 }
+}
+
+/// A spool's remaining percentage, in amber with a warning mark when it's below its low-stock level.
+struct RemainingLabel: View {
+    var spool: Spool
+    var size: CGFloat
+
+    var body: some View {
+        HStack(spacing: 2) {
+            if spool.isLowStock {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: size * 0.85, weight: .semibold))
+            }
+            Text(Double(spool.remainingPercent) / 100, format: .percent.precision(.fractionLength(0)))
+                .ncFont(size: size, weight: .semibold, relativeTo: .caption2)
+        }
+        .foregroundStyle(spool.isLowStock ? NCColor.statusWarning : NCColor.textSecondary)
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(spool.isLowStock ? Text("Low stock", comment: "Accessibility value for a low-stock spool") : Text(""))
+    }
 }
 
 /// Small archive-box marker on an archived spool's swatch, so the card says "archived" on its

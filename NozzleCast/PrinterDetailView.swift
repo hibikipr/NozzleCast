@@ -9,6 +9,7 @@ struct PrinterDetailView: View {
     @State private var isCameraLive = false
     @State private var showAIDetection = false
     @State private var showLiveStream = false
+    @State private var showMaintenance = false
 
     private var printer: Printer? { store.printer(printerID) }
 
@@ -20,9 +21,15 @@ struct PrinterDetailView: View {
                 assignTray: $assignTray,
                 showWarnings: $showWarnings,
                 showAIDetection: $showAIDetection,
+                showMaintenance: $showMaintenance,
                 showCoverFullscreen: $showCoverFullscreen,
                 showLiveStream: $showLiveStream
             )
+            // Print history feeds the "How did it come out?" card, and a print that just finished
+            // isn't in the history the app has yet. Attached here rather than to the card, which
+            // renders nothing until that history exists — SwiftUI never runs a task on an empty
+            // view, so the card could never load what it needs to appear.
+            .task(id: printer.state) { await store.loadPrints() }
             .fullScreenCover(isPresented: $showLiveStream) {
                 LiveCameraStreamView(printerID: printer.id, printerName: printer.name)
             }
@@ -34,6 +41,9 @@ struct PrinterDetailView: View {
             }
             .fullScreenCover(isPresented: $showCoverFullscreen) {
                 CoverImageViewer(printerID: printer.id, jobIdentity: printer.jobFileName ?? printer.id)
+            }
+            .sheet(isPresented: $showMaintenance) {
+                MaintenanceSheet(printerID: printer.id)
             }
             .sheet(isPresented: $showAIDetection) {
                 AIDetectionSheet(printerName: printer.name, isMonitoring: printer.aiMonitoringActive, lastError: printer.aiLastError)
@@ -55,6 +65,7 @@ struct PrinterDetailContent: View {
     @Binding var assignTray: AMSTray?
     @Binding var showWarnings: Bool
     @Binding var showAIDetection: Bool
+    @Binding var showMaintenance: Bool
     @Binding var showCoverFullscreen: Bool
     @Binding var showLiveStream: Bool
     @Environment(AppStore.self) private var store
@@ -95,7 +106,8 @@ struct PrinterDetailContent: View {
                     maintenanceOK: printer.maintenanceOK,
                     doorOpen: printer.doorOpen,
                     showWarnings: $showWarnings,
-                    showAIDetection: $showAIDetection
+                    showAIDetection: $showAIDetection,
+                    showMaintenance: $showMaintenance
                 )
                 .padding(.horizontal, 16)
 
@@ -260,6 +272,7 @@ struct PrinterInfoPillRow: View {
     var doorOpen: Bool
     @Binding var showWarnings: Bool
     @Binding var showAIDetection: Bool
+    @Binding var showMaintenance: Bool
 
     /// Bambuddy's `door_open` field defaults to false for every printer model rather than
     /// being nil when a model has no door to report on, so it can't tell us on its own whether
@@ -299,11 +312,17 @@ struct PrinterInfoPillRow: View {
                 InfoPill(icon: "clock", text: "\(Int(hours))h")
             }
             if let ok = maintenanceOK {
-                InfoPill(
-                    icon: "wrench.fill",
-                    text: ok ? String(localized: "OK", comment: "Maintenance status: nothing due") : String(localized: "Due", comment: "Maintenance status: something needs attention"),
-                    tint: ok ? NCColor.statusPrinting : NCColor.statusWarning
-                )
+                Button {
+                    showMaintenance = true
+                } label: {
+                    InfoPill(
+                        icon: "wrench.fill",
+                        text: ok ? String(localized: "OK", comment: "Maintenance status: nothing due") : String(localized: "Due", comment: "Maintenance status: something needs attention"),
+                        tint: ok ? NCColor.statusPrinting : NCColor.statusWarning
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(Text("Shows maintenance tasks", comment: "Accessibility hint on the maintenance status pill"))
             }
             if hasDoorSensor {
                 InfoPill(
@@ -746,7 +765,6 @@ struct PrintOutcomeCard: View {
     @State private var askingAbout: String?
 
     var body: some View {
-        // The stack is there even when empty so the history reload below still runs.
         VStack(spacing: 0) {
             if printerState != .printing, printerState != .paused,
                let record = store.recentFinishedPrint(printerID: printerID),
@@ -773,7 +791,5 @@ struct PrintOutcomeCard: View {
                 .onAppear { askingAbout = record.id }
             }
         }
-        // A print that just finished isn't in the history the app has yet.
-        .task(id: printerState) { await store.loadPrints() }
     }
 }
