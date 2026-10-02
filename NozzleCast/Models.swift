@@ -106,8 +106,33 @@ struct NozzleInfo: Identifiable, Equatable {
 struct HMSError: Identifiable, Equatable {
     var id: String { fullCode }
     var fullCode: String
+    /// Bambu's alert level, as Bambuddy reports it since v1.2.5.7 (#2728): 0 invalid, 1 error
+    /// (task stopped), 2 warning (task paused), 3 notification (no impact). Older Bambuddy
+    /// versions decoded this from the fault's Part ID byte instead, so there it's effectively
+    /// arbitrary (a fault that paused a print could read 6).
     var severity: Int
     var description: String?
+
+    enum Tier: Equatable {
+        case error, warning
+    }
+
+    /// Whether this fault is a real problem worth surfacing, and how bad: a fault that stopped the
+    /// task is an error, one that paused it is a warning. Notifications (3) and the invalid level
+    /// (0) are nil — they never turn a printer red or badge a Live Activity. Mirrors the relay's
+    /// `severityToTier` (nozzlecast-relay `src/hmsIssues.js`) so both writers of the Live
+    /// Activity's issue badge agree.
+    ///
+    /// This used to follow Bambuddy's old labels (severity <= 3 qualifies, <= 2 is an error).
+    /// Against the corrected levels that made every paused print read as an error, every
+    /// notification as a warning, and an invalid level 0 as a fault.
+    var tier: Tier? {
+        switch severity {
+        case 1: .error
+        case 2: .warning
+        default: nil
+        }
+    }
 
     /// The code grouped into Bambu's standard four 4-hex-digit fields (module/type/subtype/code),
     /// e.g. "0500-0500-0001-0007" — this is also the form the Bambu wiki keys its HMS lookup

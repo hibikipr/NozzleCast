@@ -442,11 +442,11 @@ final class AppStore {
         let hmsErrors: [HMSError] = (status?.hmsErrors ?? []).map { hms in
             HMSError(fullCode: hms.fullCode, severity: hms.severity, description: hms.description)
         }
-        // Severity <=3 (Bambuddy's own Fatal/Serious/Warning) qualifies as a real issue; severity
-        // 4/Info (e.g. a "Developer Mode not enabled" advisory) does not — same threshold used
-        // for the Live Activity's issue badge, so the two surfaces agree on what counts as an
-        // actual problem worth surfacing versus routine chatter.
-        let state = mapState(status, hasQualifyingHMSError: hmsErrors.contains { $0.severity <= 3 })
+        // A fault that stopped or paused the task (`HMSError.tier`) qualifies as a real issue;
+        // a notification or an invalid level does not — same rule used for the Live Activity's
+        // issue badge, so the two surfaces agree on what counts as an actual problem worth
+        // surfacing versus routine chatter.
+        let state = mapState(status, hasQualifyingHMSError: hmsErrors.contains { $0.tier != nil })
         let temps = status?.temperatures
 
         func reading(current: Double?, target: Double?) -> TemperatureReading {
