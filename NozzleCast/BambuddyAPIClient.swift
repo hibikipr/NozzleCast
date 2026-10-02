@@ -295,6 +295,69 @@ private struct SpoolCreateBody: Codable {
     var labelWeight: Int
 }
 
+// MARK: - Print queue & history
+
+/// One job in Bambuddy's print queue (`GET /queue/`). Only what the Queue screen shows; the
+/// response carries much more (plate, calibration flags, AMS mapping, batch, …).
+struct BambuddyQueueItemDTO: Codable {
+    var id: Int
+    var printerId: Int?
+    var printerName: String?
+    /// A job queued for "any printer of this model" rather than one printer.
+    var targetModel: String?
+    var archiveId: Int?
+    var libraryFileId: Int?
+    var archiveName: String?
+    var libraryFileName: String?
+    var position: Int
+    /// pending, printing, completed, failed, skipped, cancelled.
+    var status: String
+    /// Staged: waits for someone to press Start rather than dispatching when the printer frees up.
+    var manualStart: Bool
+    var scheduledTime: String?
+    var waitingReason: String?
+    var printTimeSeconds: Int?
+    var filamentUsedGrams: Double?
+    var filamentType: String?
+    var filamentColor: String?
+    var confirmOutcome: Bool?
+    var errorMessage: String?
+}
+
+/// One row of Bambuddy's print log (`GET /print-log/`) — a single run of a print. Reprints of the
+/// same file are separate rows sharing an `archiveId`.
+struct BambuddyPrintLogEntryDTO: Codable {
+    var id: Int
+    var archiveId: Int?
+    var printName: String?
+    var printerName: String?
+    var printerId: Int?
+    /// completed, failed, cancelled, … as Bambuddy recorded it.
+    var status: String
+    var startedAt: String?
+    var completedAt: String?
+    var durationSeconds: Int?
+    var filamentType: String?
+    var filamentColor: String?
+    var filamentUsedGrams: Double?
+    var cost: Double?
+    var failureReason: String?
+    /// The user's "how did it come out" answer (Bambuddy #1898): good, reject, or nil.
+    var userVerdict: String?
+    var thumbnailPath: String?
+    var createdAt: String
+}
+
+struct BambuddyPrintLogPageDTO: Codable {
+    var items: [BambuddyPrintLogEntryDTO]
+    var total: Int
+}
+
+private struct QueueReorderBody: Codable {
+    struct Item: Codable { var id: Int; var position: Int }
+    var items: [Item]
+}
+
 // MARK: - Errors
 
 enum BambuddyAPIError: LocalizedError {
@@ -576,6 +639,62 @@ struct BambuddyAPIClient {
     /// #23). Minting a token first was a wasted request per cover fetch.
     func coverImageData(printerID: Int) async throws -> Data {
         try await send(request("/api/v1/printers/\(printerID)/cover"))
+    }
+
+    // MARK: Print queue & history
+
+    /// The whole queue, every status — the caller picks out what's still to come.
+    func queue() async throws -> [BambuddyQueueItemDTO] {
+        try await get("/api/v1/queue/")
+    }
+
+    /// Newest first.
+    func printLog(limit: Int, offset: Int) async throws -> BambuddyPrintLogPageDTO {
+        try await get("/api/v1/print-log/", query: [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset)),
+        ])
+    }
+
+    /// The plate thumbnail saved with a print-log row. 404 when the print was archived without one.
+    func printLogThumbnailData(entryID: Int) async throws -> Data {
+        try await send(request("/api/v1/print-log/\(entryID)/thumbnail"))
+    }
+
+    func archiveThumbnailData(archiveID: Int) async throws -> Data {
+        try await send(request("/api/v1/archives/\(archiveID)/thumbnail"))
+    }
+
+    func libraryFileThumbnailData(fileID: Int) async throws -> Data {
+        try await send(request("/api/v1/library/files/\(fileID)/thumbnail"))
+    }
+
+    /// Records "how did it come out" on a print's archive: `"good"`, `"reject"`, or nil to clear
+    /// it. Bambuddy copies the verdict onto the archive's latest print-log row (its #1444 mirror),
+    /// which is the row the History screen shows, and retires the one-tap link in any
+    /// notification it sent for the print. `dialog` is the source Bambuddy's own prompt claims —
+    /// a person answered it, as opposed to a script (`api`).
+    func setVerdict(archiveID: Int, verdict: String?) async throws {
+        let payload: [String: Any] = verdict.map { ["user_verdict": $0, "user_verdict_source": "dialog"] } ?? ["user_verdict": NSNull()]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        _ = try await send(request("/api/v1/archives/\(archiveID)", method: "PATCH", body: body))
+    }
+
+    /// Releases a staged (`manualStart`) job: Bambuddy clears the flag and its scheduler sends the
+    /// job to the printer once the printer is free.
+    func startQueueItem(itemID: Int) async throws {
+        _ = try await send(request("/api/v1/queue/\(itemID)/start", method: "POST"))
+    }
+
+    /// Takes a job out of the queue. Bambuddy refuses for a job that's printing.
+    func removeQueueItem(itemID: Int) async throws {
+        _ = try await send(request("/api/v1/queue/\(itemID)", method: "DELETE"))
+    }
+
+    /// Sets the given pending jobs' positions; Bambuddy ignores ids that aren't pending.
+    func reorderQueue(_ positions: [(id: Int, position: Int)]) async throws {
+        let body = try encoder.encode(QueueReorderBody(items: positions.map { .init(id: $0.id, position: $0.position) }))
+        _ = try await send(request("/api/v1/queue/reorder", method: "POST", body: body))
     }
 
     // MARK: Inventory mutations

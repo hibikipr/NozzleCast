@@ -107,6 +107,9 @@ struct PrinterDetailContent: View {
                         .padding(.horizontal, 16)
                 }
 
+                PrintOutcomeCard(printerID: printer.id, printerState: printer.state)
+                    .padding(.horizontal, 16)
+
                 PrinterControlsRow(printerID: printer.id, state: printer.state, lightOn: printer.lightOn, lacksDeveloperMode: printer.lacksDeveloperMode, showLiveStream: $showLiveStream)
                     .padding(.horizontal, 16)
 
@@ -731,4 +734,46 @@ struct PrinterPowerSection: View {
     }
     .environment(AppStore(config: BambuddyConfig()))
     .preferredColorScheme(.dark)
+}
+
+/// "How did it come out?" for the printer's last print, from the time it finishes until someone
+/// answers — here, in the Prints tab, or in Bambuddy. Answering here keeps the card up showing the
+/// answer (so a mis-tap can be changed) until the screen is left.
+struct PrintOutcomeCard: View {
+    var printerID: String
+    var printerState: PrinterState
+    @Environment(AppStore.self) private var store
+    @State private var askingAbout: String?
+
+    var body: some View {
+        // The stack is there even when empty so the history reload below still runs.
+        VStack(spacing: 0) {
+            if printerState != .printing, printerState != .paused,
+               let record = store.recentFinishedPrint(printerID: printerID),
+               record.verdict == nil || record.id == askingAbout {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        PrintThumbnailView(key: record.id, size: 44) { await store.printThumbnail(for: record, maxPixelSize: 132) }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("How did it come out?", comment: "Post-print outcome question on the printer screen")
+                                .ncFont(size: 15, weight: .semibold, relativeTo: .headline)
+                                .foregroundStyle(.white)
+                            Text(record.name)
+                                .ncFont(size: 12.5, relativeTo: .caption)
+                                .foregroundStyle(NCColor.textSecondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    VerdictPicker(record: record, showsQuestion: false)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .glassCard()
+                .onAppear { askingAbout = record.id }
+            }
+        }
+        // A print that just finished isn't in the history the app has yet.
+        .task(id: printerState) { await store.loadPrints() }
+    }
 }
