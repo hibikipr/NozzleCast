@@ -362,6 +362,10 @@ struct Spool: Identifiable, Equatable {
     /// When Bambuddy archived this spool; nil for an active one. An archived spool's physical
     /// location is no longer meaningful, so `locationCaption` shows this instead.
     var archivedAt: Date? = nil
+    /// False when `archivedAt` only marks the spool as archived and isn't a real archive time —
+    /// Spoolman mode, where Bambuddy fills it from the spool's last use. The caption then says
+    /// just "Archived".
+    var archivedDateIsKnown: Bool = true
 
     var isArchived: Bool { archivedAt != nil }
 
@@ -372,6 +376,9 @@ struct Spool: Identifiable, Equatable {
     ///     unit reports 128+, which the old `amsIndex + 1` turned into "AMS 129".
     func locationCaption(printerName: (String) -> String?, amsUnitName: (String, Int) -> String? = { _, _ in nil }) -> String {
         if let archivedAt {
+            guard archivedDateIsKnown else {
+                return String(localized: "Archived", comment: "Spool location for an archived spool whose archive date isn't known")
+            }
             // The year only when it isn't this year: "Archived · Sep 30", "Archived · Apr 11, 2025".
             let sameYear = Calendar.current.isDate(archivedAt, equalTo: .now, toGranularity: .year)
             let date = archivedAt.formatted(sameYear

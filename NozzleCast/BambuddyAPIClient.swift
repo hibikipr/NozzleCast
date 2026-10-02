@@ -156,6 +156,13 @@ struct BambuddySpoolDTO: Codable {
     var weightUsed: Double?
     var locationId: Int?
     var archivedAt: String?
+    /// Free-text location. Spoolman mode's only location when Bambuddy couldn't match it to one
+    /// of its own locations (`locationId` nil); unused in built-in mode.
+    var storageLocation: String?
+    /// True when `colorName` isn't a real color name but Bambuddy's stand-in: Spoolman has no
+    /// color-name field, so its proxy copies the filament's name (e.g. "Matte Desert Tan") into
+    /// it. Always false/absent in built-in mode.
+    var colorNameIsSynthesized: Bool?
     var slicerFilament: String?
     var nozzleTempMin: Int?
     var nozzleTempMax: Int?
@@ -222,6 +229,57 @@ struct BambuddyNotificationProviderDTO: Codable {
     var config: BambuddyNotificationProviderConfigDTO
 }
 
+/// Which inventory Bambuddy is serving: its own database, or Spoolman.
+///
+/// In Spoolman mode Bambuddy keeps the same spool format but serves it from a translating proxy
+/// at `/api/v1/spoolman/inventory`, so spool reads and edits differ only by base path; slot
+/// assignments are the one shape that differs (see `assignments()`, `assignSpool`, `unassign`).
+/// Locations and the color catalog stay on the built-in routes in both modes — Bambuddy mirrors
+/// Spoolman's locations into its own table and adds `location_id` to proxied spools.
+enum InventoryBackend: Equatable, Sendable {
+    case builtIn
+    case spoolman
+
+    var basePath: String {
+        switch self {
+        case .builtIn: "/api/v1/inventory"
+        case .spoolman: "/api/v1/spoolman/inventory"
+        }
+    }
+}
+
+/// `GET /api/v1/spoolman/status`. `enabled` is Bambuddy's "use Spoolman for inventory" switch;
+/// `connected` is only evaluated while it's on.
+struct BambuddySpoolmanStatusDTO: Codable {
+    var enabled: Bool
+    var connected: Bool
+}
+
+/// One row of `GET /api/v1/spoolman/inventory/slot-assignments/all` — Spoolman mode's
+/// equivalent of `BambuddyAssignmentDTO`, keyed by the Spoolman spool id.
+private struct SpoolmanSlotAssignmentDTO: Codable {
+    var printerId: Int
+    var printerName: String?
+    var amsId: Int
+    var trayId: Int
+    var spoolmanSpoolId: Int
+}
+
+private struct SpoolmanSlotAssignBody: Codable {
+    var spoolmanSpoolId: Int
+    var printerId: Int
+    var amsId: Int
+    var trayId: Int
+}
+
+enum InventoryBackendError: LocalizedError {
+    case unassignNeedsSpool
+
+    var errorDescription: String? {
+        String(localized: "That slot has no known spool to unassign.")
+    }
+}
+
 private struct AssignmentCreateBody: Codable {
     var spoolId: Int
     var printerId: Int
@@ -266,6 +324,10 @@ enum BambuddyAPIError: LocalizedError {
 struct BambuddyAPIClient {
     var baseURL: URL
     var apiKey: String
+    /// Where spool and slot-assignment requests go — see `InventoryBackend`. Resolved from the
+    /// server on every refresh (`inventoryBackend()`), so switching Bambuddy between its own
+    /// inventory and Spoolman is followed without any setting in the app.
+    var inventory: InventoryBackend = .builtIn
 
     private var decoder: JSONDecoder {
         let d = JSONDecoder()
@@ -366,11 +428,37 @@ struct BambuddyAPIClient {
     /// `spools` and `archivedSpools` itself. Without the flag the Archived filter was always
     /// empty, however many spools were actually archived.
     func spools() async throws -> [BambuddySpoolDTO] {
-        try await get("/api/v1/inventory/spools", query: [URLQueryItem(name: "include_archived", value: "true")])
+        try await get("\(inventory.basePath)/spools", query: [URLQueryItem(name: "include_archived", value: "true")])
+    }
+
+    /// Which inventory the server is serving. Asks `/spoolman/status`, which needs the
+    /// `filaments:read` permission; an API key without it (401/403) falls back to checking
+    /// whether the Spoolman inventory proxy answers, which needs only `inventory:read` and
+    /// replies 400 "not enabled" in built-in mode. Anything inconclusive means built-in — the
+    /// default every Bambuddy has.
+    func inventoryBackend() async -> InventoryBackend {
+        do {
+            let status: BambuddySpoolmanStatusDTO = try await get("/api/v1/spoolman/status")
+            return status.enabled ? .spoolman : .builtIn
+        } catch BambuddyAPIError.http(let code, _) where code == 401 || code == 403 {
+            let answered = (try? await send(request("/api/v1/spoolman/inventory/spools"))) != nil
+            return answered ? .spoolman : .builtIn
+        } catch {
+            return .builtIn
+        }
     }
 
     func assignments() async throws -> [BambuddyAssignmentDTO] {
-        try await get("/api/v1/inventory/assignments")
+        switch inventory {
+        case .builtIn:
+            return try await get("/api/v1/inventory/assignments")
+        case .spoolman:
+            let rows: [SpoolmanSlotAssignmentDTO] = try await get("/api/v1/spoolman/inventory/slot-assignments/all")
+            // Mapped onto the built-in shape: only the slot and the spool id are ever read.
+            return rows.map {
+                BambuddyAssignmentDTO(id: 0, spoolId: $0.spoolmanSpoolId, printerId: $0.printerId, printerName: $0.printerName, amsId: $0.amsId, trayId: $0.trayId, spool: nil)
+            }
+        }
     }
 
     func locations() async throws -> [BambuddyLocationDTO] {
@@ -493,18 +581,32 @@ struct BambuddyAPIClient {
     // MARK: Inventory mutations
 
     func assignSpool(spoolID: Int, printerID: Int, amsID: Int, trayID: Int) async throws {
-        let body = try encoder.encode(AssignmentCreateBody(spoolId: spoolID, printerId: printerID, amsId: amsID, trayId: trayID))
-        _ = try await send(request("/api/v1/inventory/assignments", method: "POST", body: body))
+        switch inventory {
+        case .builtIn:
+            let body = try encoder.encode(AssignmentCreateBody(spoolId: spoolID, printerId: printerID, amsId: amsID, trayId: trayID))
+            _ = try await send(request("/api/v1/inventory/assignments", method: "POST", body: body))
+        case .spoolman:
+            let body = try encoder.encode(SpoolmanSlotAssignBody(spoolmanSpoolId: spoolID, printerId: printerID, amsId: amsID, trayId: trayID))
+            _ = try await send(request("/api/v1/spoolman/inventory/slot-assignments", method: "POST", body: body))
+        }
     }
 
-    func unassign(printerID: Int, amsID: Int, trayID: Int) async throws {
-        _ = try await send(request("/api/v1/inventory/assignments/\(printerID)/\(amsID)/\(trayID)", method: "DELETE"))
+    /// Built-in mode removes an assignment by its slot; Spoolman mode only by the assigned
+    /// spool's id, so `spoolID` is required there.
+    func unassign(printerID: Int, amsID: Int, trayID: Int, spoolID: Int?) async throws {
+        switch inventory {
+        case .builtIn:
+            _ = try await send(request("/api/v1/inventory/assignments/\(printerID)/\(amsID)/\(trayID)", method: "DELETE"))
+        case .spoolman:
+            guard let spoolID else { throw InventoryBackendError.unassignNeedsSpool }
+            _ = try await send(request("/api/v1/spoolman/inventory/slot-assignments/\(spoolID)", method: "DELETE"))
+        }
     }
 
     @discardableResult
     func createSpool(material: String, colorName: String, rgba: String, brand: String, labelWeight: Int) async throws -> BambuddySpoolDTO {
         let body = try encoder.encode(SpoolCreateBody(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: labelWeight))
-        let data = try await send(request("/api/v1/inventory/spools", method: "POST", body: body))
+        let data = try await send(request("\(inventory.basePath)/spools", method: "POST", body: body))
         do {
             return try decoder.decode(BambuddySpoolDTO.self, from: data)
         } catch {
@@ -512,26 +614,26 @@ struct BambuddyAPIClient {
         }
     }
 
-    @discardableResult
     /// Soft delete: Bambuddy sets the spool's `archived_at`, and it drops out of the inventory
     /// list (`AppStore.refresh()` filters archived spools). Reversible with `restoreSpool`.
     func archiveSpool(spoolID: Int) async throws {
-        _ = try await send(request("/api/v1/inventory/spools/\(spoolID)/archive", method: "POST"))
+        _ = try await send(request("\(inventory.basePath)/spools/\(spoolID)/archive", method: "POST"))
     }
 
     /// Clears `archived_at` on a spool archived with `archiveSpool`.
     func restoreSpool(spoolID: Int) async throws {
-        _ = try await send(request("/api/v1/inventory/spools/\(spoolID)/restore", method: "POST"))
+        _ = try await send(request("\(inventory.basePath)/spools/\(spoolID)/restore", method: "POST"))
     }
 
     /// Permanently deletes the spool record. Not reversible — callers confirm first.
     func deleteSpool(spoolID: Int) async throws {
-        _ = try await send(request("/api/v1/inventory/spools/\(spoolID)", method: "DELETE"))
+        _ = try await send(request("\(inventory.basePath)/spools/\(spoolID)", method: "DELETE"))
     }
 
+    @discardableResult
     func updateSpool(spoolID: Int, _ update: BambuddySpoolUpdateBody) async throws -> BambuddySpoolDTO {
         let body = try encoder.encode(update)
-        let data = try await send(request("/api/v1/inventory/spools/\(spoolID)", method: "PATCH", body: body))
+        let data = try await send(request("\(inventory.basePath)/spools/\(spoolID)", method: "PATCH", body: body))
         do {
             return try decoder.decode(BambuddySpoolDTO.self, from: data)
         } catch {
