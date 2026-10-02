@@ -69,12 +69,15 @@ struct EditSpoolSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    stockSection
                     colorSection
                     filamentSection
                     weightCostSection
                     // Spoolman stores no per-spool nozzle temperatures — see `isSpoolman`.
                     if !isSpoolman { tempSection }
                     notesSection
+                    if spool.materialNumber != nil || !spool.suppliers.isEmpty { purchasingSection }
+                    usageSection
                     removeSection
                 }
                 .padding(16)
@@ -112,6 +115,174 @@ struct EditSpoolSheet: View {
     }
 
     @State private var isConfirmingDelete = false
+    /// Nil while loading or when there's no history to show (demo data, Spoolman mode).
+    @State private var usage: [SpoolUsageRecord]?
+    @State private var usageLoaded = false
+
+    /// The current spool from the store, so the stock line and the shopping-list button follow
+    /// changes made while the sheet is open (`spool` is the snapshot it was opened with).
+    private var current: Spool { store.spool(spool.id) ?? spool }
+
+    /// What's left, whether it's running low, when it was last used, and the way to restock it.
+    private var stockSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Stock", comment: "Spool screen section: remaining filament").sectionEyebrow()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("\(current.remainingGrams) g left", comment: "Grams of filament remaining on a spool")
+                        .ncFont(size: 20, weight: .semibold, relativeTo: .title3)
+                        .foregroundStyle(.white)
+                    Text("of \(current.netWeightGrams) g", comment: "Spool label weight, after the grams remaining")
+                        .ncFont(size: 14, relativeTo: .subheadline)
+                        .foregroundStyle(NCColor.textTertiary)
+                    Spacer()
+                    RemainingLabel(spool: current, size: 14)
+                }
+                if current.isLowStock {
+                    Label("Running low", systemImage: "exclamationmark.triangle.fill")
+                        .ncFont(size: 13, weight: .medium, relativeTo: .footnote)
+                        .foregroundStyle(NCColor.statusWarning)
+                }
+                if let lastUsedAt = current.lastUsedAt {
+                    Text("Last used \(lastUsedAt.formatted(.relative(presentation: .named)))", comment: "When a spool was last used in a print")
+                        .ncFont(size: 12.5, relativeTo: .caption)
+                        .foregroundStyle(NCColor.textTertiary)
+                }
+                if let item = store.shoppingListItem(for: current) {
+                    Label(String(localized: "On your shopping list · \(item.status.title)", comment: "Spool's filament is on the shopping list, with its status"), systemImage: "cart.fill")
+                        .ncFont(size: 13, weight: .medium, relativeTo: .footnote)
+                        .foregroundStyle(NCColor.accentLight)
+                        .padding(.top, 2)
+                } else {
+                    Button {
+                        store.addToShoppingList(current)
+                    } label: {
+                        Label("Add to Shopping List", systemImage: "cart.badge.plus")
+                            .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(NCColor.accentLight)
+                    .padding(.top, 2)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.04)))
+        }
+    }
+
+    /// Material number and suppliers (Bambuddy 1.2.5.7). Read-only here; they're edited in
+    /// Bambuddy, where the supplier records live.
+    private var purchasingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Purchasing", comment: "Spool screen section: material number and suppliers").sectionEyebrow()
+            VStack(alignment: .leading, spacing: 10) {
+                if let materialNumber = spool.materialNumber {
+                    detailRow(String(localized: "Material number", comment: "Manufacturer's article number for a filament"), value: materialNumber)
+                }
+                ForEach(spool.suppliers, id: \.self) { supplier in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(supplier.name)
+                                .ncFont(size: 14, weight: .medium, relativeTo: .subheadline)
+                                .foregroundStyle(.white)
+                            if supplier.isPurchaseSource {
+                                Text("Bought here", comment: "Badge on the supplier a spool was bought from")
+                                    .ncFont(size: 10.5, weight: .semibold, relativeTo: .caption2)
+                                    .foregroundStyle(NCColor.accentLight)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(NCColor.accent.opacity(0.2)))
+                            }
+                        }
+                        let details = [
+                            supplier.articleNumber.map { String(localized: "Article \($0)", comment: "Supplier's article number") },
+                            supplier.pricePerKg.map { String(localized: "\($0, format: .number.precision(.fractionLength(2)))/kg", comment: "Supplier price per kilogram") },
+                        ].compactMap { $0 }
+                        if !details.isEmpty {
+                            Text(details.joined(separator: " · "))
+                                .ncFont(size: 12, relativeTo: .caption)
+                                .foregroundStyle(NCColor.textTertiary)
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.04)))
+        }
+    }
+
+    private func detailRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(NCColor.textSecondary)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.white)
+                .textSelection(.enabled)
+        }
+        .ncFont(size: 14, relativeTo: .subheadline)
+    }
+
+    /// The prints that used this spool. Hidden where Bambuddy keeps no per-spool history.
+    @ViewBuilder
+    private var usageSection: some View {
+        Group {
+            if let usage {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Usage", comment: "Spool screen section: prints that used this spool").sectionEyebrow()
+                    if usage.isEmpty {
+                        Text("No prints have used this spool yet.", comment: "Spool usage history is empty")
+                            .ncFont(size: 13, relativeTo: .footnote)
+                            .foregroundStyle(NCColor.textTertiary)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(usage) { record in
+                                usageRow(record)
+                                if record.id != usage.last?.id {
+                                    Divider().overlay(Color.white.opacity(0.06))
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.04)))
+                    }
+                }
+            } else if !usageLoaded {
+                ProgressView().tint(NCColor.accentLight).frame(maxWidth: .infinity)
+            }
+        }
+        .task {
+            usage = await store.spoolUsage(spool.id)
+            usageLoaded = true
+        }
+    }
+
+    private func usageRow(_ record: SpoolUsageRecord) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.printName)
+                    .ncFont(size: 14, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                let when = record.date?.formatted(date: .abbreviated, time: .omitted)
+                let parts = [when, record.printerName, record.outcome == .completed ? nil : String(localized: "not completed", comment: "Spool usage row: the print failed or was cancelled")].compactMap { $0 }
+                if !parts.isEmpty {
+                    Text(parts.joined(separator: " · "))
+                        .ncFont(size: 12, relativeTo: .caption)
+                        .foregroundStyle(NCColor.textTertiary)
+                }
+            }
+            Spacer(minLength: 8)
+            Text("\(record.grams, format: .number.precision(.fractionLength(record.grams < 10 ? 1 : 0))) g", comment: "Grams a print used from a spool")
+                .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
+                .foregroundStyle(NCColor.textSecondary)
+        }
+        .padding(.vertical, 10)
+    }
 
     /// Archive (reversible — the inventory shows an Undo bar) and permanent delete, kept at the
     /// bottom of the sheet away from the fields and from Save.

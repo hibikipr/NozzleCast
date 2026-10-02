@@ -110,6 +110,28 @@ struct BambuddyMaintenanceSummaryDTO: Codable {
     var totalPrintHours: Double
     var dueCount: Int
     var warningCount: Int
+    var maintenanceItems: [BambuddyMaintenanceItemDTO]?
+}
+
+/// One maintenance task on a printer, with Bambuddy's own due/warning verdict.
+struct BambuddyMaintenanceItemDTO: Codable {
+    var id: Int
+    var maintenanceTypeName: String
+    /// A lucide icon name from Bambuddy's web UI, e.g. "Droplet", "Flame".
+    var maintenanceTypeIcon: String?
+    var maintenanceTypeWikiUrl: String?
+    var enabled: Bool
+    /// The interval, in print hours — or in days when `intervalType` is "days".
+    var intervalHours: Double
+    /// "hours" (print hours) or "days" (calendar days).
+    var intervalType: String
+    var hoursSinceMaintenance: Double
+    var hoursUntilDue: Double
+    var daysSinceMaintenance: Double?
+    var daysUntilDue: Double?
+    var isDue: Bool
+    var isWarning: Bool
+    var lastPerformedAt: String?
 }
 
 struct BambuddySmartPlugSummaryDTO: Codable {
@@ -173,6 +195,62 @@ struct BambuddySpoolDTO: Codable {
     var extraColors: String?
     /// Swatch finish, e.g. "silk", "sparkle", "matte", "translucent". Nil for a plain filament.
     var effectType: String?
+    /// This spool's own low-stock alert level in percent; nil uses the server-wide
+    /// `low_stock_threshold` setting. Spoolman spools never carry one.
+    var lowStockThresholdPct: Int?
+    /// The manufacturer's article/material number (Bambuddy 1.2.5.7).
+    var materialNumber: String?
+    var lastUsed: String?
+    /// Where this spool can be bought (Bambuddy 1.2.5.7). Built-in inventory only — Spoolman
+    /// mode keeps suppliers behind a separate per-spool endpoint.
+    var suppliers: [BambuddySpoolSupplierDTO]?
+}
+
+struct BambuddySpoolSupplierDTO: Codable {
+    var supplierId: Int
+    var supplierName: String
+    var supplierArticleNumber: String?
+    var quotedPricePerKg: Double?
+    var isPurchaseSource: Bool?
+}
+
+/// One print's draw on a spool (`GET /inventory/spools/{id}/usage`).
+struct BambuddySpoolUsageDTO: Codable {
+    var id: Int
+    var printerId: Int?
+    var printName: String?
+    var weightUsed: Double
+    var percentUsed: Int?
+    var status: String
+    var cost: Double?
+    var createdAt: String
+}
+
+/// An entry on Bambuddy's filament shopping list — a SKU to buy, not a spool.
+struct BambuddyShoppingListItemDTO: Codable {
+    var id: Int
+    var material: String
+    var subtype: String?
+    var brand: String?
+    var colorName: String?
+    var quantitySpools: Int
+    var note: String?
+    /// pending, purchased, received.
+    var status: String
+    var purchasedAt: String?
+    var addedAt: String?
+}
+
+struct ShoppingListItemCreateBody: Codable {
+    var material: String
+    var subtype: String?
+    var brand: String?
+    var colorName: String?
+    var quantitySpools: Int
+}
+
+private struct ShoppingListStatusBody: Codable {
+    var status: String
 }
 
 /// Partial update for a spool — only non-nil fields are sent, matching Bambuddy's PATCH
@@ -473,6 +551,11 @@ struct BambuddyAPIClient {
         try await get("/api/v1/maintenance/printers/\(printerID)")
     }
 
+    /// Records a maintenance task as done now, restarting its interval.
+    func performMaintenance(itemID: Int) async throws {
+        _ = try await send(request("/api/v1/maintenance/items/\(itemID)/perform", method: "POST", body: Data("{}".utf8)))
+    }
+
     func obicoStatus() async throws -> BambuddyObicoStatusDTO {
         try await get("/api/v1/obico/printer-status")
     }
@@ -522,6 +605,39 @@ struct BambuddyAPIClient {
                 BambuddyAssignmentDTO(id: 0, spoolId: $0.spoolmanSpoolId, printerId: $0.printerId, printerName: $0.printerName, amsId: $0.amsId, trayId: $0.trayId, spool: nil)
             }
         }
+    }
+
+    /// The server-wide low-stock alert level (percent remaining), from Bambuddy's settings. The
+    /// settings response is large; only this field is decoded.
+    func lowStockThreshold() async throws -> Double? {
+        struct Response: Decodable { var lowStockThreshold: Double? }
+        let response: Response = try await get("/api/v1/settings/")
+        return response.lowStockThreshold
+    }
+
+    /// Newest first. Built-in inventory only; Bambuddy has no Spoolman equivalent.
+    func spoolUsage(spoolID: Int, limit: Int) async throws -> [BambuddySpoolUsageDTO] {
+        try await get("/api/v1/inventory/spools/\(spoolID)/usage", query: [URLQueryItem(name: "limit", value: String(limit))])
+    }
+
+    /// Newest first. The same list in both inventory modes.
+    func shoppingList() async throws -> [BambuddyShoppingListItemDTO] {
+        try await get("/api/v1/inventory/shopping-list")
+    }
+
+    /// Bambuddy doesn't merge duplicates — callers check the list first.
+    func addToShoppingList(_ item: ShoppingListItemCreateBody) async throws {
+        _ = try await send(request("/api/v1/inventory/shopping-list", method: "POST", body: try encoder.encode(item)))
+    }
+
+    /// `pending`, `purchased` or `received`.
+    func setShoppingListStatus(itemID: Int, status: String) async throws {
+        let body = try encoder.encode(ShoppingListStatusBody(status: status))
+        _ = try await send(request("/api/v1/inventory/shopping-list/\(itemID)/status", method: "PATCH", body: body))
+    }
+
+    func removeFromShoppingList(itemID: Int) async throws {
+        _ = try await send(request("/api/v1/inventory/shopping-list/\(itemID)", method: "DELETE"))
     }
 
     func locations() async throws -> [BambuddyLocationDTO] {

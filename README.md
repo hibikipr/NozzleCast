@@ -14,6 +14,11 @@ account system, or analytics of any kind.
   built-in inventory and with its Spoolman mode — the app follows whichever the server uses.
 - **Filament inventory** — browse, edit, and scan-to-add spools (barcode or label-photo lookup via
   OFD/SpoolmanDB-Community), with type-or-pick fields matching Bambuddy's own input UX.
+  Low-stock spools are flagged and filterable (using Bambuddy's own threshold), each spool shows
+  its print-by-print usage, material number and suppliers, and Bambuddy's shopping list can be
+  managed from the app, with running-low spools suggested for it.
+- **Maintenance** — each printer's maintenance tasks from Bambuddy (what's due, what's coming up,
+  last done), with a guide link where Bambuddy has one, and a way to record a task as done.
 - **Print queue & history** — Bambuddy's print queue (start staged jobs, reorder, remove) and
   its print history with plate thumbnails, time, filament and cost. Finished prints ask "How did it
   come out?" (Good / Reject), in History and on the printer's screen; the answer is Bambuddy's own

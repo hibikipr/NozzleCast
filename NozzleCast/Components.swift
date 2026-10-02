@@ -647,12 +647,13 @@ struct PrinterThumbnailImage: View {
 struct ProgressBar: View {
     var progress: Double
     var height: CGFloat = 5
+    var tint: Color = NCColor.accent
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.12))
-                Capsule().fill(NCColor.accent)
+                Capsule().fill(tint)
                     .frame(width: geo.size.width * max(0, min(1, progress)))
             }
         }

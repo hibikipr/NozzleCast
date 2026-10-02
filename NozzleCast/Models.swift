@@ -243,6 +243,8 @@ struct Printer: Identifiable, Equatable {
     /// maintenance tracker. Nil when that data hasn't loaded (e.g. offline, still refreshing).
     var totalPrintHours: Double? = nil
     var maintenanceOK: Bool? = nil
+    /// Enabled maintenance tasks, most urgent first.
+    var maintenanceTasks: [MaintenanceTask] = []
 
     var smartPlug: SmartPlugInfo? = nil
 
@@ -381,8 +383,17 @@ struct Spool: Identifiable, Equatable {
     /// Spoolman mode, where Bambuddy fills it from the spool's last use. The caption then says
     /// just "Archived".
     var archivedDateIsKnown: Bool = true
+    /// Below its low-stock alert level — this spool's own override, else the server-wide setting.
+    /// Computed when mapped, the same way Bambuddy's inventory page counts "Low Stock".
+    var isLowStock: Bool = false
+    /// The manufacturer's article/material number.
+    var materialNumber: String? = nil
+    var suppliers: [SpoolSupplier] = []
+    var lastUsedAt: Date? = nil
 
     var isArchived: Bool { archivedAt != nil }
+
+    var remainingGrams: Int { Int((Double(netWeightGrams) * Double(remainingPercent) / 100).rounded()) }
 
     /// - Parameters:
     ///   - printerName: Resolves a printer id to its display name.
@@ -424,5 +435,62 @@ extension Printer {
         guard let unit = amsUnits.first(where: { $0.index == amsIndex }) else { return nil }
         let position = amsUnits.filter { !$0.isHT }.firstIndex { $0.index == amsIndex } ?? 0
         return unit.displayName(position: position)
+    }
+}
+
+/// A recurring maintenance task on a printer (lubricate rails, clean the nozzle, …) from
+/// Bambuddy's maintenance tracker. Bambuddy decides when it's due; the app only shows it and
+/// records it as done.
+struct MaintenanceTask: Identifiable, Equatable {
+    enum Interval: Equatable {
+        /// Every so many print hours.
+        case printHours(Double)
+        /// Every so many calendar days.
+        case days(Double)
+    }
+
+    var id: Int
+    var name: String
+    var symbol: String
+    var wikiURL: URL?
+    var interval: Interval
+    /// Print hours or days (matching `interval`) since it was last done.
+    var elapsed: Double
+    /// Print hours or days (matching `interval`) left until due; negative once overdue.
+    var remaining: Double
+    var isDue: Bool
+    var isWarning: Bool
+    var lastPerformedAt: Date?
+
+    /// How much of the interval has passed, 0...1.
+    var progress: Double {
+        let length: Double
+        switch interval {
+        case .printHours(let hours): length = hours
+        case .days(let days): length = days
+        }
+        guard length > 0 else { return 1 }
+        return min(1, max(0, elapsed / length))
+    }
+
+    /// Lucide icon names Bambuddy's default task types use, as SF Symbols.
+    static func symbol(forLucideIcon icon: String?) -> String {
+        switch icon?.lowercased() {
+        case "droplet", "droplets": "drop.fill"
+        case "sparkles": "sparkles"
+        case "flame": "flame.fill"
+        case "ruler": "ruler.fill"
+        case "square": "square.fill"
+        case "cable": "cable.connector"
+        case "fan": "fan.fill"
+        case "wind": "wind"
+        case "filter": "line.3.horizontal.decrease"
+        case "thermometer": "thermometer.medium"
+        case "cog", "settings": "gearshape.fill"
+        case "zap": "bolt.fill"
+        case "eye": "eye.fill"
+        case "scissors": "scissors"
+        default: "wrench.and.screwdriver.fill"
+        }
     }
 }
