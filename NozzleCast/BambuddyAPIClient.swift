@@ -96,6 +96,9 @@ struct BambuddyStatusDTO: Codable {
     var bigFan2Speed: Int?
     var chamberLight: Bool?
     var awaitingPlateClear: Bool?
+    /// The AMS slot currently feeding, as Bambu's global tray id: `ams_id * 4 + slot`, an AMS HT
+    /// unit's own id (128+), 254+ for an external spool, 255 for none.
+    var trayNow: Int?
     /// Human-readable name for the printer's current internal stage (Bambuddy's `stg_cur`
     /// resolved server-side), e.g. "Purifying the chamber air", "Heating chamber", "Cooling
     /// heatbed" — detail beyond the coarse RUNNING/PAUSE/FINISH `state`. In particular this is

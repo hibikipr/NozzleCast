@@ -233,6 +233,9 @@ struct Printer: Identifiable, Equatable {
     var doorOpen: Bool = false
     var fanSpeeds: FanSpeeds = FanSpeeds()
     var awaitingPlateClear: Bool = false
+    /// The slot feeding the current print as Bambu's global tray id (see `AMSTray.globalID`);
+    /// nil when nothing is printing or nothing is loaded.
+    var activeTrayID: Int? = nil
     /// True only when the printer positively reports Developer LAN mode as off — pause/resume,
     /// stop and homing are then refused by the printer, so the app disables them instead of
     /// letting them fail silently. Unknown (not reported) stays false: nothing is disabled on a
@@ -512,5 +515,16 @@ struct MaintenanceTask: Identifiable, Equatable {
         case "scissors": "scissors"
         default: "wrench.and.screwdriver.fill"
         }
+    }
+}
+
+extension AMSTray {
+    /// Bambu's global id for this slot, the form `tray_now` reports the feeding slot in — the
+    /// same mapping as Bambuddy's `getGlobalTrayId`: an AMS HT unit (raw id 128+) has a single
+    /// slot and uses its unit id, a regular AMS `unit * 4 + slot`, an external spool 254 + slot.
+    func globalID(isExternal: Bool = false) -> Int {
+        if isExternal { return 254 + trayIndex }
+        if amsIndex >= 128 { return amsIndex }
+        return amsIndex * 4 + trayIndex
     }
 }
