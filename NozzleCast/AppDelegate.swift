@@ -1,3 +1,4 @@
+import BackgroundTasks
 import UIKit
 import UserNotifications
 import FirebaseMessaging
@@ -20,6 +21,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // been imported — leaving a fully-configured relay with no push-to-start token to push to.
         PushNotificationManager.shared.startObservingActivityKitTokens()
         UNUserNotificationCenter.current().delegate = self
+
+        // Must be registered before launch finishes. Checks Bambuddy's notification log when no
+        // Firebase config delivers alerts as pushes — see BambuddyAlertFeed.
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: BambuddyAlertFeed.backgroundTaskIdentifier, using: nil) { [store] task in
+            Task { @MainActor in
+                BambuddyAlertFeed.scheduleBackgroundCheck()
+                let work = Task { _ = await store.checkBambuddyAlerts() }
+                task.expirationHandler = { work.cancel() }
+                await work.value
+                task.setTaskCompleted(success: !work.isCancelled)
+            }
+        }
+        BambuddyAlertFeed.scheduleBackgroundCheck()
 
         // Re-registering on every launch (not just the one time the user tapped "enable" in
         // Settings) keeps the plain APNs device token the relay uses for its `content-available`
@@ -95,7 +109,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         NSLog("NCDEBUG AppDelegate received remote notification, waking store to sync")
         // Required when FirebaseAppDelegateProxyEnabled = false — Firebase won't see FCM messages
         // otherwise, and the ntfy topic subscription (routed via FCM) would stop delivering.
-        Messaging.messaging().appDidReceiveMessage(userInfo)
+        // Only with Firebase configured: Messaging traps otherwise, and the relay's wake push
+        // reaches installs without one too.
+        if PushNotificationManager.shared.isFirebaseConfigured { Messaging.messaging().appDidReceiveMessage(userInfo) }
         // Cheap, and the wake may be the first run since the device was unlocked — if launch
         // happened while locked, this is the earliest chance to arm the observers that silently
         // didn't start then. A no-op when they are already running or the device is still locked.

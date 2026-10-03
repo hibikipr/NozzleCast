@@ -353,7 +353,10 @@ final class PushNotificationManager: NSObject {
 
     func handleAPNsToken(_ deviceToken: Data) {
         NSLog("NCDEBUG APNS device token received (%d bytes)", deviceToken.count)
-        Messaging.messaging().apnsToken = deviceToken
+        // Messaging traps if Firebase was never configured — and without a Firebase config, iOS
+        // still delivers this token once notifications are allowed (for the relay's wake push
+        // and Bambuddy's alert-log fallback).
+        if isFirebaseConfigured { Messaging.messaging().apnsToken = deviceToken }
         Task { await registerDeviceToken(deviceToken) }
     }
 
@@ -407,7 +410,7 @@ final class PushNotificationManager: NSObject {
     func unsubscribeCurrent() {
         guard let config = PushSharedStore.loadNtfyConfig() else { return }
         let fcmTopic = PushTopicHash.firebaseTopic(baseUrl: config.server, topic: config.topic, appDefaultBaseUrl: Self.knownNtfyDefaultBaseUrl)
-        Messaging.messaging().unsubscribe(fromTopic: fcmTopic)
+        if isFirebaseConfigured { Messaging.messaging().unsubscribe(fromTopic: fcmTopic) }
         PushSharedStore.clearNtfyConfig()
         subscribedTopic = nil
     }
