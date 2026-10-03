@@ -52,11 +52,15 @@ enum MockData {
                 jobFileName: "Articulated_Dragon_v2.3.mf",
                 progress: 0.64,
                 etaMinutesRemaining: 72,
+                currentLayer: 140,
+                totalLayers: 226,
                 nozzle: TemperatureReading(current: 245, target: 245),
                 bed: TemperatureReading(current: 60, target: 60),
                 chamber: TemperatureReading(current: 42, target: nil),
                 lightOn: true,
-                amsUnits: [amsUnit([sunsetOrange, onyxBlack, cobaltBlue, nil])]
+                amsUnits: [amsUnit([sunsetOrange, onyxBlack, cobaltBlue, nil])],
+                fanSpeeds: FanSpeeds(partCooling: 100, auxiliary: 40, chamber: 20),
+                activeTrayID: 0
             ),
             Printer(
                 id: garageA1,

@@ -592,6 +592,7 @@ final class AppStore {
             doorOpen: status?.doorOpen ?? false,
             fanSpeeds: FanSpeeds(partCooling: status?.coolingFanSpeed, auxiliary: status?.bigFan1Speed, chamber: status?.bigFan2Speed),
             awaitingPlateClear: status?.awaitingPlateClear ?? false,
+            activeTrayID: (state == .printing || state == .paused) ? status?.trayNow.flatMap { $0 == 255 ? nil : $0 } : nil,
             lacksDeveloperMode: status?.developerMode == false,
             nozzles: nozzles,
             nozzleRack: nozzleRack,

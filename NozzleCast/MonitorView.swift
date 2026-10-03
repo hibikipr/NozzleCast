@@ -260,7 +260,7 @@ struct PrinterCard: View {
                         temperatures(nozzle: nozzleTemp, bed: bedTemp)
                     }
                     if alertCount > 0, let alertLevel {
-                        InfoPill(icon: alertLevel.symbol, text: "\(alertCount)", tint: alertLevel.color)
+                        InfoPill(icon: HMSError.Level.pillSymbol, text: "\(alertCount)", tint: alertLevel.color)
                             .accessibilityLabel(Text("^[\(alertCount) alert](inflect: true)", comment: "Accessibility label for a printer card's alert pill"))
                     }
                 }
@@ -319,28 +319,35 @@ struct PrinterCard: View {
         }
     }
 
-    /// "62% · layer 140/226" on the left, "48m left · 10:42" on the right.
+    /// "62% · 140/226" on the left, "48m · 10:42" on the right — terse, as the card is narrow;
+    /// the printer screen's job card spells it out. The times never truncate; the layer count
+    /// gives way first.
     private var progressFooter: some View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 Text(progress ?? 0, format: .percent.precision(.fractionLength(0)))
                 if let currentLayer, let totalLayers, totalLayers > 0 {
-                    Text("· layer \(currentLayer)/\(totalLayers)", comment: "Print progress in layers, e.g. '· layer 140/226'")
+                    Text("· \(currentLayer)/\(totalLayers)", comment: "Print progress in layers on a printer card, e.g. '· 140/226'")
+                        .accessibilityLabel(Text("layer \(currentLayer) of \(totalLayers)", comment: "Accessibility label for the layer count on a printer card"))
                 }
             }
+            .lineLimit(1)
             Spacer(minLength: 4)
             if let etaDescription {
                 HStack(spacing: 4) {
-                    Text("\(etaDescription) left", comment: "Remaining print time, e.g. '12m left'")
+                    Text(etaDescription)
+                        .accessibilityLabel(Text("\(etaDescription) left", comment: "Remaining print time, e.g. '12m left'"))
                     if let estimatedFinish {
                         Text("· \(estimatedFinish.formatted(date: .omitted, time: .shortened))", comment: "Clock time the print should finish")
                     }
                 }
+                .lineLimit(1)
+                .fixedSize()
+                .layoutPriority(1)
             }
         }
         .ncFont(size: 12, weight: .medium, relativeTo: .caption)
         .foregroundStyle(NCColor.textTertiary)
-        .lineLimit(1)
     }
 
     /// What's worth knowing about a printer that isn't printing: whether the plate is clear for

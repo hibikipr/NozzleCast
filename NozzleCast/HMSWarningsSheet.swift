@@ -50,14 +50,20 @@ extension HMSError.Level {
         }
     }
 
+    /// Bambuddy's alert icons (`getSeverityInfo` in its HMS modal): the warning triangle for an
+    /// error and a warning alike — colour alone tells them apart — an info mark for a notification,
+    /// and a plain circled mark for an unknown level.
     var symbol: String {
         switch self {
-        case .error: "xmark.octagon.fill"
-        case .warning: "exclamationmark.triangle.fill"
+        case .error, .warning: "exclamationmark.triangle.fill"
         case .notification: "info.circle.fill"
-        case .unknown: "questionmark.circle.fill"
+        case .unknown: "exclamationmark.circle.fill"
         }
     }
+
+    /// The alert-count pill's icon. Bambuddy's printer card always uses the triangle there,
+    /// whatever the level, and colours it by the worst one.
+    static let pillSymbol = "exclamationmark.triangle.fill"
 
     var caption: String {
         switch self {

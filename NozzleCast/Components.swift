@@ -111,6 +111,10 @@ struct LiveCameraView: View {
     /// fallback or the plain icon) — callers use this to gate a "LIVE" badge, which shouldn't
     /// show over a static plate render.
     @Binding var isShowingLiveFrame: Bool
+    /// Stops fetching snapshots, keeping the last frame on screen — for while something else is
+    /// already showing this camera, like the full-screen live stream opened over the printer
+    /// screen, which otherwise kept polling underneath it every few seconds for nothing.
+    var isPaused: Bool = false
 
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
@@ -140,6 +144,9 @@ struct LiveCameraView: View {
         .task(id: printerID) {
             image = nil
             isShowingLiveFrame = false
+        }
+        .task(id: PollKey(printerID: printerID, isPaused: isPaused)) {
+            guard !isPaused else { return }
             while !Task.isCancelled {
                 if let frame = await store.cameraSnapshot(printerID: printerID, maxPixelSize: maxPixelSize) {
                     image = frame
@@ -151,6 +158,11 @@ struct LiveCameraView: View {
             }
         }
     }
+}
+
+private struct PollKey: Hashable {
+    var printerID: String
+    var isPaused: Bool
 }
 
 /// The rendered plate preview for a printer's current or most recently finished job — refetched
@@ -505,31 +517,6 @@ struct InfoPill: View {
     }
 }
 
-/// One fan's icon + speed percentage, used in the printer detail fan-speed row.
-struct FanSpeedChip: View {
-    var icon: String
-    var caption: String
-    var percent: Int?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundStyle(NCColor.accentLight)
-            Text(Double(percent ?? 0) / 100, format: .percent.precision(.fractionLength(0)))
-                .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
-                .foregroundStyle(percent == nil ? NCColor.textTertiary : NCColor.textPrimary)
-            Text(caption)
-                .ncFont(size: 11.5, relativeTo: .caption)
-                .foregroundStyle(NCColor.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.wellAlt))
-    }
-}
-
-/// One physical bay in a dual-nozzle printer's automatic nozzle-changer rack.
 struct NozzleRackChip: View {
     var slot: NozzleRackSlot
 
