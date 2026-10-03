@@ -120,7 +120,8 @@ extension PrinterState {
         case .printing: NCColor.statusPrinting
         case .paused: NCColor.statusWarning
         case .idle: NCColor.statusOffline
-        case .error: NCColor.statusError
+        case .finished: NCColor.accentLight
+        case .failed: NCColor.statusError
         case .offline: NCColor.statusOfflineDark
         }
     }
@@ -130,7 +131,8 @@ extension PrinterState {
         case .printing: String(localized: "Printing", comment: "Printer status")
         case .paused: String(localized: "Paused", comment: "Printer status")
         case .idle: String(localized: "Idle", comment: "Printer status")
-        case .error: String(localized: "Error", comment: "Printer status")
+        case .finished: String(localized: "Finished", comment: "Printer status: the last print completed")
+        case .failed: String(localized: "Failed", comment: "Printer status: the last print failed or was cancelled")
         case .offline: String(localized: "Offline", comment: "Printer status")
         }
     }
