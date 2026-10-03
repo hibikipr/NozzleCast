@@ -831,7 +831,7 @@ struct PrinterAMSSection: View {
                                 .foregroundStyle(NCColor.accentLight)
                         }
                     }
-                    HStack(spacing: 8) {
+                    LazyVGrid(columns: AMSSlotGrid.columns, spacing: 8) {
                         ForEach(unit.trays) { tray in
                             Button {
                                 assignTray = tray
@@ -840,7 +840,8 @@ struct PrinterAMSSection: View {
                                     spool: store.spool(tray.spoolID),
                                     slotIndex: tray.trayIndex,
                                     isActive: tray.globalID() == activeTrayID,
-                                    tray: tray
+                                    tray: tray,
+                                    fillsWidth: true
                                 )
                             }
                             .buttonStyle(.plain)
@@ -861,6 +862,12 @@ struct PrinterAMSSection: View {
     }
 }
 
+/// Four equal columns across the full width — an AMS unit's four slots fill a row, and a
+/// one-slot AMS HT or the external spools line up under its first columns.
+enum AMSSlotGrid {
+    static let columns = Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: 4)
+}
+
 struct PrinterExternalSection: View {
     var externalTrays: [AMSTray]
     var activeTrayID: Int? = nil
@@ -869,9 +876,9 @@ struct PrinterExternalSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("External").sectionEyebrow()
-            HStack(spacing: 8) {
+            LazyVGrid(columns: AMSSlotGrid.columns, spacing: 8) {
                 ForEach(externalTrays) { tray in
-                    AMSSlotCard(spool: store.spool(tray.spoolID), slotIndex: tray.trayIndex, isActive: tray.globalID(isExternal: true) == activeTrayID, tray: tray)
+                    AMSSlotCard(spool: store.spool(tray.spoolID), slotIndex: tray.trayIndex, isActive: tray.globalID(isExternal: true) == activeTrayID, tray: tray, fillsWidth: true)
                 }
             }
         }
