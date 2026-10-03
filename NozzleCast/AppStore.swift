@@ -427,20 +427,17 @@ final class AppStore {
         var smartPlug: (info: BambuddySmartPlugSummaryDTO, status: BambuddySmartPlugStatusDTO)?
     }
 
-    /// `hasQualifyingHMSError` mirrors Bambuddy's own `classifyPrinterStatus` (confirmed against
-    /// its frontend source, `frontend/src/pages/PrintersPage.tsx`): a bare `FAILED` gcode_state
-    /// with no real HMS error attached is the printer's terminal state after *any* unsuccessful
-    /// end — including a plain user cancellation — and Bambuddy explicitly treats that the same
-    /// as `FINISH`, not as an error. Only an actual qualifying HMS code escalates to `.error`.
-    /// Without this, a printer sat idle after a stopped/failed print with no real fault showed
-    /// "Error" indefinitely, contradicting Bambuddy's own dashboard showing it as fine.
-    private static func mapState(_ dto: BambuddyStatusDTO?, hasQualifyingHMSError: Bool) -> PrinterState {
+    /// The printer's phase from `gcode_state`, as Bambuddy's printer card labels it
+    /// (`getStatusDisplay`): `FINISH` is Finished and `FAILED` is Failed — a failed or cancelled
+    /// job's end state, not a fault. HMS alerts deliberately play no part (see `PrinterState`).
+    private static func mapState(_ dto: BambuddyStatusDTO?) -> PrinterState {
         guard let dto else { return .offline }
         if !dto.connected { return .offline }
-        if hasQualifyingHMSError { return .error }
         switch dto.state.uppercased() {
         case "RUNNING", "PRINTING", "PREPARE", "SLICING": return .printing
         case "PAUSE", "PAUSED": return .paused
+        case "FINISH", "FINISHED": return .finished
+        case "FAILED": return .failed
         default: return .idle
         }
     }
@@ -477,11 +474,7 @@ final class AppStore {
         let hmsErrors: [HMSError] = (status?.hmsErrors ?? []).map { hms in
             HMSError(fullCode: hms.fullCode, severity: hms.severity, description: hms.description)
         }
-        // A fault that stopped or paused the task (`HMSError.tier`) qualifies as a real issue;
-        // a notification or an invalid level does not — same rule used for the Live Activity's
-        // issue badge, so the two surfaces agree on what counts as an actual problem worth
-        // surfacing versus routine chatter.
-        let state = mapState(status, hasQualifyingHMSError: hmsErrors.contains { $0.tier != nil })
+        let state = mapState(status)
         let temps = status?.temperatures
 
         func reading(current: Double?, target: Double?) -> TemperatureReading {

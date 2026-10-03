@@ -1,7 +1,11 @@
 import Foundation
 
+/// What the printer is doing, from Bambuddy's `gcode_state` — never overridden by alerts. Like
+/// Bambuddy's own printer card, a printer with an active HMS alert still says it's printing or
+/// idle, and the alert shows separately (`Printer.alertLevel`); an "Error" state used to replace
+/// the phase, so an idle printer with a cleared plate read as broken.
 enum PrinterState: String, CaseIterable {
-    case printing, paused, idle, error, offline
+    case printing, paused, idle, finished, failed, offline
 }
 
 /// Bambuddy's raw job state, before `PrinterState`'s error/offline overlays collapse it. Kept
@@ -191,10 +195,10 @@ struct Printer: Identifiable, Equatable {
     var model: String
     var imageAssetName: String?
     var state: PrinterState
-    /// What Bambuddy's raw `gcode_state` says this printer is doing, deliberately blind to the
-    /// overlays `state` applies: `mapState` returns `.error` for a qualifying HMS issue and
-    /// `.offline` for an unreachable printer *before* it ever looks at the gcode state, so a
-    /// printer mid-print with a warning attached is indistinguishable from an idle one there.
+    /// What Bambuddy's raw `gcode_state` says this printer is doing, as a job phase: `state`
+    /// reports `.offline` for an unreachable printer *before* it ever looks at the gcode state,
+    /// and splits a finished job into finished/failed, where the Live Activity only needs to know
+    /// whether a job is still running.
     ///
     /// `nil` means "no usable reading" (offline, or the `/status` fetch failed) and is NOT the
     /// same as `.idle` ("reachable, and reports no job") -- see `ActivityTeardown`, which only
@@ -257,6 +261,22 @@ struct Printer: Identifiable, Equatable {
     var aiLastError: String? = nil
 
     var isDualNozzle: Bool { nozzles.count > 1 }
+
+    /// The most severe active HMS alert's level, nil with none. Shown beside the state, never in
+    /// place of it.
+    var alertLevel: HMSError.Level? { hmsErrors.map(\.level).min() }
+
+    /// Worth looking at: an alert that stopped or paused the printer (notifications alone don't
+    /// count), or a print that failed. The same "has a problem" Bambuddy's compact card uses.
+    var needsAttention: Bool {
+        guard state != .offline else { return false }
+        return state == .failed || hmsErrors.contains { $0.level == .error || $0.level == .warning }
+    }
+
+    /// The clock time the current print should finish, from the remaining minutes.
+    var estimatedFinish: Date? {
+        etaMinutesRemaining.map { Date().addingTimeInterval(TimeInterval($0) * 60) }
+    }
 
     var etaDescription: String? {
         guard let minutes = etaMinutesRemaining else { return nil }
