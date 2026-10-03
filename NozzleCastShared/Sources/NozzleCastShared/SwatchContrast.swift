@@ -36,8 +36,11 @@ public enum SwatchContrast {
         guard let base = components(from: colorHex) else { return .light }
 
         // A multi-colour spool paints several colours across one pill, so the label answers to
-        // their combined brightness rather than to whichever was listed first.
-        let all = [base] + extraColorHexes.compactMap(components(from:))
+        // their combined brightness rather than to whichever was listed first. Those colours are
+        // the extra colours alone when there are any — the same rule `FilamentSwatchView` paints
+        // by (Bambuddy's), where the base colour is not part of a multi-colour swatch.
+        let stops = extraColorHexes.compactMap(components(from:))
+        let all = stops.isEmpty ? [base] : stops
         let mixed = (
             r: all.map(\.r).reduce(0, +) / Double(all.count),
             g: all.map(\.g).reduce(0, +) / Double(all.count),

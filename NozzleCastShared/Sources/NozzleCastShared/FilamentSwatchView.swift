@@ -54,11 +54,26 @@ public struct FilamentSwatchView: View {
 
     // MARK: - Color layer
 
+    /// The colors the swatch paints, by Bambuddy's rule (`buildColorLayer`): with extra colors set,
+    /// they *are* the swatch and the spool's main color is ignored — Bambuddy stores a dual-color
+    /// spool as rgba `ED2F2E` plus extra colors `ED2F2E,F3C432`, so prepending the main color
+    /// painted its first color twice (three bands for a dual-color spool). Each extra stop carries
+    /// its own alpha when written as 8 hex digits, as in Bambuddy; the main color uses `alpha`.
     private static func resolvedColors(colorHex: String, extraColorHexes: [String], alpha: Double) -> [Color] {
-        ([colorHex] + extraColorHexes).map { hex in
-            let clean = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-            return Color(hex: String(clean.prefix(6))).opacity(alpha)
-        }
+        let stops = extraColorHexes.compactMap(stopColor)
+        guard stops.isEmpty else { return stops }
+        let clean = colorHex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        return [Color(hex: String(clean.prefix(6))).opacity(alpha)]
+    }
+
+    /// One extra-color stop: 6 hex digits (opaque) or 8 (RRGGBBAA). Anything else is skipped, as
+    /// Bambuddy's `toCssHex` does.
+    private static func stopColor(_ token: String) -> Color? {
+        let clean = token.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespacesAndNewlines))
+        guard clean.count == 6 || clean.count == 8, clean.allSatisfy(\.isHexDigit) else { return nil }
+        let color = Color(hex: String(clean.prefix(6)))
+        guard clean.count == 8, let alphaByte = UInt8(clean.suffix(2), radix: 16) else { return color }
+        return color.opacity(Double(alphaByte) / 255)
     }
 
     private static func isMulticolor(subtype: String?, effectType: String?) -> Bool {
