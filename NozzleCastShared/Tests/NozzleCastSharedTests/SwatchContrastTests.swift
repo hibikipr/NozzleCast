@@ -62,6 +62,15 @@ final class SwatchContrastTests: XCTestCase {
         )
     }
 
+    /// With extra colours set, they are the whole swatch and the base colour isn't painted at all
+    /// (Bambuddy's rule, which `FilamentSwatchView` follows) — so it mustn't sway the label either.
+    func testBaseColourIsIgnoredWhenExtraColoursAreSet() {
+        XCTAssertEqual(
+            SwatchContrast.preferredForeground(colorHex: "000000", extraColorHexes: ["FFFFFF", "F0F0F0"]),
+            .dark
+        )
+    }
+
     /// An empty slot has no colour at all and is drawn as a faint outline on the widget
     /// background, so the only readable choice is the light tone.
     func testMissingColourFallsBackToLightText() {
