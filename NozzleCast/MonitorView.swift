@@ -98,6 +98,9 @@ struct MonitorView: View {
                 }
             }
             .onAppear { refreshUnreadCount() }
+            // Without Firebase, alerts land in the history during a refresh (BambuddyAlertFeed),
+            // not through the notification extension — re-read the badge after each one.
+            .onChange(of: store.lastSuccessfulRefreshAt) { refreshUnreadCount() }
             .onChange(of: store.pendingDeepLinkPrinterID) { _, id in
                 guard let id else { return }
                 path = [id]
@@ -123,7 +126,9 @@ struct MonitorView: View {
                 switch phase {
                 case .active: NSLog("NCDEBUG scenePhase -> active (connectionStatus=%@)", String(describing: store.connectionStatus))
                 case .inactive: NSLog("NCDEBUG scenePhase -> inactive")
-                case .background: NSLog("NCDEBUG scenePhase -> background")
+                case .background:
+                    NSLog("NCDEBUG scenePhase -> background")
+                    BambuddyAlertFeed.scheduleBackgroundCheck()
                 @unknown default: break
                 }
                 guard phase == .active else { return }

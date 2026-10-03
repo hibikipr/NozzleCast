@@ -27,6 +27,10 @@ account system, or analytics of any kind.
   warnings, etc.), delivered via your existing self-hosted ntfy → Firebase → APNs relay. Includes
   the camera snapshot Bambuddy attaches, an in-app history, and an unread badge on both the app
   icon and the in-app bell.
+  Without a Firebase config, the app falls back to reading Bambuddy's notification log, which
+  covers every provider Bambuddy sends to (ntfy, Pushover, Discord, email…), and shows new alerts
+  as local notifications. It checks on every refresh while open and on iOS background refresh
+  otherwise, so alerts can arrive late; the API key needs `notifications:read`.
 - **Live Activities** — a Dynamic Island / Lock Screen live progress card per printing printer,
   showing the plate cover render (or the latest live camera snapshot once one arrives), layer
   count, and nozzle/bed temperature — kept accurate even if a print finishes while the app is

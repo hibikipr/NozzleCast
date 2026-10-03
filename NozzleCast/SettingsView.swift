@@ -55,6 +55,9 @@ struct SettingsView: View {
     @State private var importError: String?
     @State private var pushManager = PushNotificationManager.shared
     @State private var selectedIcon: AppIconOption = AppIconOption.allCases.first { $0.alternateIconName == UIApplication.shared.alternateIconName } ?? .default
+    /// Bumped after an alert check so the Alerts row and footer re-read the feed's status, which
+    /// lives in plain statics rather than observable state.
+    @State private var alertFeedStatusRefresh = 0
     @State private var liveActivitiesEnabled = PushSharedStore.liveActivitiesEnabled
     @State private var liveActivityCameraPreviewEnabled = PushSharedStore.liveActivityCameraPreviewEnabled
 
@@ -71,6 +74,32 @@ struct SettingsView: View {
                                 ? (FirebaseConfigStore.projectID ?? String(localized: "Imported", comment: "Settings row value when Firebase config is set but has no project id"))
                                 : String(localized: "Not imported", comment: "Settings row value when no Firebase config is set")
                         )
+                    }
+                    if !FirebaseConfigStore.isConfigured {
+                        Button {
+                            Task {
+                                try? await pushManager.requestAuthorization()
+                                _ = await store.checkBambuddyAlerts()
+                                BambuddyAlertFeed.scheduleBackgroundCheck()
+                                alertFeedStatusRefresh += 1
+                            }
+                        } label: {
+                            settingsRow(
+                                title: String(localized: "Alerts", comment: "Settings row label: Bambuddy alerts without Firebase"),
+                                value: pushManager.authorizationStatus != .authorized
+                                    ? String(localized: "Tap to enable", comment: "Settings row value: needs permission")
+                                    : (BambuddyAlertFeed.lastError != nil
+                                        ? String(localized: "Can't read alerts", comment: "Settings row value: alert log not readable")
+                                        : String(localized: "From Bambuddy", comment: "Settings row value: alerts read from Bambuddy's notification log"))
+                            )
+                        }
+                        .id(alertFeedStatusRefresh)
+                        NavigationLink {
+                            NotificationsView()
+                        } label: {
+                            Text("Notification History")
+                                .foregroundStyle(.white)
+                        }
                     }
                     if FirebaseConfigStore.isConfigured {
                         Button {
@@ -110,7 +139,17 @@ struct SettingsView: View {
                 } header: {
                     Text("Push Notifications")
                 } footer: {
-                    Text("Import the GoogleService-Info.plist from the Firebase project your ntfy server publishes through. NozzleCast will subscribe to the same alert topic your server already sends to.")
+                    if FirebaseConfigStore.isConfigured {
+                        Text("Import the GoogleService-Info.plist from the Firebase project your ntfy server publishes through. NozzleCast will subscribe to the same alert topic your server already sends to.")
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Without a Firebase config, NozzleCast reads the alerts Bambuddy sends to your notification providers (ntfy, Pushover, Discord, email…) from its notification log, and shows new ones as notifications. It checks whenever the app refreshes, and in the background when iOS allows, so alerts can arrive late. For instant alerts, import the GoogleService-Info.plist from the Firebase project your ntfy server publishes through.", comment: "Settings footer explaining the alert fallback without Firebase")
+                            if let error = BambuddyAlertFeed.lastError {
+                                Text(error).foregroundStyle(NCColor.statusWarning)
+                            }
+                        }
+                        .id(alertFeedStatusRefresh)
+                    }
                 }
 
                 Section {

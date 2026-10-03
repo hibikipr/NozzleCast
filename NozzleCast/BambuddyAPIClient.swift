@@ -373,6 +373,21 @@ private struct SpoolCreateBody: Codable {
     var labelWeight: Int
 }
 
+// MARK: - Notification log
+
+/// One alert Bambuddy sent to one of its notification providers (ntfy, Pushover, Discord, email,
+/// …) — `GET /notifications/logs`. The same alert sent to two providers is two rows.
+struct BambuddyNotificationLogDTO: Codable {
+    var id: Int
+    var eventType: String
+    var title: String
+    var message: String
+    var success: Bool
+    var printerId: Int?
+    var printerName: String?
+    var createdAt: String
+}
+
 // MARK: - Print queue & history
 
 /// One job in Bambuddy's print queue (`GET /queue/`). Only what the Queue screen shows; the
@@ -755,6 +770,16 @@ struct BambuddyAPIClient {
     /// #23). Minting a token first was a wasted request per cover fetch.
     func coverImageData(printerID: Int) async throws -> Data {
         try await send(request("/api/v1/printers/\(printerID)/cover"))
+    }
+
+    // MARK: Notification log
+
+    /// Newest first, from the last `days` days. Needs the API key's `notifications:read`.
+    func notificationLog(limit: Int, days: Int = 7) async throws -> [BambuddyNotificationLogDTO] {
+        try await get("/api/v1/notifications/logs", query: [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "days", value: String(days)),
+        ])
     }
 
     // MARK: Print queue & history

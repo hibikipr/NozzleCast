@@ -367,6 +367,9 @@ final class AppStore {
 
             isShowingDemoData = false
             lastSuccessfulRefreshAt = Date()
+            // No Firebase means no pushed alerts; read them from Bambuddy's log instead. Every
+            // refresh, so the foreground poll and the relay's background wakes both check.
+            if BambuddyAlertFeed.isActive { await BambuddyAlertFeed.check(using: client) }
             // A failed refresh drops connectionStatus to .failed; a later successful one must lift
             // it again, or the unreachable banner would outlive the outage.
             if case .failed = connectionStatus, let username = lastConnectedUsername {
@@ -891,6 +894,13 @@ final class AppStore {
     func stopLiveStream(printerID: String) {
         guard let client, let bbID = bambuddyID(printerID) else { return }
         Task { try? await client.stopCameraStream(printerID: bbID) }
+    }
+
+    /// Checks Bambuddy's notification log for new alerts without a full refresh — for the
+    /// background app refresh task, which has seconds, not the minute a refresh can take.
+    func checkBambuddyAlerts() async -> Int {
+        guard let client else { return 0 }
+        return await BambuddyAlertFeed.check(using: client)
     }
 
     /// True while a refresh the user explicitly asked for (the "Refresh Status" menu item) runs —
