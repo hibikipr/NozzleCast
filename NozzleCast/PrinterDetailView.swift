@@ -2,6 +2,24 @@ import SwiftUI
 
 struct PrinterDetailView: View {
     var printerID: String
+    /// `false` when shown as a `NavigationSplitView` detail column (regular-width iPad/open or
+    /// partially-open Duo) — there the tab bar and printer list stay on screen alongside this
+    /// view, so hiding the tab bar here would strand the user with no way to reach the other
+    /// tabs. `true` (the default) matches every other call site, where this view is a genuine
+    /// full-screen push.
+    var hidesTabBar: Bool = true
+    /// Overrides the video header's back button when this view isn't reached by a real
+    /// navigation push — e.g. `MonitorView`'s `NavigationSplitView` detail column sets
+    /// `selectedPrinterID` directly rather than pushing, so `@Environment(\.dismiss)` has
+    /// nothing to dismiss and silently does nothing. `nil` (the default) matches every other
+    /// call site, where this view is a genuine pushed destination and the default `dismiss()`
+    /// behavior is correct.
+    var onBack: (() -> Void)? = nil
+    /// SF Symbol shown by the button that triggers `onBack`. Callers that repurpose `onBack` for
+    /// something other than a literal "go back" — e.g. `MonitorView` toggles the list column's
+    /// visibility instead of navigating anywhere — should pass an icon that matches what
+    /// actually happens (`"sidebar.left"`) rather than the default back chevron.
+    var backIcon: String = "chevron.left"
     @Environment(AppStore.self) private var store
     @State private var assignTray: AMSTray?
     @State private var showWarnings = false
@@ -17,6 +35,9 @@ struct PrinterDetailView: View {
         if let printer {
             PrinterDetailContent(
                 printer: printer,
+                hidesTabBar: hidesTabBar,
+                onBack: onBack,
+                backIcon: backIcon,
                 isCameraLive: $isCameraLive,
                 assignTray: $assignTray,
                 showWarnings: $showWarnings,
@@ -61,6 +82,9 @@ struct PrinterDetailView: View {
 /// section's input values; it doesn't re-run the section's own body.
 struct PrinterDetailContent: View {
     var printer: Printer
+    var hidesTabBar: Bool
+    var onBack: (() -> Void)?
+    var backIcon: String = "chevron.left"
     @Binding var isCameraLive: Bool
     @Binding var assignTray: AMSTray?
     @Binding var showWarnings: Bool
@@ -71,11 +95,53 @@ struct PrinterDetailContent: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
+        Group {
+            // `ArrangementView`'s `.split` style engages based on aspect ratio alone (it splits
+            // vertically whenever the available space is taller than wide) — not on whether a
+            // hinge is actually present. Almost every phone screen in portrait is taller than
+            // wide, so gating on that alone would pin the video into its own fixed top pane on
+            // every pose, not just a genuinely half-open Duo laid flat. Checking for an active
+            // `.division` reserved region — the region the hinge itself carves out — is what
+            // actually distinguishes "hinge splitting the screen right now" from "just a tall
+            // window", and is the only case where we want the video pinned above a separately
+            // scrolling controls pane instead of everything scrolling together as one column.
+            if #available(iOS 27.1, *) {
+                GeometryReader { proxy in
+                    if proxy.reservedRegions(kind: .division).isEmpty {
+                        plainScrollingContent
+                    } else {
+                        ArrangementView {
+                            PrinterVideoHeader(printerID: printer.id, state: printer.state, jobFileName: printer.jobFileName, isCameraLive: $isCameraLive, showLiveStream: $showLiveStream, onBack: onBack, backIcon: backIcon, fillsAvailableHeight: true)
+                        } secondary: {
+                            ScrollView {
+                                controlsAndInfo
+                            }
+                        }
+                        .arrangementViewStyle(.split.axes(.vertical))
+                    }
+                }
+            } else {
+                plainScrollingContent
+            }
+        }
+        .background(NCColor.canvasBackground.ignoresSafeArea())
+        .navigationBarHidden(true)
+        .toolbar(hidesTabBar ? .hidden : .visible, for: .tabBar)
+    }
+
+    private var plainScrollingContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PrinterVideoHeader(printerID: printer.id, state: printer.state, jobFileName: printer.jobFileName, isCameraLive: $isCameraLive, showLiveStream: $showLiveStream)
+                PrinterVideoHeader(printerID: printer.id, state: printer.state, jobFileName: printer.jobFileName, isCameraLive: $isCameraLive, showLiveStream: $showLiveStream, onBack: onBack, backIcon: backIcon)
+                controlsAndInfo
+            }
+        }
+    }
 
-                VStack(alignment: .leading, spacing: 4) {
+    @ViewBuilder
+    private var controlsAndInfo: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(printer.name)
                             .ncFont(size: 24, weight: .bold, relativeTo: .title)
@@ -160,10 +226,6 @@ struct PrinterDetailContent: View {
                 }
             }
         }
-        .background(NCColor.canvasBackground.ignoresSafeArea())
-        .navigationBarHidden(true)
-        .toolbar(.hidden, for: .tabBar)
-    }
 
     private var isRunningJob: Bool { printer.state == .printing || printer.state == .paused }
 
@@ -261,6 +323,16 @@ struct PrinterVideoHeader: View {
     var jobFileName: String?
     @Binding var isCameraLive: Bool
     @Binding var showLiveStream: Bool
+    /// Overrides the back button when this view isn't a real pushed destination (see
+    /// `PrinterDetailView.onBack`). `nil` (the default) uses `dismiss()` as before.
+    var onBack: (() -> Void)? = nil
+    /// SF Symbol for the back button; see `PrinterDetailView.backIcon`.
+    var backIcon: String = "chevron.left"
+    /// `true` when used as an `ArrangementView` primary pane (a partially-open iPhone Duo laid
+    /// flat, book/tabletop posture) — there the pane's height comes from the arrangement itself
+    /// rather than a fixed card height, so the video should fill whatever space it's given
+    /// instead of the fixed 250pt height used everywhere else this view appears.
+    var fillsAvailableHeight: Bool = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -275,10 +347,11 @@ struct PrinterVideoHeader: View {
                     .font(.system(size: 44))
             }
         }
-        .frame(height: 250)
+        .frame(height: fillsAvailableHeight ? nil : 250)
+        .frame(maxHeight: fillsAvailableHeight ? .infinity : nil)
         .overlay(alignment: .topLeading) {
             HStack {
-                GlassIconButton(systemName: "chevron.left") { dismiss() }
+                GlassIconButton(systemName: backIcon) { onBack?() ?? dismiss() }
                 Spacer()
                 Menu {
                     PrinterMoreMenuItems(printerID: printerID, showLiveStream: $showLiveStream)
