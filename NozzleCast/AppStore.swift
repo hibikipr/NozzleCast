@@ -1497,7 +1497,7 @@ final class AppStore {
             printerName: printerID.flatMap { printer($0)?.name } ?? dto.printerName,
             outcome: PrintRecord.Outcome(dto.status),
             startedAt: dto.startedAt.flatMap(Self.parseBambuddyTimestamp),
-            finishedAt: (dto.completedAt ?? dto.createdAt).flatMap(Self.parseBambuddyTimestamp),
+            finishedAt: Self.parseBambuddyTimestamp(dto.completedAt ?? dto.createdAt),
             duration: dto.durationSeconds.map(TimeInterval.init),
             filamentGrams: dto.filamentUsedGrams,
             filamentType: dto.filamentType,
