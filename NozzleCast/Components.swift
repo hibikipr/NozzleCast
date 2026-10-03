@@ -272,6 +272,10 @@ struct AMSSlotCard: View {
     /// is nil, the printer read a color/type off the RFID (or it was set manually) that
     /// hasn't been matched to anything in inventory yet, distinct from a genuinely empty bay.
     var tray: AMSTray? = nil
+    /// Takes the width its container offers (the printer screen's four-column AMS grid) instead
+    /// of the compact fixed width — at larger text sizes the fixed width broke colour names
+    /// mid-word ("Turquois / e") while the row left empty space beside it.
+    var fillsWidth: Bool = false
 
     private var needsAssignment: Bool { spool == nil && (tray?.needsAssignment ?? false) }
 
@@ -306,7 +310,8 @@ struct AMSSlotCard: View {
                         .foregroundStyle(NCColor.textTertiary)
                 }
             }
-            .frame(width: 62, height: 50)
+            .frame(width: fillsWidth ? nil : 62, height: 50)
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             Text(
@@ -318,8 +323,12 @@ struct AMSSlotCard: View {
             .ncFont(size: 9, weight: .semibold, relativeTo: .caption2)
             .foregroundStyle(needsAssignment ? NCColor.statusWarning : NCColor.textSecondary)
             .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .frame(width: 62)
+            // In the grid every card keeps room for two lines, so a row of one- and two-line
+            // names still lines up.
+            .lineLimit(2, reservesSpace: fillsWidth)
+            .minimumScaleFactor(0.85)
+            .frame(width: fillsWidth ? nil : 62)
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
         }
         .padding(6)
         .background(
