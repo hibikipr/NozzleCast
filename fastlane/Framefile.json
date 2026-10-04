@@ -9,8 +9,9 @@
   },
   "data": [
     { "filter": "01-monitor-live-status", "keyword": { "text": "LIVE STATUS" }, "title": { "text": "Every printer, one glance away" } },
-    { "filter": "02-ams-filament", "keyword": { "text": "SMART AMS" }, "title": { "text": "Know what's loaded, instantly" } },
-    { "filter": "03-widget-large", "keyword": { "text": "ON YOUR HOME SCREEN" }, "title": { "text": "Filament status without opening the app" } },
-    { "filter": "04-live-activity", "keyword": { "text": "ALWAYS IN VIEW" }, "title": { "text": "Track prints from your Lock Screen" } }
+    { "filter": "02-printer-detail", "keyword": { "text": "FULL CONTROL" }, "title": { "text": "Every detail of every print" } },
+    { "filter": "03-ams-filament", "keyword": { "text": "SMART AMS" }, "title": { "text": "Know what's loaded, instantly" } },
+    { "filter": "04-widget-large", "keyword": { "text": "ON YOUR HOME SCREEN" }, "title": { "text": "Filament status without opening the app" } },
+    { "filter": "05-live-activity", "keyword": { "text": "ALWAYS IN VIEW" }, "title": { "text": "Track prints from your Lock Screen" } }
   ]
 }

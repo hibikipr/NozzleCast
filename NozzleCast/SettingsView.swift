@@ -286,7 +286,8 @@ struct SettingsView: View {
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 64, height: 64)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        Text("NozzleCast 1.0.0")
+                        // From the bundle, not typed in: this said 1.0.0 long after 1.0.0.
+                        Text("NozzleCast \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")", comment: "App name and version in Settings")
                             .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
                             .foregroundStyle(.white)
                         Text("Local-first control for your farm.")
