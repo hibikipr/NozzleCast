@@ -134,7 +134,7 @@ struct InventoryView: View {
                         }
                         .padding(.horizontal, 16)
 
-                        if store.isShowingDemoData {
+                        if store.showsDemoDataBanner {
                             DemoDataBanner(connectionStatus: store.connectionStatus) { selectedTab = .settings }
                                 .padding(.horizontal, 16)
                         } else if let message = store.serverUnreachableMessage {
