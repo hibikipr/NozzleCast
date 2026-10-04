@@ -67,6 +67,11 @@ final class AppStore {
     /// and says it's stale instead (`serverUnreachableMessage`).
     private(set) var isShowingDemoData = false
 
+    /// Whether to show the "Demo Data" banner over demo data — everywhere except App Store
+    /// screenshots, which are taken from demo data (no real printers or spools in them) and
+    /// would otherwise all carry the banner. See `ScreenshotMode`.
+    var showsDemoDataBanner: Bool { isShowingDemoData && !ScreenshotMode.isActive }
+
     /// When `printers`/`spools` last came from a successful refresh — for the stale-data banner.
     private(set) var lastSuccessfulRefreshAt: Date?
 
@@ -1696,4 +1701,14 @@ final class AppStore {
             try await client.performMaintenance(itemID: taskID)
         }
     }
+}
+
+/// Debug builds launched with `-NCScreenshotMode` (the fastlane screenshot workflow, see
+/// fastlane/README.md) hide the demo-data banner. Always off in release builds.
+enum ScreenshotMode {
+    #if DEBUG
+    static let isActive = ProcessInfo.processInfo.arguments.contains("-NCScreenshotMode")
+    #else
+    static let isActive = false
+    #endif
 }
