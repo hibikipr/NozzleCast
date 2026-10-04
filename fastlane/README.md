@@ -23,7 +23,7 @@ install bundler 4.x in CI (needs Ruby >= 3.2, satisfied by the 3.4 pin).
 - `bundle exec fastlane metadata_pull` — pull live values into the repo (use after App Review edits something, to reconcile, or to seed a locale for the first time). Prints which App Store version it actually read from, and **refuses to blank a field the repo has content for** (pass `force:true` to override). See "What `metadata_pull` reads" below.
 - `bundle exec fastlane metadata_push dry_run:true` — see what would change without writing anything.
 - `bundle exec fastlane metadata_push` — PATCH only the fields that differ. Never overwrites fields you haven't touched.
-- Requires env vars: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`, `ASC_APP_ID`, optional `ASC_LOCALE` (default `en-US`). Create `fastlane/.env.asc` locally (gitignored) with these as `export` lines, then `source .env.asc` before running any lane — see the comment header in that file (or `.env.asc`'s own template if you haven't filled it in yet) for the exact format. Never commit this file; never paste its contents anywhere.
+- Requires env vars: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`, `ASC_APP_ID`, optional `ASC_LOCALE` (default `en-US`). Copy `fastlane/.env.asc.example` to `fastlane/.env.asc` (gitignored), fill in the values, then `source .env.asc` before running any lane — the example's comments explain where each value comes from. Never commit this file; never paste its contents anywhere.
 
 ### What `metadata_pull` reads (and why it can blank things)
 
