@@ -24,7 +24,7 @@ decisions (including deliberate non-features listed in the [README](README.md#no
 - Open `NozzleCast.xcodeproj` and run the `NozzleCast` scheme. You'll need to pick your own
   development team under Signing & Capabilities for each of the three targets.
 - No Bambuddy server is required to run the app — without one configured it shows demo data. To
-  test against a real server, see the README's [Getting started](README.md#getting-started).
+  test against a real server, see the README's [Setting up the app](README.md#setting-up-the-app).
 
 ## Tests
 
