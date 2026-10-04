@@ -81,3 +81,13 @@ split this way, plus the reasoning behind the rest of the app's design decisions
   pull-to-refresh, or after an in-app action). Between those moments, Live Activity accuracy is
   carried by Bambuddy's own push events reaching the notification extension directly — not by any
   periodic background task.
+
+## Contributing
+
+Bug reports, fixes, and features that fit the app's scope are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). Please report security issues privately as described in
+[SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)
