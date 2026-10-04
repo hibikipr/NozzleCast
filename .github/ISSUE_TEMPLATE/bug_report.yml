@@ -1,0 +1,67 @@
+name: Bug report
+description: Something in NozzleCast isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please don't include your server URL, API key, or any other credentials.
+        For security issues, use [private reporting](https://github.com/hibikipr/NozzleCast/security/advisories/new) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect to see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Tap ...
+        3. See ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Printer status / camera
+        - AMS
+        - Filament inventory
+        - Maintenance
+        - Print queue / history
+        - Push notifications
+        - Live Activities / Dynamic Island
+        - Settings / server connection
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: NozzleCast version
+      description: Shown at the bottom of Settings
+      placeholder: "1.2.0"
+    validations:
+      required: true
+  - type: input
+    id: ios-version
+    attributes:
+      label: iOS version and device
+      placeholder: "iOS 26.0, iPhone 17 Pro"
+    validations:
+      required: true
+  - type: input
+    id: bambuddy-version
+    attributes:
+      label: Bambuddy version
+      description: Shown in Bambuddy's web UI
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or logs
+      description: Anything else that helps. Please redact hostnames and keys.
