@@ -10,6 +10,8 @@ docs improvements, and features that fit the existing scope are welcome.
 For anything bigger than a small fix, open an issue first so we can agree on the approach before
 you spend time on it.
 
+Everyone participating is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Before you start
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) first — it covers how the app, the notification service
