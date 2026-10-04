@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Only the NozzleCastShared package is unit-tested; it builds for macOS too, so this
+    # doesn't need an iOS simulator or signing.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test NozzleCastShared
+        working-directory: NozzleCastShared
+        run: swift test
