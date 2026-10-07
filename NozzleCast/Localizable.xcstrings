@@ -971,8 +971,8 @@
     "NozzleCast" : {
 
     },
-    "NozzleCast 1.0.0" : {
-
+    "NozzleCast %@" : {
+      "comment" : "App name and version in Settings"
     },
     "of %lld g" : {
       "comment" : "Spool label weight, after the grams remaining"
