@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/hibikipr/NozzleCast/security/advisories/new
+    about: Please report security issues privately.
+  - name: Push relay issues
+    url: https://github.com/hibikipr/nozzlecast-relay/issues
+    about: Problems with the self-hosted push relay belong in its own repo.
+  - name: Bambuddy server issues
+    url: https://github.com/karliky/bambuddy/issues
+    about: Problems with the Bambuddy server itself.

@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest something NozzleCast should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        NozzleCast mirrors what your Bambuddy server can do. If the feature needs something Bambuddy doesn't expose yet,
+        it may need to start as a [Bambuddy](https://github.com/karliky/bambuddy) request.
+        Also worth checking the README's [notable non-features](https://github.com/hibikipr/NozzleCast#notable-non-features).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe what you're trying to do and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds or alternatives you've tried
