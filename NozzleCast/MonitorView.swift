@@ -181,7 +181,7 @@ struct MonitorView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 4)
 
-                if store.isShowingDemoData {
+                if store.showsDemoDataBanner {
                     DemoDataBanner(connectionStatus: store.connectionStatus) { selectedTab = .settings }
                         .padding(.horizontal, 16)
                 } else if let message = store.serverUnreachableMessage {

@@ -253,11 +253,15 @@ public struct FilamentSwatchView: View {
 
     private static func drawSparkle(_ context: inout GraphicsContext, size: CGSize, seed: String) {
         var rng = Mulberry32(seed: fnv1a32(seed))
-        let maxDim = max(size.width, size.height)
-        for _ in 0..<10 {
+        // Fleck size follows the swatch's short side and the count its aspect ratio, so a wide
+        // swatch (an iPad inventory card) gets more flecks of the same size rather than ten
+        // flecks scaled to its width — which turned them into large blobs.
+        let minDim = min(size.width, size.height)
+        let count = max(10, Int((size.width / max(size.height, 1)) * 4))
+        for _ in 0..<count {
             let x = rng.nextDouble() * size.width
             let y = rng.nextDouble() * size.height
-            let radius = (0.03 + rng.nextDouble() * 0.05) * maxDim
+            let radius = (0.08 + rng.nextDouble() * 0.12) * minDim
             let fleck = Color(red: 1, green: 0.97, blue: 0.86)
             let gradient = Gradient(stops: [
                 .init(color: fleck.opacity(0.9), location: 0),

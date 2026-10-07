@@ -47,7 +47,7 @@ struct PrintsView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     header
 
-                    if store.isShowingDemoData {
+                    if store.showsDemoDataBanner {
                         DemoDataBanner(connectionStatus: store.connectionStatus) { selectedTab = .settings }
                             .padding(.horizontal, 16)
                     } else if let message = store.serverUnreachableMessage {

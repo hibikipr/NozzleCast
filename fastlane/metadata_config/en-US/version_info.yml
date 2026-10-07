@@ -24,14 +24,24 @@ promotional_text: Live Activities for your Bambu printers — real progress, rea
 marketing_url: https://nozzlecast.townsville.cc
 support_url: https://nozzlecast.townsville.cc
 whats_new: |-
-  FILAMENT FINISHES AT A GLANCE
-  Spools now show their finish — Glow, Matte, Sparkle and more — right next to the material, so two spools of the same color and material are no longer impossible to tell apart. Finish effects also appear on the color swatch itself, in the AMS spool picker, and when confirming a scanned spool.
+  PRINT QUEUE AND HISTORY
+  • New Prints tab shows your server's print queue and print history. See what's waiting and why, start staged jobs, and reorder or remove queued jobs.
+  • Browse past prints with plate thumbnails, duration, filament, cost, and failure reasons, and filter by Needs Verdict, Good, Rejected, or Failed.
+  • Mark how a print came out with Good or Reject, right from the app.
 
-  REFRESHED INVENTORY CARDS
-  Each spool's color name now sits in a label on its swatch, with material and finish as the headline underneath, and the list view shows color, brand, and location together on one line.
+  SMARTER FILAMENT INVENTORY
+  • Low-stock warnings on spools, with a Low Stock filter and a running count.
+  • Shopping list for filament you need to buy, with running-low spools suggested for you.
+  • Each spool now shows grams left, last used, and per-print usage history.
+  • Works whether your server tracks filament itself or through Spoolman.
 
-  SHARPER LIVE ACTIVITIES
-  Cover images and camera snapshots on the Lock Screen and in the Dynamic Island are now noticeably crisper.
+  REDESIGNED PRINTER SCREEN
+  • Controls and sections now adapt to what the printer is doing, with a new last-print card, compact temperature chips, and AMS slots in full-width columns.
+  • Monitor cards are taller and keep a steady size as prints start and finish.
+  • Printer state and alerts are now shown separately, so an idle printer with an alert no longer reads "Error".
 
-  FIXES
-  Fixed an issue where a single print could occasionally start more than one Live Activity.
+  ALERTS WITHOUT FIREBASE
+  • Server alerts now reach you as notifications even if your server has no Firebase set up, including while the app is in the background.
+  • Alert colors follow your server's HMS alert levels.
+
+  Plus improved localization and assorted fixes.
