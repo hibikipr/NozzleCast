@@ -1,0 +1,15 @@
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#1a1a1a;font-family:-apple-system,"SF Pro Display","Helvetica Neue",Arial,sans-serif;color:#fff;overflow:hidden}
+.canvas{position:relative;overflow:hidden;background:
+ radial-gradient(60% 90% at 72% 55%,rgba(42,95,204,.40),rgba(42,95,204,0) 70%),
+ radial-gradient(40% 60% at 15% 10%,rgba(79,127,224,.14),rgba(79,127,224,0) 70%),
+ linear-gradient(160deg,#202226 0%,#141416 100%)}
+.brand{display:flex;align-items:center}
+.brand img{border-radius:22.5%;box-shadow:0 0 0 2px rgba(255,255,255,.10),0 30px 60px rgba(0,0,0,.5)}
+.brand span{font-weight:700;letter-spacing:-.01em;color:rgba(235,235,245,.85)}
+h1{font-weight:800;letter-spacing:-.035em;line-height:1.02}
+h1 em{font-style:normal;color:#4F7FE0}
+p.sub{color:rgba(235,235,245,.62);font-weight:500;letter-spacing:-.005em}
+.phone{position:absolute;border-radius:var(--r);background:#000;padding:var(--b);
+ box-shadow:0 0 0 var(--ring) rgba(255,255,255,.14),0 60px 140px rgba(0,0,0,.65),0 0 200px rgba(42,95,204,.25)}
+.phone img{display:block;width:100%;border-radius:calc(var(--r) - var(--b))}
