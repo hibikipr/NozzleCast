@@ -3,9 +3,17 @@ import SwiftUI
 struct MonitorView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showNotifications = false
     @State private var unreadCount = 0
+    /// Drives the compact (iPhone, folded Duo) push/pop stack.
     @State private var path: [String] = []
+    /// Drives the regular-width (iPad, unfolded Duo) split-view detail column.
+    @State private var selectedPrinterID: String?
+    /// Whether the printer list column is showing in the regular-width split view. The detail
+    /// pane's back button toggles this instead of clearing `selectedPrinterID`, so bringing the
+    /// list back up never blanks the detail the user was already looking at.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @Binding var selectedTab: RootTab
 
     private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
@@ -38,162 +46,200 @@ struct MonitorView: View {
     private var isConnecting: Bool { store.isLoadingPrinters }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("NozzleCast")
-                                .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
-                            Group {
-                                if isConnecting {
-                                    Text("Connecting to server…")
+        Group {
+            if horizontalSizeClass == .compact {
+                NavigationStack(path: $path) {
+                    printerList
+                        .navigationDestination(for: String.self) { id in
+                            PrinterDetailView(printerID: id)
+                        }
+                }
+            } else {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    printerList
+                } detail: {
+                    if let selectedPrinterID {
+                        PrinterDetailView(printerID: selectedPrinterID, hidesTabBar: false, onBack: {
+                            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                        }, backIcon: "sidebar.left")
+                    } else {
+                        ContentUnavailableView(String(localized: "Select a Printer"), systemImage: "printer.fill")
+                    }
+                }
+                .toolbar(removing: .sidebarToggle)
+            }
+        }
+        .sheet(isPresented: $showNotifications, onDismiss: refreshUnreadCount) {
+            NavigationStack {
+                NotificationsView()
+            }
+        }
+        .onAppear { refreshUnreadCount() }
+        // Idle cards recap each printer's last print from the print history; a print that just
+        // finished isn't in it until it's reloaded.
+        .task(id: store.printers.map(\.state)) { await store.loadPrints() }
+        // Without Firebase, alerts land in the history during a refresh (BambuddyAlertFeed),
+        // not through the notification extension — re-read the badge after each one.
+        .onChange(of: store.lastSuccessfulRefreshAt) { refreshUnreadCount() }
+        .onChange(of: store.pendingDeepLinkPrinterID) { _, id in
+            guard let id else { return }
+            if horizontalSizeClass == .compact {
+                path = [id]
+            } else {
+                selectedPrinterID = id
+            }
+            store.pendingDeepLinkPrinterID = nil
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled else { break }
+                if case .connected = store.connectionStatus, !store.isRefreshing {
+                    NSLog("NCDEBUG poll: foreground refresh tick")
+                    await store.refresh()
+                } else if case .failed = store.connectionStatus {
+                    // 421 / transient network errors drop connectionStatus to .failed;
+                    // rather than waiting for the next foreground event, reconnect here.
+                    NSLog("NCDEBUG poll: reconnect attempt after failed state")
+                    await store.testConnectionAndRefresh()
+                }
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active: NSLog("NCDEBUG scenePhase -> active (connectionStatus=%@)", String(describing: store.connectionStatus))
+            case .inactive: NSLog("NCDEBUG scenePhase -> inactive")
+            case .background:
+                NSLog("NCDEBUG scenePhase -> background")
+                BambuddyAlertFeed.scheduleBackgroundCheck()
+            @unknown default: break
+            }
+            guard phase == .active else { return }
+            refreshUnreadCount()
+            // ActivityKit only allows starting a *new* Live Activity while the app is
+            // foreground (Notification Service Extension attempts to do it while
+            // backgrounded/locked always throw `.visibility` — see
+            // NotificationService.updateLiveActivity). This is what actually catches up a
+            // print that started while the app was backgrounded: a cold launch already
+            // triggers AppStore.init()'s refresh, but resuming an app the system kept alive
+            // in memory doesn't re-run init, so without this a still-live process would sit
+            // there showing no Live Activity until manually pulled-to-refresh.
+            if store.isLive {
+                Task { await store.refresh() }
+            } else if case .failed = store.connectionStatus {
+                // A transient launch failure (e.g. network not yet routed) leaves
+                // connectionStatus as .failed, which makes isLive false and blocks
+                // the refresh above — so the app stays stuck on mock data forever
+                // without a pull-to-refresh. Retry the full connection here instead.
+                Task { await store.testConnectionAndRefresh() }
+            }
+        }
+    }
+
+    /// Shared between both layouts: pushes to `PrinterDetailView` on compact width (unchanged
+    /// from before), and sets `selectedPrinterID` — which the split view's detail column reads —
+    /// on regular width (iPad, unfolded Duo), so the printer list stays visible alongside the
+    /// selected printer's detail instead of being replaced by it.
+    private var printerList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("NozzleCast")
+                            .ncFont(size: 34, weight: .bold, relativeTo: .largeTitle)
+                        Group {
+                            if isConnecting {
+                                Text("Connecting to server…")
+                            } else {
+                                // Automatic grammar agreement: "1 printer", "2 printers".
+                                if attentionCount == 1 {
+                                    Text("\(printingCount) printing · 1 needs attention", comment: "Monitor header when one printer needs attention")
+                                } else if attentionCount > 1 {
+                                    Text("\(printingCount) printing · \(attentionCount) need attention", comment: "Monitor header when several printers need attention")
                                 } else {
-                                    // Automatic grammar agreement: "1 printer", "2 printers".
-                                    if attentionCount == 1 {
-                                        Text("\(printingCount) printing · 1 needs attention", comment: "Monitor header when one printer needs attention")
-                                    } else if attentionCount > 1 {
-                                        Text("\(printingCount) printing · \(attentionCount) need attention", comment: "Monitor header when several printers need attention")
-                                    } else {
-                                        Text("\(printingCount) printing · ^[\(store.printers.count) printer](inflect: true)")
-                                    }
+                                    Text("\(printingCount) printing · ^[\(store.printers.count) printer](inflect: true)")
                                 }
                             }
-                            .ncFont(size: 15, relativeTo: .subheadline)
-                            .foregroundStyle(NCColor.textSecondary)
                         }
-                        Spacer()
-                        Button {
-                            showNotifications = true
-                        } label: {
-                            Image(systemName: unreadCount > 0 ? "bell.badge.fill" : "bell")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(unreadCount > 0 ? NCColor.accentLight : .white)
-                                .frame(width: 34, height: 34)
-                                .background(Circle().fill(NCColor.cardFill))
-                        }
-                        .padding(.top, 10)
+                        .ncFont(size: 15, relativeTo: .subheadline)
+                        .foregroundStyle(NCColor.textSecondary)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
+                    Spacer()
+                    Button {
+                        showNotifications = true
+                    } label: {
+                        Image(systemName: unreadCount > 0 ? "bell.badge.fill" : "bell")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(unreadCount > 0 ? NCColor.accentLight : .white)
+                            .frame(width: 34, height: 34)
+                            .background(Circle().fill(NCColor.cardFill))
+                    }
+                    .padding(.top, 10)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
 
-                    if store.showsDemoDataBanner {
-                        DemoDataBanner(connectionStatus: store.connectionStatus) { selectedTab = .settings }
-                            .padding(.horizontal, 16)
-                    } else if let message = store.serverUnreachableMessage {
-                        ServerUnreachableBanner(message: message) { selectedTab = .settings }
-                            .padding(.horizontal, 16)
-                    }
+                if store.showsDemoDataBanner {
+                    DemoDataBanner(connectionStatus: store.connectionStatus) { selectedTab = .settings }
+                        .padding(.horizontal, 16)
+                } else if let message = store.serverUnreachableMessage {
+                    ServerUnreachableBanner(message: message) { selectedTab = .settings }
+                        .padding(.horizontal, 16)
+                }
 
-                    if isConnecting {
-                        VStack(spacing: 14) {
-                            ProgressView().tint(NCColor.accentLight)
-                            Text("Loading your printers…")
-                                .ncFont(size: 13, relativeTo: .footnote)
-                                .foregroundStyle(NCColor.textTertiary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 80)
-                    } else {
-                        ForEach(sortedPrinters) { printer in
-                            NavigationLink(value: printer.id) {
-                                PrinterCard(
-                                    id: printer.id,
-                                    name: printer.name,
-                                    state: printer.state,
-                                    jobFileName: printer.jobFileName,
-                                    progress: printer.progress,
-                                    etaDescription: printer.etaDescription,
-                                    estimatedFinish: printer.estimatedFinish,
-                                    currentLayer: printer.currentLayer,
-                                    totalLayers: printer.totalLayers,
-                                    stageDetail: printer.stageDetail,
-                                    alertCount: printer.hmsErrors.count,
-                                    alertLevel: printer.alertLevel,
-                                    nozzleTemp: printer.nozzle.current,
-                                    bedTemp: printer.bed.current,
-                                    awaitingPlateClear: printer.awaitingPlateClear,
-                                    lastPrint: lastPrint(for: printer.id),
-                                    allTrays: printer.allTrays,
-                                    imageAssetName: printer.imageAssetName
-                                )
-                            }
-                            .buttonStyle(.plain)
+                if isConnecting {
+                    VStack(spacing: 14) {
+                        ProgressView().tint(NCColor.accentLight)
+                        Text("Loading your printers…")
+                            .ncFont(size: 13, relativeTo: .footnote)
+                            .foregroundStyle(NCColor.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 80)
+                } else {
+                    ForEach(sortedPrinters) { printer in
+                        printerRow(printer)
                             .padding(.horizontal, 16)
-                        }
-                    }
-                }
-                .padding(.bottom, 100)
-            }
-            .background(NCColor.canvasBackground.ignoresSafeArea())
-            .navigationBarHidden(true)
-            .refreshable { await store.testConnectionAndRefresh() }
-            .navigationDestination(for: String.self) { id in
-                PrinterDetailView(printerID: id)
-            }
-            .sheet(isPresented: $showNotifications, onDismiss: refreshUnreadCount) {
-                NavigationStack {
-                    NotificationsView()
-                }
-            }
-            .onAppear { refreshUnreadCount() }
-            // Idle cards recap each printer's last print from the print history; a print that just
-            // finished isn't in it until it's reloaded.
-            .task(id: store.printers.map(\.state)) { await store.loadPrints() }
-            // Without Firebase, alerts land in the history during a refresh (BambuddyAlertFeed),
-            // not through the notification extension — re-read the badge after each one.
-            .onChange(of: store.lastSuccessfulRefreshAt) { refreshUnreadCount() }
-            .onChange(of: store.pendingDeepLinkPrinterID) { _, id in
-                guard let id else { return }
-                path = [id]
-                store.pendingDeepLinkPrinterID = nil
-            }
-            .task(id: scenePhase) {
-                guard scenePhase == .active else { return }
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(30))
-                    guard !Task.isCancelled else { break }
-                    if case .connected = store.connectionStatus, !store.isRefreshing {
-                        NSLog("NCDEBUG poll: foreground refresh tick")
-                        await store.refresh()
-                    } else if case .failed = store.connectionStatus {
-                        // 421 / transient network errors drop connectionStatus to .failed;
-                        // rather than waiting for the next foreground event, reconnect here.
-                        NSLog("NCDEBUG poll: reconnect attempt after failed state")
-                        await store.testConnectionAndRefresh()
                     }
                 }
             }
-            .onChange(of: scenePhase) { _, phase in
-                switch phase {
-                case .active: NSLog("NCDEBUG scenePhase -> active (connectionStatus=%@)", String(describing: store.connectionStatus))
-                case .inactive: NSLog("NCDEBUG scenePhase -> inactive")
-                case .background:
-                    NSLog("NCDEBUG scenePhase -> background")
-                    BambuddyAlertFeed.scheduleBackgroundCheck()
-                @unknown default: break
-                }
-                guard phase == .active else { return }
-                refreshUnreadCount()
-                // ActivityKit only allows starting a *new* Live Activity while the app is
-                // foreground (Notification Service Extension attempts to do it while
-                // backgrounded/locked always throw `.visibility` — see
-                // NotificationService.updateLiveActivity). This is what actually catches up a
-                // print that started while the app was backgrounded: a cold launch already
-                // triggers AppStore.init()'s refresh, but resuming an app the system kept alive
-                // in memory doesn't re-run init, so without this a still-live process would sit
-                // there showing no Live Activity until manually pulled-to-refresh.
-                if store.isLive {
-                    Task { await store.refresh() }
-                } else if case .failed = store.connectionStatus {
-                    // A transient launch failure (e.g. network not yet routed) leaves
-                    // connectionStatus as .failed, which makes isLive false and blocks
-                    // the refresh above — so the app stays stuck on mock data forever
-                    // without a pull-to-refresh. Retry the full connection here instead.
-                    Task { await store.testConnectionAndRefresh() }
-                }
-            }
+            .padding(.bottom, 100)
+        }
+        .background(NCColor.canvasBackground.ignoresSafeArea())
+        .navigationBarHidden(true)
+        .refreshable { await store.testConnectionAndRefresh() }
+    }
+
+    @ViewBuilder
+    private func printerRow(_ printer: Printer) -> some View {
+        let card = PrinterCard(
+            id: printer.id,
+            name: printer.name,
+            state: printer.state,
+            jobFileName: printer.jobFileName,
+            progress: printer.progress,
+            etaDescription: printer.etaDescription,
+            estimatedFinish: printer.estimatedFinish,
+            currentLayer: printer.currentLayer,
+            totalLayers: printer.totalLayers,
+            stageDetail: printer.stageDetail,
+            alertCount: printer.hmsErrors.count,
+            alertLevel: printer.alertLevel,
+            nozzleTemp: printer.nozzle.current,
+            bedTemp: printer.bed.current,
+            awaitingPlateClear: printer.awaitingPlateClear,
+            lastPrint: lastPrint(for: printer.id),
+            allTrays: printer.allTrays,
+            imageAssetName: printer.imageAssetName
+        )
+        if horizontalSizeClass == .compact {
+            NavigationLink(value: printer.id) { card }
+                .buttonStyle(.plain)
+        } else {
+            Button { selectedPrinterID = printer.id } label: { card }
+                .buttonStyle(.plain)
         }
     }
 
