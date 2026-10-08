@@ -57,13 +57,27 @@ struct MonitorView: View {
             } else {
                 NavigationSplitView(columnVisibility: $columnVisibility) {
                     printerList
+                        // Cards need ~370pt to fit name, temperatures and progress footer on
+                        // one line; the default sidebar width (and the open-pose overlay) is narrower.
+                        .navigationSplitViewColumnWidth(min: 380, ideal: 400, max: 460)
                 } detail: {
                     if let selectedPrinterID {
                         PrinterDetailView(printerID: selectedPrinterID, hidesTabBar: false, onBack: {
                             columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
                         }, backIcon: "sidebar.left")
                     } else {
-                        ContentUnavailableView(String(localized: "Select a Printer"), systemImage: "printer.fill")
+                        // In portrait the list slides over the detail pane instead of sitting
+                        // beside it, and this centered placeholder pokes out past the overlay's
+                        // edge. Leave it blank while the list is up there; it returns once the
+                        // overlay is dismissed.
+                        GeometryReader { proxy in
+                            if columnVisibility == .all && proxy.size.width < proxy.size.height {
+                                Color.clear
+                            } else {
+                                ContentUnavailableView(String(localized: "Select a Printer"), systemImage: "printer.fill")
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
                     }
                 }
                 .toolbar(removing: .sidebarToggle)
@@ -372,6 +386,7 @@ struct PrinterCard: View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 Text(progress ?? 0, format: .percent.precision(.fractionLength(0)))
+                    .fixedSize()
                 if let currentLayer, let totalLayers, totalLayers > 0 {
                     Text("· \(currentLayer)/\(totalLayers)", comment: "Print progress in layers on a printer card, e.g. '· 140/226'")
                         .accessibilityLabel(Text("layer \(currentLayer) of \(totalLayers)", comment: "Accessibility label for the layer count on a printer card"))
@@ -450,6 +465,9 @@ struct PrinterCard: View {
             Label("\(bed)°", systemImage: "square.3.layers.3d.bottom.filled")
         }
         .labelStyle(CompactIconLabelStyle())
+        .lineLimit(1)
+        // Never wrap digits vertically; the name truncates instead.
+        .fixedSize()
         .ncFont(size: 11.5, weight: .medium, relativeTo: .caption2)
         .foregroundStyle(NCColor.textTertiary)
         .accessibilityElement(children: .combine)
