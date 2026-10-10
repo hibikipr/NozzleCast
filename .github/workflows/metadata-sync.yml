@@ -43,12 +43,9 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
           ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
-        # NOTE: forced to dry_run:true for now. The seeded metadata_config
-        # had never had a verified clean dry run against real credentials
-        # (see the version_info.yml fix for why the first real run would
-        # have shown a false 5-field diff) -- so this workflow has never
-        # actually proven a real push is safe. A human must confirm a clean
-        # `bundle exec fastlane metadata_push dry_run:true` run against real
-        # ASC credentials, then flip this to a real push (drop
-        # `dry_run:true` below) deliberately, with review.
-        run: bundle exec fastlane metadata_push dry_run:true
+        # Real push: merges to main that touch fastlane/metadata_config/** now
+        # PATCH the live App Store Connect listing (version fields need an
+        # editable version). Clean dry runs against real credentials were
+        # confirmed first. To preview a change without pushing, run
+        # `bundle exec fastlane metadata_push dry_run:true` locally.
+        run: bundle exec fastlane metadata_push
