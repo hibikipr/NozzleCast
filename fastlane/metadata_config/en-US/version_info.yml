@@ -11,8 +11,8 @@ description: |-
   YOUR WHOLE FARM AT A GLANCE
   The Monitor tab shows every printer's state, job, progress, and AMS filament colors at once. Tap in for full detail: temperatures, print controls, and per-slot filament info.
 
-  IPHONE DUO SUPPORT
-  NozzleCast supports iPhone Duo. With the Duo open, your printer list and the selected printer sit side by side. Partly open, the printer's live camera view stays pinned on top while the controls scroll below it. Closed, you get the familiar single-column layout.
+  NOW SUPPORTS IPHONE DUO
+  NozzleCast now supports iPhone Duo. With the Duo open, your printer list and the selected printer sit side by side. Partly open, the printer's live camera view stays pinned on top while the controls scroll below it. Closed, you get the familiar single-column layout.
 
   FILAMENT INVENTORY, NOT GUESSWORK
   Track every spool — material, color, brand, remaining weight, and whether it's loaded in an AMS or sitting in storage. Scan a spool's barcode or printed label with your camera to add it in seconds, entirely on-device.
@@ -22,12 +22,12 @@ description: |-
 
   Requires an existing compatible self-hosted printer management server on your network. Live Activities and Lock Screen push updates require the optional nozzlecast-relay component.
 keywords: bambu,3d printing,3d printer,filament,ams,print farm,live activity,x1c,p1s,a1,octoprint
-promotional_text: Now with iPhone Duo support! Live Activities for your Bambu printers
+promotional_text: NozzleCast now supports iPhone Duo! Live Activities for your Bambu printers
   — real progress, real ETA, and HMS alerts, driven by your own self-hosted server.
 marketing_url: https://nozzlecast.townsville.cc
 support_url: https://nozzlecast.townsville.cc
 whats_new: |-
-  IPHONE DUO SUPPORT
+  NOW SUPPORTS IPHONE DUO
   • NozzleCast now supports iPhone Duo. Open, your printer list and the selected printer sit side by side; partly open, the live camera view stays pinned on top with the controls scrolling below; closed, you get the familiar single-column layout.
   • The printer list is wider and its cards no longer wrap or truncate on larger screens.
 
