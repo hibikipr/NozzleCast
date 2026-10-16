@@ -159,6 +159,15 @@ platform :ios do
   # lane.
   UNFRAMEABLE_DEVICE_CLASSES = ["iPad-13"].freeze
 
+  # iPhone Duo (1398x2034 closed, 2853x2007 / 2007x2853 open) has no frameit
+  # template either, but deliver uploads it from fastlane 2.241.1 on (display
+  # type APP_IPHONE_DUO, one set for every pose, 10 per locale). Its files are
+  # copied into screenshots_framed/<locale>/ unframed, as
+  # "iPhone-Duo-<file>.png", so they survive this lane's rebuild of out_dir.
+  # Number the files in the order App Store Connect should show them: after
+  # every upload deliver re-sorts each set by file name.
+  PASSTHROUGH_DEVICE_CLASSES = ["iPhone-Duo"].freeze
+
   # frameit's ConfigParser#change_paths_to_absolutes! (frameit/lib/frameit/config_parser.rb)
   # unconditionally rewrites any 'font'/'background' string value with
   # `value.replace(File.join(containing_folder, value))` — joining blindly,
@@ -228,11 +237,18 @@ platform :ios do
       # (multiple device classes reuse the same shot numbers/names).
       FileUtils.rm_rf(staging_dir)
       FileUtils.mkdir_p(staging_dir)
+      passthrough = []
 
       Dir.glob(File.join(locale_dir, "*")).each do |device_dir|
         next unless File.directory?(device_dir)
 
         device_class = File.basename(device_dir)
+        if PASSTHROUGH_DEVICE_CLASSES.include?(device_class)
+          Dir.glob(File.join(device_dir, "*.png")).sort.each do |src|
+            passthrough << [src, "#{device_class}-#{File.basename(src)}"]
+          end
+          next
+        end
         if UNFRAMEABLE_DEVICE_CLASSES.include?(device_class)
           UI.important("Skipping #{device_class} for #{locale} — frameit has no template for this resolution (see fastlane/README.md).")
           next
@@ -288,6 +304,9 @@ platform :ios do
       FileUtils.mkdir_p(out_dir)
       framed_files.each do |framed|
         FileUtils.cp(framed, File.join(out_dir, File.basename(framed)))
+      end
+      passthrough.each do |src, name|
+        FileUtils.cp(src, File.join(out_dir, name))
       end
     end
   end
