@@ -280,6 +280,46 @@ final class PushNotificationManager: NSObject {
         }
     }
 
+    /// The relay's broadcast channel for this printer's current print in this build's APNs
+    /// environment, or nil when there is none — channels turned off on the relay, creation failed
+    /// there, the print already ended (all 404), or the relay couldn't be reached. Nil means "start
+    /// the activity on a per-activity token as before", so every failure here is soft.
+    ///
+    /// Only an activity the app creates itself needs this: one started by push-to-start carries the
+    /// channel in its `input-push-channel` and iOS subscribes it without the app's involvement.
+    func broadcastChannelID(printerID: String) async -> String? {
+        guard let config = RelayConfigStore.load() else { return nil }
+        var request = URLRequest(url: config.url.appendingPathComponent("channel").appendingPathComponent(printerID))
+        request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
+        // Called from the foreground just before `Activity.request()`; a slow relay must not hold
+        // up showing the activity, and the token fallback is always available.
+        request.timeoutInterval = 5
+
+        struct Response: Decodable {
+            struct Channel: Decodable {
+                var environment: String
+                var channelId: String
+            }
+            var channels: [Channel]
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            guard status == 200 else {
+                NSLog("NCDEBUG channel lookup HTTP %d for printerID=%@", status, printerID)
+                return nil
+            }
+            let channel = try JSONDecoder().decode(Response.self, from: data).channels
+                .first { $0.environment == APNSEnvironment.current }
+            NSLog("NCDEBUG channel lookup for printerID=%@ environment=%@: %@", printerID, APNSEnvironment.current, channel == nil ? "none" : "found")
+            return channel?.channelId
+        } catch {
+            NSLog("NCDEBUG channel lookup failed for printerID=%@: %@", printerID, String(describing: error))
+            return nil
+        }
+    }
+
     /// Scans all currently active Live Activities for an immediately-available push token and
     /// registers any found with the relay. Call after every background sync — `pushTokenUpdates`
     /// may not deliver while the app is suspended, so the token can arrive between wakeups without
