@@ -301,16 +301,33 @@ final class PrintLiveActivityManager {
             let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
             let state = Self.contentState(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
             lastFingerprints[id] = Self.fingerprint(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
+            let content = ActivityContent(state: state, staleDate: nil)
+
+            // An activity needs a push type at creation -- per Apple's docs, one created without
+            // it never gets a push channel at all, regardless of any later observation of
+            // `pushTokenUpdates`. This path only runs while the app is foregrounded, but the relay
+            // drives every activity's update/end via APNs once backgrounded.
+            //
+            // Prefer the relay's broadcast channel for this print, so this activity is subscribed
+            // the same way a push-to-start one is. Fall back to a per-activity token, registered
+            // through PushNotificationManager.startObservingActivityPushTokensIfConfigured, when
+            // the relay has no channel or iOS rejects it -- an invalid channel id makes
+            // `Activity.request` throw.
+            let channelID = relayConfigured ? await PushNotificationManager.shared.broadcastChannelID(printerID: id) : nil
             do {
-                // pushType: .token requests a per-activity push token for this activity, same as
-                // one started via push-to-start gets automatically -- per Apple's docs, an
-                // activity created without it never gets a push channel at all, regardless of any
-                // later observation of `pushTokenUpdates`. This path only runs while the app is
-                // foregrounded, but the relay (PushNotificationManager.startObservingActivityPushTokensIfConfigured)
-                // drives every activity's update/end via APNs once backgrounded -- an activity
-                // started here without this would have no push channel to fall back on.
-                _ = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil), pushType: .token)
-                NSLog("NCDEBUG Activity.request succeeded for printerID=%@", id)
+                if let channelID {
+                    do {
+                        _ = try Activity.request(attributes: attributes, content: content, pushType: .channel(channelID))
+                        NSLog("NCDEBUG Activity.request succeeded for printerID=%@ (broadcast channel)", id)
+                    } catch {
+                        NSLog("NCDEBUG Activity.request on channel failed for printerID=%@, retrying with a token: %@", id, String(describing: error))
+                        _ = try Activity.request(attributes: attributes, content: content, pushType: .token)
+                        NSLog("NCDEBUG Activity.request succeeded for printerID=%@ (token)", id)
+                    }
+                } else {
+                    _ = try Activity.request(attributes: attributes, content: content, pushType: .token)
+                    NSLog("NCDEBUG Activity.request succeeded for printerID=%@ (token)", id)
+                }
             } catch {
                 NSLog("NCDEBUG Activity.request failed for printerID=%@: %@", id, String(describing: error))
             }
