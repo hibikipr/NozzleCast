@@ -31,6 +31,13 @@
 			remoteGlobalIDString = 000000000000000400000000;
 			remoteInfo = NozzleCastWidgets;
 		};
+		000000000000000550000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000100000000;
+			remoteInfo = NozzleCast;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -50,6 +57,7 @@
 		000000000000000000000120 /* NozzleCast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NozzleCast.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000121 /* NozzleCastNSE.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NozzleCastNSE.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000123 /* NozzleCastWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NozzleCastWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000125 /* NozzleCastTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NozzleCastTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -101,6 +109,11 @@
 			path = NozzleCastWidgets;
 			sourceTree = "<group>";
 		};
+		000000000000000000000017 /* NozzleCastTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NozzleCastTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +137,11 @@
 				D2CC53B6040C2C34158A3B9B /* NozzleCastShared in Frameworks */,
 			);
 		};
+		000000000000000530000000 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -133,6 +151,7 @@
 				000000000000000000000010 /* NozzleCast */,
 				000000000000000000000011 /* NozzleCastNSE */,
 				000000000000000000000013 /* NozzleCastWidgets */,
+				000000000000000000000017 /* NozzleCastTests */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -143,6 +162,7 @@
 				000000000000000000000120 /* NozzleCast.app */,
 				000000000000000000000121 /* NozzleCastNSE.appex */,
 				000000000000000000000123 /* NozzleCastWidgets.appex */,
+				000000000000000000000125 /* NozzleCastTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -220,6 +240,27 @@
 			productReference = 000000000000000000000123 /* NozzleCastWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		000000000000000500000000 /* NozzleCastTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000510000000 /* Build configuration list for PBXNativeTarget "NozzleCastTests" */;
+			buildPhases = (
+				000000000000000520000000 /* Sources */,
+				000000000000000530000000 /* Frameworks */,
+				000000000000000540000000 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				000000000000000560000000 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				000000000000000000000017 /* NozzleCastTests */,
+			);
+			name = NozzleCastTests;
+			productName = NozzleCastTests;
+			productReference = 000000000000000000000125 /* NozzleCastTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -238,6 +279,10 @@
 					};
 					000000000000000400000000 = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					000000000000000500000000 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 000000000000000100000000;
 					};
 				};
 			};
@@ -262,6 +307,7 @@
 				000000000000000100000000 /* NozzleCast */,
 				000000000000000200000000 /* NozzleCastNSE */,
 				000000000000000400000000 /* NozzleCastWidgets */,
+				000000000000000500000000 /* NozzleCastTests */,
 			);
 		};
 /* End PBXProject section */
@@ -278,6 +324,11 @@
 			);
 		};
 		000000000000000440000000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		000000000000000540000000 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
 			);
@@ -300,6 +351,11 @@
 			files = (
 			);
 		};
+		000000000000000520000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -312,6 +368,11 @@
 			isa = PBXTargetDependency;
 			target = 000000000000000400000000 /* NozzleCastWidgets */;
 			targetProxy = 000000000000000450000000 /* PBXContainerItemProxy */;
+		};
+		000000000000000560000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000100000000 /* NozzleCast */;
+			targetProxy = 000000000000000550000000 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -680,6 +741,52 @@
 			};
 			name = Release;
 		};
+		000000000000000511000000 /* Debug configuration for PBXNativeTarget "NozzleCastTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.victormanuel.NozzleCastTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NozzleCast.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NozzleCast";
+			};
+			name = Debug;
+		};
+		000000000000000512000000 /* Release configuration for PBXNativeTarget "NozzleCastTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.victormanuel.NozzleCastTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NozzleCast.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NozzleCast";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -712,6 +819,14 @@
 			buildConfigurations = (
 				000000000000000411000000 /* Debug configuration for PBXNativeTarget "NozzleCastWidgets" */,
 				000000000000000412000000 /* Release configuration for PBXNativeTarget "NozzleCastWidgets" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		000000000000000510000000 /* Build configuration list for PBXNativeTarget "NozzleCastTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000511000000 /* Debug configuration for PBXNativeTarget "NozzleCastTests" */,
+				000000000000000512000000 /* Release configuration for PBXNativeTarget "NozzleCastTests" */,
 			);
 			defaultConfigurationName = Release;
 		};

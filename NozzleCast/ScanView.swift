@@ -1,13 +1,14 @@
 import SwiftUI
 
 enum ScanMode: CaseIterable, Hashable {
-    case barcode, labelPhoto, manual
+    case barcode, labelPhoto, manual, spoolBuddy
 
     var label: String {
         switch self {
         case .barcode: String(localized: "Barcode", comment: "Scan mode: live barcode scanning")
         case .labelPhoto: String(localized: "Label Photo", comment: "Scan mode: photograph the printed label")
         case .manual: String(localized: "Manual", comment: "Scan mode: enter filament details by hand")
+        case .spoolBuddy: String(localized: "SpoolBuddy", comment: "Scan mode: wait for a spool placed on the SpoolBuddy NFC reader and scale")
         }
     }
 }
@@ -28,6 +29,7 @@ struct ScannedResult {
 
 struct ScanView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @Binding var selectedTab: RootTab
 
     @State private var mode: ScanMode = .barcode
@@ -40,6 +42,19 @@ struct ScanView: View {
     @State private var manualCodeText = ""
     @State private var notFoundNotice = false
     @State private var lookupErrorMessage: String?
+    @State private var spoolBuddy = SpoolBuddySession()
+    @State private var spoolBuddyAvailable = true
+    @State private var isVisible = false
+    /// The NFC tag of the unknown spool being added from SpoolBuddy mode, linked to the new spool.
+    @State private var pendingTag: (uid: String, trayUUID: String?)?
+    @State private var editingSpool: Spool?
+    @State private var assigningSpool: Spool?
+
+    /// Bambuddy's event socket only stays open while SpoolBuddy mode is on screen: iOS drops it in
+    /// the background anyway.
+    private var listensToSpoolBuddy: Bool {
+        mode == .spoolBuddy && isVisible && scenePhase == .active
+    }
 
     var body: some View {
         NavigationStack {
@@ -66,6 +81,16 @@ struct ScanView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(NCColor.canvasBackground.ignoresSafeArea())
             .navigationBarHidden(true)
+            .onAppear { isVisible = true }
+            .onDisappear { isVisible = false }
+            .task(id: listensToSpoolBuddy) {
+                guard listensToSpoolBuddy else { return }
+                spoolBuddyAvailable = spoolBuddy.start(store: store)
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(3600))
+                }
+                spoolBuddy.stop()
+            }
             .onChange(of: mode) { _, newMode in
                 scannerBridge.reset()
                 if newMode == .manual {
@@ -116,6 +141,14 @@ struct ScanView: View {
                     }
                 }
             }
+            .sheet(item: $editingSpool) { spool in
+                EditSpoolSheet(spool: spool)
+            }
+            .sheet(item: $assigningSpool) { spool in
+                AssignPickerSheet(spool: spool) {
+                    assigningSpool = nil
+                }
+            }
         }
     }
 
@@ -128,6 +161,8 @@ struct ScanView: View {
                 ForEach(ScanMode.allCases, id: \.self) { m in
                     Text(m.label)
                         .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .foregroundStyle(mode == m ? .white : NCColor.textSecondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)
@@ -146,6 +181,20 @@ struct ScanView: View {
     private var captureBody: some View {
         if mode == .manual {
             manualFormBody
+        } else if mode == .spoolBuddy {
+            SpoolBuddyScanPanel(
+                session: spoolBuddy,
+                isAvailable: spoolBuddyAvailable,
+                onEdit: { editingSpool = $0 },
+                onAssign: { assigningSpool = $0 },
+                onAddUnknown: { tagUID, trayUUID in
+                    // The tag holds no filament details Bambuddy passes on; a tray UUID does say
+                    // it's a genuine Bambu Lab spool.
+                    result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                    pendingTag = (tagUID, trayUUID)
+                    step = .review
+                }
+            )
         } else {
             scannerBody
         }
@@ -281,6 +330,15 @@ struct ScanView: View {
                         Text("Also matches: \(also)")
                             .ncFont(size: 11.5, relativeTo: .caption)
                             .foregroundStyle(NCColor.textTertiary)
+                    }
+                    if let pendingTag {
+                        Label {
+                            Text("Linked to the SpoolBuddy tag \(pendingTag.uid)", comment: "Review screen: the new spool gets the scanned NFC tag")
+                        } icon: {
+                            Image(systemName: "sensor.tag.radiowaves.forward")
+                        }
+                        .ncFont(size: 11.5, relativeTo: .caption)
+                        .foregroundStyle(NCColor.textTertiary)
                     }
                 }
 
@@ -507,16 +565,24 @@ struct ScanView: View {
             colorName: result.colorName,
             colorHex: result.colorHex,
             brand: result.brand,
-            netWeightGrams: result.netWeightGrams
+            netWeightGrams: result.netWeightGrams,
+            tag: pendingTag
         )
         addedSpool = spool
+        pendingTag = nil
         step = .done
     }
 
     private func reset() {
         step = .capture
-        mode = .barcode
+        // SpoolBuddy mode stays put, ready for the next spool.
+        if mode == .spoolBuddy {
+            spoolBuddy.clearScan()
+        } else {
+            mode = .barcode
+        }
         addedSpool = nil
+        pendingTag = nil
         scannerBridge.reset()
     }
 }

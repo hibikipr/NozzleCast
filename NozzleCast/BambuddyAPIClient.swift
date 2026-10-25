@@ -904,3 +904,310 @@ struct BambuddyAPIClient {
         }
     }
 }
+
+// MARK: - SpoolBuddy
+
+/// A SpoolBuddy (Raspberry Pi with an NFC reader and a scale) registered with Bambuddy.
+struct BambuddySpoolBuddyDeviceDTO: Codable, Equatable {
+    var deviceId: String
+    var hostname: String
+    var online: Bool
+    /// Whether the device has a scale, and whether its last heartbeat said it works. Either is
+    /// false when the scale is turned off or broken; the scale then sends no readings.
+    var hasScale: Bool?
+    var scaleOk: Bool?
+}
+
+private struct SpoolTagLinkBody: Codable {
+    var tagUid: String
+    var trayUuid: String?
+}
+
+extension BambuddyAPIClient {
+    private struct WebSocketTokenResponse: Decodable { var token: String }
+
+    /// Mints the short-lived token `/api/v1/ws` takes as `?token=`. The API key needs Bambuddy's
+    /// `websocket:connect` permission. Nil from a server that predates the endpoint, whose socket
+    /// takes no token.
+    func webSocketToken() async throws -> String? {
+        let data: Data
+        do {
+            data = try await send(request("/api/v1/auth/ws-token", method: "POST"))
+        } catch BambuddyAPIError.http(404, _) {
+            return nil
+        }
+        do {
+            return try decoder.decode(WebSocketTokenResponse.self, from: data).token
+        } catch {
+            throw BambuddyAPIError.decoding(error)
+        }
+    }
+
+    func spoolBuddyDevices() async throws -> [BambuddySpoolBuddyDeviceDTO] {
+        try await get("/api/v1/spoolbuddy/devices")
+    }
+
+    /// Stores an NFC tag on a spool, so the next scan of that tag finds it. The two inventories
+    /// name the route differently; a Bambu spool is matched by `trayUUID` (the same on both of
+    /// its tags) ahead of the chip UID.
+    func linkTag(spoolID: Int, tagUID: String, trayUUID: String?) async throws {
+        let body = try encoder.encode(SpoolTagLinkBody(tagUid: tagUID, trayUuid: trayUUID))
+        let path = switch inventory {
+        case .builtIn: "\(inventory.basePath)/spools/\(spoolID)/link-tag"
+        case .spoolman: "\(inventory.basePath)/spools/\(spoolID)/tag"
+        }
+        _ = try await send(request(path, method: "PATCH", body: body))
+    }
+}
+
+/// The spool Bambuddy found for a scanned tag, as `spoolbuddy_tag_matched` carries it. Every field
+/// but the id is optional: Spoolman-backed spools can leave any of them empty.
+struct SpoolBuddyMatchedSpoolDTO: Codable, Equatable {
+    var id: Int
+    var material: String?
+    var subtype: String?
+    var colorName: String?
+    var colorNameIsSynthesized: Bool?
+    var rgba: String?
+    var extraColors: String?
+    var effectType: String?
+    var brand: String?
+    var labelWeight: Int?
+    var coreWeight: Int?
+    var weightUsed: Double?
+}
+
+/// The SpoolBuddy messages Bambuddy broadcasts on `/api/v1/ws` (see its
+/// `backend/app/api/routes/spoolbuddy.py`). Every other message on the socket is ignored.
+enum SpoolBuddyEvent: Equatable {
+    case tagMatched(deviceID: String, tagUID: String, trayUUID: String?, spool: SpoolBuddyMatchedSpoolDTO)
+    /// A tag no spool carries. `trayUUID` is only set for a genuine Bambu tag.
+    case unknownTag(deviceID: String, tagUID: String, trayUUID: String?, tagType: String?)
+    case tagRemoved(deviceID: String, tagUID: String)
+    /// The scale's gross reading: filament plus the empty spool.
+    case weight(deviceID: String, grams: Double, stable: Bool)
+    /// The tag was read but the lookup failed — `spoolmanUnavailable` when Bambuddy couldn't reach
+    /// Spoolman, which says nothing about whether the tag is known.
+    case lookupError(deviceID: String, spoolmanUnavailable: Bool)
+    case online(deviceID: String, hostname: String?)
+    case offline(deviceID: String)
+
+    var deviceID: String {
+        switch self {
+        case .tagMatched(let id, _, _, _), .unknownTag(let id, _, _, _), .tagRemoved(let id, _),
+             .weight(let id, _, _), .lookupError(let id, _), .online(let id, _), .offline(let id):
+            id
+        }
+    }
+
+    private struct Envelope: Decodable {
+        var type: String
+        var deviceId: String?
+        var tagUid: String?
+        var trayUuid: String?
+        var tagType: String?
+        var spool: SpoolBuddyMatchedSpoolDTO?
+        var weightGrams: Double?
+        var stable: Bool?
+        var hostname: String?
+        var context: String?
+    }
+
+    /// Nil for anything that isn't a well-formed SpoolBuddy event.
+    static func decode(_ data: Data) -> SpoolBuddyEvent? {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let e = try? decoder.decode(Envelope.self, from: data), let device = e.deviceId else { return nil }
+        switch e.type {
+        case "spoolbuddy_tag_matched":
+            guard let tag = e.tagUid, let spool = e.spool else { return nil }
+            return .tagMatched(deviceID: device, tagUID: tag, trayUUID: e.trayUuid, spool: spool)
+        case "spoolbuddy_unknown_tag":
+            guard let tag = e.tagUid else { return nil }
+            return .unknownTag(deviceID: device, tagUID: tag, trayUUID: e.trayUuid, tagType: e.tagType)
+        case "spoolbuddy_tag_removed":
+            guard let tag = e.tagUid else { return nil }
+            return .tagRemoved(deviceID: device, tagUID: tag)
+        case "spoolbuddy_weight":
+            guard let grams = e.weightGrams else { return nil }
+            return .weight(deviceID: device, grams: grams, stable: e.stable ?? false)
+        case "spoolbuddy_lookup_error":
+            return .lookupError(deviceID: device, spoolmanUnavailable: false)
+        case "spoolman_unavailable":
+            // Also sent for Spoolman outages that have nothing to do with a scan.
+            guard e.context == "nfc_tag_scanned" else { return nil }
+            return .lookupError(deviceID: device, spoolmanUnavailable: true)
+        case "spoolbuddy_online":
+            return .online(deviceID: device, hostname: e.hostname)
+        case "spoolbuddy_offline":
+            return .offline(deviceID: device)
+        default:
+            return nil
+        }
+    }
+}
+
+// MARK: - WebSocket
+
+/// One open socket. A seam for tests; the app uses `URLSessionBambuddyWebSocket`.
+protocol BambuddyWebSocket: AnyObject {
+    /// The next text message. Throws once the socket is closed.
+    func receive() async throws -> String
+    func send(_ text: String) async throws
+    func cancel()
+}
+
+final class URLSessionBambuddyWebSocket: BambuddyWebSocket {
+    private let task: URLSessionWebSocketTask
+
+    init(url: URL, session: URLSession = .shared) {
+        task = session.webSocketTask(with: url)
+        task.resume()
+    }
+
+    func receive() async throws -> String {
+        switch try await task.receive() {
+        case .string(let text): text
+        case .data(let data): String(decoding: data, as: UTF8.self)
+        @unknown default: ""
+        }
+    }
+
+    func send(_ text: String) async throws {
+        try await task.send(.string(text))
+    }
+
+    func cancel() {
+        task.cancel(with: .goingAway, reason: nil)
+    }
+}
+
+/// Bambuddy's live event socket, kept open with reconnects until `stop()`.
+///
+/// Every connection attempt mints a new token: Bambuddy refuses an expired one by dropping the
+/// handshake, which looks no different from a network failure, so a cached token could fail
+/// forever. Failed attempts back off exponentially (see `backoff(attempt:)`), and the count resets
+/// once a connection answers. Run it only while something on screen needs it — iOS drops sockets
+/// of a backgrounded app anyway.
+@Observable
+final class BambuddyEventStream {
+    enum State: Equatable {
+        case idle
+        case connecting
+        case connected
+        /// Waiting to retry after `attempt` failures in a row.
+        case retrying(attempt: Int, reason: String?)
+    }
+
+    private(set) var state: State = .idle
+    /// Called for each SpoolBuddy event, on the main actor.
+    @ObservationIgnored var onEvent: ((SpoolBuddyEvent) -> Void)?
+
+    @ObservationIgnored private let baseURL: URL
+    @ObservationIgnored private let fetchToken: () async throws -> String?
+    @ObservationIgnored private let makeSocket: (URL) -> BambuddyWebSocket
+    @ObservationIgnored private let sleep: (Duration) async throws -> Void
+    @ObservationIgnored private let pingInterval: Duration
+    @ObservationIgnored private var runTask: Task<Void, Never>?
+    @ObservationIgnored private var socket: BambuddyWebSocket?
+
+    init(
+        baseURL: URL,
+        fetchToken: @escaping () async throws -> String?,
+        makeSocket: @escaping (URL) -> BambuddyWebSocket = { URLSessionBambuddyWebSocket(url: $0) },
+        sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        pingInterval: Duration = .seconds(25)
+    ) {
+        self.baseURL = baseURL
+        self.fetchToken = fetchToken
+        self.makeSocket = makeSocket
+        self.sleep = sleep
+        self.pingInterval = pingInterval
+    }
+
+    convenience init(client: BambuddyAPIClient) {
+        self.init(baseURL: client.baseURL, fetchToken: { try await client.webSocketToken() })
+    }
+
+    func start() {
+        guard runTask == nil else { return }
+        runTask = Task { await run() }
+    }
+
+    func stop() {
+        runTask?.cancel()
+        runTask = nil
+        socket?.cancel()
+        socket = nil
+        state = .idle
+    }
+
+    /// 1, 2, 4, 8, 16, then 30 seconds between attempts.
+    static func backoff(attempt: Int) -> Duration {
+        .seconds(min(30, 1 << min(max(attempt - 1, 0), 5)))
+    }
+
+    /// `/api/v1/ws` under `baseURL` (which may carry a path prefix behind a reverse proxy), on
+    /// `ws`/`wss` to match `http`/`https`.
+    static func webSocketURL(baseURL: URL, token: String?) -> URL? {
+        guard var components = URLComponents(url: baseURL.appendingPathComponent("/api/v1/ws"), resolvingAgainstBaseURL: false) else { return nil }
+        switch components.scheme?.lowercased() {
+        case "https": components.scheme = "wss"
+        case "http": components.scheme = "ws"
+        default: return nil
+        }
+        if let token { components.queryItems = [URLQueryItem(name: "token", value: token)] }
+        return components.url
+    }
+
+    /// Connects and reconnects until cancelled, or until the sleeper throws.
+    func run() async {
+        var failures = 0
+        while !Task.isCancelled {
+            if failures == 0 { state = .connecting }
+            var reason: String?
+            do {
+                guard let url = Self.webSocketURL(baseURL: baseURL, token: try await fetchToken()) else {
+                    throw BambuddyAPIError.notConfigured
+                }
+                try Task.checkCancellation()
+                let socket = makeSocket(url)
+                self.socket = socket
+                let pingInterval = pingInterval
+                // An immediate ping, so the pong confirms the connection even when no printer
+                // status follows; then one now and then, so idle proxies don't drop the socket.
+                let pinger = Task {
+                    while !Task.isCancelled {
+                        try? await socket.send(#"{"type":"ping"}"#)
+                        try? await Task.sleep(for: pingInterval)
+                    }
+                }
+                defer {
+                    pinger.cancel()
+                    socket.cancel()
+                }
+                while !Task.isCancelled {
+                    let text = try await socket.receive()
+                    if state != .connected {
+                        failures = 0
+                        state = .connected
+                    }
+                    if let event = SpoolBuddyEvent.decode(Data(text.utf8)) {
+                        onEvent?(event)
+                    }
+                }
+            } catch {
+                reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            socket = nil
+            if Task.isCancelled { break }
+            failures += 1
+            state = .retrying(attempt: failures, reason: reason)
+            do {
+                try await sleep(Self.backoff(attempt: failures))
+            } catch {
+                break
+            }
+        }
+    }
+}
