@@ -49,6 +49,14 @@ struct ScanView: View {
     @State private var pendingTag: (uid: String, trayUUID: String?)?
     @State private var editingSpool: Spool?
     @State private var assigningSpool: Spool?
+    /// The unknown SpoolBuddy tag being linked to an existing spool.
+    @State private var linkingTag: UnknownTag?
+
+    struct UnknownTag: Identifiable {
+        var uid: String
+        var trayUUID: String?
+        var id: String { uid }
+    }
 
     /// Bambuddy's event socket only stays open while SpoolBuddy mode is on screen: iOS drops it in
     /// the background anyway.
@@ -144,6 +152,12 @@ struct ScanView: View {
             .sheet(item: $editingSpool) { spool in
                 EditSpoolSheet(spool: spool)
             }
+            .sheet(item: $linkingTag) { tag in
+                LinkTagSpoolPicker(tagUID: tag.uid) { spool in
+                    store.linkTag(uid: tag.uid, trayUUID: tag.trayUUID, toSpool: spool.id)
+                    spoolBuddy.linked(spool, tagUID: tag.uid)
+                }
+            }
             .sheet(item: $assigningSpool) { spool in
                 AssignPickerSheet(spool: spool) {
                     assigningSpool = nil
@@ -187,6 +201,7 @@ struct ScanView: View {
                 isAvailable: spoolBuddyAvailable,
                 onEdit: { editingSpool = $0 },
                 onAssign: { assigningSpool = $0 },
+                onLinkUnknown: { tagUID, trayUUID in linkingTag = UnknownTag(uid: tagUID, trayUUID: trayUUID) },
                 onAddUnknown: { tagUID, trayUUID in
                     // The tag holds no filament details Bambuddy passes on; a tray UUID does say
                     // it's a genuine Bambu Lab spool.

@@ -207,6 +207,10 @@ struct BambuddySpoolDTO: Codable {
     /// Where this spool can be bought (Bambuddy 1.2.5.7). Built-in inventory only — Spoolman
     /// mode keeps suppliers behind a separate per-spool endpoint.
     var suppliers: [BambuddySpoolSupplierDTO]?
+    /// The NFC tag linked to this spool: a chip UID, and for a Bambu spool the tray UUID both of
+    /// its tags share. Both nil for a spool with no tag.
+    var tagUid: String?
+    var trayUuid: String?
 }
 
 struct BambuddySpoolSupplierDTO: Codable {

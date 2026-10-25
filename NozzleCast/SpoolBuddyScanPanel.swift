@@ -78,6 +78,14 @@ final class SpoolBuddySession {
         stream = nil
     }
 
+    /// Shows `spool` as the scanned one, after the app linked the unknown tag `tagUID` to it.
+    /// Bambuddy announces nothing for a link, so this stands in for the match the next scan gets.
+    func linked(_ spool: Spool, tagUID: String) {
+        guard spool.id.hasPrefix("bb-"), let id = Int(spool.id.dropFirst(3)) else { return }
+        scan = .matched(SpoolBuddyMatchedSpoolDTO(id: id, material: spool.material, colorName: spool.colorName, brand: spool.brand), tagUID: tagUID)
+        matchedSpool = spool
+    }
+
     /// Back to waiting for the next spool.
     func clearScan() {
         scan = .waiting
@@ -143,6 +151,7 @@ struct SpoolBuddyScanPanel: View {
     var isAvailable: Bool
     var onEdit: (Spool) -> Void
     var onAssign: (Spool) -> Void
+    var onLinkUnknown: (_ tagUID: String, _ trayUUID: String?) -> Void
     var onAddUnknown: (_ tagUID: String, _ trayUUID: String?) -> Void
 
     @Environment(AppStore.self) private var store
@@ -315,8 +324,13 @@ struct SpoolBuddyScanPanel: View {
                     ? String(localized: "This Bambu Lab tag isn't linked to any spool in your inventory yet.", comment: "SpoolBuddy scan: unknown Bambu tag")
                     : String(localized: "This tag isn't linked to any spool in your inventory yet.", comment: "SpoolBuddy scan: unknown tag")
             )
-            actionButton(String(localized: "Add to Inventory", comment: "SpoolBuddy scan: add the unknown spool"), systemImage: "plus", prominent: true) {
-                onAddUnknown(tagUID, trayUUID)
+            HStack(spacing: 10) {
+                actionButton(String(localized: "New Spool", comment: "SpoolBuddy scan: add the unknown spool to the inventory as a new spool"), systemImage: "plus", prominent: false) {
+                    onAddUnknown(tagUID, trayUUID)
+                }
+                actionButton(String(localized: "Link to a Spool", comment: "SpoolBuddy scan: link the unknown tag to a spool already in the inventory"), systemImage: "link", prominent: true) {
+                    onLinkUnknown(tagUID, trayUUID)
+                }
             }
         }
     }
@@ -379,5 +393,77 @@ struct SpoolBuddyScanPanel: View {
         .frame(maxWidth: .infinity, minHeight: 300)
         .padding(20)
         .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(hex: "#141414")))
+    }
+}
+
+/// Picks the inventory spool an unknown SpoolBuddy tag belongs to. Offers only spools with no tag
+/// yet, most recently used first: Bambuddy refuses a tag that another spool already carries.
+struct LinkTagSpoolPicker: View {
+    var tagUID: String
+    var onPick: (Spool) -> Void
+
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var pendingSpool: Spool?
+
+    private var candidates: [Spool] {
+        let untagged = store.spools
+            .filter { !$0.hasTag && !$0.isArchived }
+            .sorted { ($0.lastUsedAt ?? .distantPast) > ($1.lastUsedAt ?? .distantPast) }
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return untagged }
+        return untagged.filter { spool in
+            [spool.material, spool.subtype ?? "", spool.colorName, spool.brand].contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if candidates.isEmpty {
+                    Text(searchText.isEmpty
+                         ? String(localized: "Every spool in your inventory already has a tag.", comment: "Link tag picker: no spool without a tag")
+                         : String(localized: "No spool without a tag matches.", comment: "Link tag picker: search found nothing"))
+                        .ncFont(size: 14, relativeTo: .subheadline)
+                        .foregroundStyle(NCColor.textSecondary)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+                ForEach(candidates) { spool in
+                    Button { pendingSpool = spool } label: {
+                        SpoolListRow(spool: spool)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color(hex: "#212121").ignoresSafeArea())
+            .searchable(text: $searchText, prompt: Text("Search spools", comment: "Link tag picker search field"))
+            .navigationTitle(String(localized: "Link Tag to a Spool", comment: "Link tag picker title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "Cancel", comment: "Dismisses the link tag picker")) { dismiss() }
+                }
+            }
+            .confirmationDialog(
+                String(localized: "Link this tag?", comment: "Link tag picker confirmation title"),
+                isPresented: Binding(get: { pendingSpool != nil }, set: { if !$0 { pendingSpool = nil } }),
+                titleVisibility: .visible,
+                presenting: pendingSpool
+            ) { spool in
+                Button(String(localized: "Link to \(spool.materialWithEffect) · \(spool.colorName)", comment: "Link tag picker: confirm linking the tag to this spool")) {
+                    onPick(spool)
+                    dismiss()
+                }
+            } message: { _ in
+                Text("Tag \(tagUID) will open this spool whenever it's placed on the SpoolBuddy.", comment: "Link tag picker confirmation message; the tag's UID")
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

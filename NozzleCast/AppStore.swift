@@ -728,7 +728,8 @@ final class AppStore {
             suppliers: (dto.suppliers ?? []).map {
                 SpoolSupplier(name: $0.supplierName, articleNumber: $0.supplierArticleNumber, pricePerKg: $0.quotedPricePerKg, isPurchaseSource: $0.isPurchaseSource ?? false)
             },
-            lastUsedAt: dto.lastUsed.flatMap(Self.parseBambuddyTimestamp)
+            lastUsedAt: dto.lastUsed.flatMap(Self.parseBambuddyTimestamp),
+            hasTag: [dto.tagUid, dto.trayUuid].contains { !($0 ?? "").isEmpty }
         )
     }
 
@@ -1151,6 +1152,17 @@ final class AppStore {
     func makeEventStream() -> BambuddyEventStream? {
         guard !isShowingDemoData, let client else { return nil }
         return BambuddyEventStream(client: client)
+    }
+
+    /// Links a scanned NFC tag to an existing spool, so the next scan of it finds the spool.
+    /// Bambuddy refuses a tag another active spool already has; that surfaces as `actionError`.
+    func linkTag(uid: String, trayUUID: String?, toSpool spoolID: String) {
+        guard let bbID = bambuddyID(spoolID) else { return }
+        performAction(localChange: {
+            if let idx = self.spools.firstIndex(where: { $0.id == spoolID }) { self.spools[idx].hasTag = true }
+        }) { client in
+            try await client.linkTag(spoolID: bbID, tagUID: uid, trayUUID: trayUUID)
+        }
     }
 
     /// Nil when the list can't be read (no server, or the key lacks `inventory:read`).

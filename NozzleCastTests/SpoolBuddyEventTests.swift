@@ -153,11 +153,47 @@ struct SpoolBuddySessionTests {
         #expect(session.onlineDevice?.scaleWorks == false)
     }
 
+    @Test func linkingAnUnknownTagShowsTheSpool() throws {
+        let session = SpoolBuddySession()
+        try session.apply(event("spoolbuddy_unknown_tag"))
+        let spool = Spool(id: "bb-12", material: "PETG", colorName: "Black", colorHex: "#000000", brand: "Elegoo", remainingPercent: 80, netWeightGrams: 1000, location: .storage(name: nil))
+        session.linked(spool, tagUID: "04A2B3C4")
+
+        guard case .matched(let dto, let tag) = session.scan else {
+            Issue.record("scan is \(session.scan)")
+            return
+        }
+        #expect(dto.id == 12)
+        #expect(tag == "04A2B3C4")
+        #expect(session.matchedSpool == spool)
+
+        // Lifting the tag goes back to waiting, as for a scanned match.
+        try session.apply(event("spoolbuddy_tag_removed").withTag("04A2B3C4"))
+        #expect(session.scan == .waiting)
+    }
+
+    @Test func spoolTagFieldsDecode() throws {
+        let data = Data(#"{"id": 4, "material": "PLA", "tag_uid": "F6F0ECDF", "tray_uuid": "36B6C12DB3DA4A39A50C275F510BD399"}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let spool = try decoder.decode(BambuddySpoolDTO.self, from: data)
+        #expect(spool.tagUid == "F6F0ECDF")
+        #expect(spool.trayUuid == "36B6C12DB3DA4A39A50C275F510BD399")
+    }
+
     @Test func deviceListDecodes() throws {
         let data = Data(#"[{"id": 1, "device_id": "sb-88a29e37dbb8", "hostname": "spoolbuddy", "online": true, "has_nfc": true, "has_scale": false, "scale_ok": false, "nfc_ok": true}]"#.utf8)
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let list = try decoder.decode([BambuddySpoolBuddyDeviceDTO].self, from: data)
         #expect(list == [BambuddySpoolBuddyDeviceDTO(deviceId: "sb-88a29e37dbb8", hostname: "spoolbuddy", online: true, hasScale: false, scaleOk: false)])
+    }
+}
+
+private extension SpoolBuddyEvent {
+    /// The same removal, for another tag.
+    func withTag(_ uid: String) -> SpoolBuddyEvent {
+        guard case .tagRemoved(let device, _) = self else { return self }
+        return .tagRemoved(deviceID: device, tagUID: uid)
     }
 }
