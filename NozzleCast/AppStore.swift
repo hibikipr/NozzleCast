@@ -728,7 +728,8 @@ final class AppStore {
             suppliers: (dto.suppliers ?? []).map {
                 SpoolSupplier(name: $0.supplierName, articleNumber: $0.supplierArticleNumber, pricePerKg: $0.quotedPricePerKg, isPurchaseSource: $0.isPurchaseSource ?? false)
             },
-            lastUsedAt: dto.lastUsed.flatMap(Self.parseBambuddyTimestamp)
+            lastUsedAt: dto.lastUsed.flatMap(Self.parseBambuddyTimestamp),
+            hasTag: [dto.tagUid, dto.trayUuid].contains { !($0 ?? "").isEmpty }
         )
     }
 
@@ -1118,8 +1119,10 @@ final class AppStore {
 
     // MARK: - Inventory
 
+    /// `tag` is the NFC tag a SpoolBuddy read off this spool; it's linked to the new record, so
+    /// the next scan of it finds the spool.
     @discardableResult
-    func addSpool(material: String, colorName: String, colorHex: String, brand: String, netWeightGrams: Int) -> Spool {
+    func addSpool(material: String, colorName: String, colorHex: String, brand: String, netWeightGrams: Int, tag: (uid: String, trayUUID: String?)? = nil) -> Spool {
         let spool = Spool(
             id: isShowingDemoData ? "mock-spool-\(UUID().uuidString)" : "pending-\(UUID().uuidString)",
             material: material,
@@ -1134,9 +1137,46 @@ final class AppStore {
         // The pending placeholder is replaced by the real record on the follow-up refresh — or,
         // if creation failed, dropped by the failure path's own refresh.
         performAction(localChange: { self.spools.insert(spool, at: 0) }) { client in
-            _ = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams)
+            let created = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams)
+            if let tag {
+                try await client.linkTag(spoolID: created.id, tagUID: tag.uid, trayUUID: tag.trayUUID)
+            }
         }
         return spool
+    }
+
+    // MARK: - SpoolBuddy
+
+    /// A fresh connection to Bambuddy's event socket, or nil with no server to connect to.
+    /// Not started; the caller owns it.
+    func makeEventStream() -> BambuddyEventStream? {
+        guard !isShowingDemoData, let client else { return nil }
+        return BambuddyEventStream(client: client)
+    }
+
+    /// Links a scanned NFC tag to an existing spool, so the next scan of it finds the spool.
+    /// Bambuddy refuses a tag another active spool already has; that surfaces as `actionError`.
+    func linkTag(uid: String, trayUUID: String?, toSpool spoolID: String) {
+        guard let bbID = bambuddyID(spoolID) else { return }
+        performAction(localChange: {
+            if let idx = self.spools.firstIndex(where: { $0.id == spoolID }) { self.spools[idx].hasTag = true }
+        }) { client in
+            try await client.linkTag(spoolID: bbID, tagUID: uid, trayUUID: trayUUID)
+        }
+    }
+
+    /// Nil when the list can't be read (no server, or the key lacks `inventory:read`).
+    func spoolBuddyDevices() async -> [BambuddySpoolBuddyDeviceDTO]? {
+        guard !isShowingDemoData, let client else { return nil }
+        return try? await client.spoolBuddyDevices()
+    }
+
+    /// The inventory spool for a Bambuddy spool id, refreshing once if it isn't loaded — a spool
+    /// added in Bambuddy since the last refresh.
+    func spool(bambuddyID: Int) async -> Spool? {
+        if let spool = spool("bb-\(bambuddyID)") { return spool }
+        await refresh()
+        return spool("bb-\(bambuddyID)")
     }
 
     /// Edits a spool's own record (material/color/brand/weight/cost/notes/etc.) — separate from

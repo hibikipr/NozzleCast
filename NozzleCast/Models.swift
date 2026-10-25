@@ -413,6 +413,8 @@ struct Spool: Identifiable, Equatable {
     var materialNumber: String? = nil
     var suppliers: [SpoolSupplier] = []
     var lastUsedAt: Date? = nil
+    /// Whether an NFC tag is linked to the spool, so a SpoolBuddy scan finds it.
+    var hasTag = false
 
     var isArchived: Bool { archivedAt != nil }
 
