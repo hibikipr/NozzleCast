@@ -1131,7 +1131,7 @@ final class AppStore {
     /// `tag` is the NFC tag a SpoolBuddy read off this spool; it's linked to the new record, so
     /// the next scan of it finds the spool.
     @discardableResult
-    func addSpool(material: String, colorName: String, colorHex: String, brand: String, netWeightGrams: Int, tag: (uid: String, trayUUID: String?)? = nil) -> Spool {
+    func addSpool(material: String, colorName: String, colorHex: String, brand: String, netWeightGrams: Int, tag: (uid: String, trayUUID: String?)? = nil, extras: SpoolCreateExtras = SpoolCreateExtras()) -> Spool {
         let spool = Spool(
             id: isShowingDemoData ? "mock-spool-\(UUID().uuidString)" : "pending-\(UUID().uuidString)",
             material: material,
@@ -1146,7 +1146,7 @@ final class AppStore {
         // The pending placeholder is replaced by the real record on the follow-up refresh — or,
         // if creation failed, dropped by the failure path's own refresh.
         performAction(localChange: { self.spools.insert(spool, at: 0) }) { client in
-            let created = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams)
+            let created = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams, extras: extras)
             if let tag {
                 try await client.linkTag(spoolID: created.id, tagUID: tag.uid, trayUUID: tag.trayUUID)
             }

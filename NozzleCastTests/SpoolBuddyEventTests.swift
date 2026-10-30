@@ -63,6 +63,37 @@ struct SpoolBuddyEventDecodingTests {
         ))
     }
 
+    @Test func unknownTagWithoutTagDataHasNone() throws {
+        guard case .unknownTag(_, _, _, _, let tagData) = SpoolBuddyEvent.decode(try fixture("spoolbuddy_unknown_tag")) else {
+            Issue.record("not an unknown tag")
+            return
+        }
+        #expect(tagData == nil)
+    }
+
+    /// The `tag_data` Bambuddy's own #2685 integration test expects for a cyan PLA Basic tag.
+    @Test func unknownTagCarriesTheDecodedSpool() throws {
+        guard case .unknownTag(let device, let tag, let tray, let type, let tagData) = SpoolBuddyEvent.decode(try fixture("spoolbuddy_unknown_tag_with_tag_data")),
+              let tagData else {
+            Issue.record("no tag data decoded")
+            return
+        }
+        #expect(device == "sb-88a29e37dbb8")
+        #expect(tag == "865947E2")
+        #expect(tray == "36B6C12DB3DA4A39A50C275F510BD399")
+        #expect(type == "mifare_classic")
+        #expect(tagData == SpoolBuddyTagDataDTO(
+            material: "PLA", subtype: "Basic", colorName: "Cyan", rgba: "0086D6FF", brand: "Bambu Lab", labelWeight: 1000,
+            slicerFilament: "GFA00", slicerFilamentName: "Bambu PLA Basic", nozzleTempMin: 190, nozzleTempMax: 230,
+            coreWeight: 250, variantId: "A00-B08", diameter: 1.75, dryingTemp: 55, dryingTime: 8
+        ))
+    }
+
+    @Test func malformedTagDataStillDeliversTheUnknownTag() throws {
+        let json = #"{"type": "spoolbuddy_unknown_tag", "device_id": "sb-1", "tag_uid": "AB", "tag_data": {"subtype": "Basic"}}"#
+        #expect(SpoolBuddyEvent.decode(Data(json.utf8)) == .unknownTag(deviceID: "sb-1", tagUID: "AB", trayUUID: nil, tagType: nil, tagData: nil))
+    }
+
     @Test func tagRemoved() throws {
         #expect(SpoolBuddyEvent.decode(try fixture("spoolbuddy_tag_removed")) == .tagRemoved(deviceID: "sb-88a29e37dbb8", tagUID: "F6F0ECDF"))
     }
@@ -123,6 +154,17 @@ struct SpoolBuddySessionTests {
 
         try session.apply(event("spoolbuddy_unknown_tag"))
         #expect(session.scan == .unknown(tagUID: "04A2B3C4", trayUUID: "A1B2C3D4E5F60718293A4B5C6D7E8F90"))
+    }
+
+    @Test func anUnknownTagKeepsItsDecodedSpool() throws {
+        let session = SpoolBuddySession()
+        try session.apply(event("spoolbuddy_unknown_tag_with_tag_data"))
+        guard case .unknown(let tag, _, let tagData) = session.scan else {
+            Issue.record("scan is \(session.scan)")
+            return
+        }
+        #expect(tag == "865947E2")
+        #expect(tagData?.slicerFilamentName == "Bambu PLA Basic")
     }
 
     @Test func weightAndPresence() throws {
@@ -195,5 +237,71 @@ private extension SpoolBuddyEvent {
     func withTag(_ uid: String) -> SpoolBuddyEvent {
         guard case .tagRemoved(let device, _) = self else { return self }
         return .tagRemoved(deviceID: device, tagUID: uid)
+    }
+}
+
+struct SpoolBuddyTagDataTests {
+    private func cyanPLABasic() throws -> SpoolBuddyTagDataDTO {
+        guard case .unknownTag(_, _, _, _, let tagData?) = SpoolBuddyEvent.decode(try fixture("spoolbuddy_unknown_tag_with_tag_data")) else {
+            throw CancellationError()
+        }
+        return tagData
+    }
+
+    @Test func theFormStartsFromTheTag() throws {
+        let form = try cyanPLABasic().scannedResult
+        #expect(form.material == .pla)
+        #expect(form.colorName == "Cyan")
+        #expect(form.colorHex == "#0086D6")
+        #expect(form.brand == "Bambu Lab")
+        #expect(form.netWeightGrams == 1000)
+    }
+
+    @Test func anUntouchedFormSavesEverythingTheTagSays() throws {
+        let tag = try cyanPLABasic()
+        let form = tag.scannedResult
+        #expect(tag.material(for: form) == "PLA")
+        #expect(tag.createExtras(for: form) == SpoolCreateExtras(
+            subtype: "Basic", coreWeight: 250, slicerFilament: "GFA00", slicerFilamentName: "Bambu PLA Basic",
+            nozzleTempMin: 190, nozzleTempMax: 230
+        ))
+    }
+
+    @Test func aTagMaterialTheFormCantShowIsKeptWhileUntouched() {
+        let asa = SpoolBuddyTagDataDTO(material: "ASA", rgba: "FFFFFFFF")
+        var form = asa.scannedResult
+        #expect(form.material == .abs) // the closest of the form's four
+        #expect(asa.material(for: form) == "ASA")
+        form.material = .petg
+        #expect(asa.material(for: form) == "PETG")
+    }
+
+    @Test func aChangedMaterialDropsTheTagsProfileButKeepsTheCore() throws {
+        let tag = try cyanPLABasic()
+        var form = tag.scannedResult
+        form.material = .petg
+        let extras = tag.createExtras(for: form)
+        #expect(extras.subtype == nil)
+        #expect(extras.slicerFilament == nil)
+        #expect(extras.nozzleTempMin == nil)
+        #expect(extras.coreWeight == 250)
+    }
+
+    @Test func aChangedColourDropsTheTagsColourDetails() {
+        let silk = SpoolBuddyTagDataDTO(material: "PLA", subtype: "Silk+", rgba: "EC984CFF", extraColors: "EC984C,6CD4BC", effectType: "silk")
+        var form = silk.scannedResult
+        #expect(silk.createExtras(for: form).extraColors == "EC984C,6CD4BC")
+        #expect(silk.createExtras(for: form).effectType == "silk")
+        form.colorHex = "#000000"
+        #expect(silk.createExtras(for: form).extraColors == nil)
+        #expect(silk.createExtras(for: form).effectType == nil)
+        #expect(silk.createExtras(for: form).subtype == "Silk+")
+    }
+
+    @Test func aTagWithoutAColourStartsGrey() {
+        let tag = SpoolBuddyTagDataDTO(material: "PETG", rgba: nil)
+        #expect(tag.colorHex == nil)
+        #expect(tag.scannedResult.colorHex == "#808080")
+        #expect(tag.scannedResult.material == .petg)
     }
 }
