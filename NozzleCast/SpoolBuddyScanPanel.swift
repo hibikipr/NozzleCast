@@ -158,17 +158,20 @@ struct SpoolBuddyScanPanel: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        VStack(spacing: 16) {
-            if isAvailable {
-                statusRow
-                scanCard
-                weightRow
-            } else {
-                unavailableCard
+        // Scrolls so the card and its buttons stay reachable when the screen is short (landscape).
+        ScrollView {
+            VStack(spacing: 16) {
+                if isAvailable {
+                    statusRow
+                    scanCard
+                    weightRow
+                } else {
+                    unavailableCard
+                }
             }
-            Spacer()
+            .padding(.bottom, 100)
         }
-        .padding(.bottom, 100)
+        .scrollIndicators(.hidden)
     }
 
     private var statusRow: some View {
