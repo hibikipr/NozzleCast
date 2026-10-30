@@ -30,6 +30,11 @@ struct ScannedResult {
 struct ScanView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    /// A landscape phone is ~440pt tall, so the capture screen drops its title and trims the
+    /// clearance for the floating tab bar to fit.
+    private var isShort: Bool { verticalSizeClass == .compact }
     @Binding var selectedTab: RootTab
 
     @State private var mode: ScanMode = .barcode
@@ -171,8 +176,10 @@ struct ScanView: View {
 
     private var captureHeader: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Scan Filament")
-                .ncFont(size: 24, weight: .bold, relativeTo: .title)
+            if !isShort {
+                Text("Scan Filament")
+                    .ncFont(size: 24, weight: .bold, relativeTo: .title)
+            }
 
             HStack(spacing: 2) {
                 ForEach(ScanMode.allCases, id: \.self) { m in
@@ -221,76 +228,100 @@ struct ScanView: View {
         }
     }
 
+    @ViewBuilder
     private var scannerBody: some View {
-        VStack(spacing: 20) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color(hex: "#141414"))
-
-                ScannerCameraGate(mode: mode == .barcode ? .barcode : .text, bridge: scannerBridge)
-                    .id(mode)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-
-                VStack {
-                    HStack {
-                        CornerBracket().frame(width: 28, height: 28)
-                        Spacer()
-                        CornerBracket().rotationEffect(.degrees(90)).frame(width: 28, height: 28)
-                    }
+        if isShort {
+            // Landscape: the camera takes the height, the caption and buttons sit beside it.
+            HStack(spacing: 16) {
+                scannerCamera
+                VStack(spacing: 12) {
+                    scannerCaption
                     Spacer()
-                    if !ScannerAvailability.isSupported {
-                        ScanLine()
-                    }
+                    scannerControls
+                }
+                .frame(width: 220)
+            }
+            .padding(.bottom, 72)
+        } else {
+            VStack(spacing: 20) {
+                // Up to 360pt tall, but gives way on screens that can't fit it (the unfolded Duo).
+                scannerCamera
+                    .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 360)
+                scannerCaption
+                Spacer()
+                scannerControls
+                    .padding(.bottom, 100)
+            }
+        }
+    }
+
+    private var scannerCamera: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color(hex: "#141414"))
+
+            ScannerCameraGate(mode: mode == .barcode ? .barcode : .text, bridge: scannerBridge)
+                .id(mode)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+
+            VStack {
+                HStack {
+                    CornerBracket().frame(width: 28, height: 28)
                     Spacer()
-                    HStack {
-                        CornerBracket().rotationEffect(.degrees(-90)).frame(width: 28, height: 28)
-                        Spacer()
-                        CornerBracket().rotationEffect(.degrees(180)).frame(width: 28, height: 28)
-                    }
+                    CornerBracket().rotationEffect(.degrees(90)).frame(width: 28, height: 28)
                 }
-                .padding(20)
-                .allowsHitTesting(false)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 360)
-
-            Group {
-                if mode == .barcode {
-                    Text("Point at the box barcode")
-                } else {
-                    Text("Photograph the filament label")
+                Spacer()
+                if !ScannerAvailability.isSupported {
+                    ScanLine()
+                }
+                Spacer()
+                HStack {
+                    CornerBracket().rotationEffect(.degrees(-90)).frame(width: 28, height: 28)
+                    Spacer()
+                    CornerBracket().rotationEffect(.degrees(180)).frame(width: 28, height: 28)
                 }
             }
-            .ncFont(size: 13, relativeTo: .footnote)
-            .foregroundStyle(NCColor.textSecondary)
+            .padding(20)
+            .allowsHitTesting(false)
+        }
+    }
 
-            Spacer()
+    private var scannerCaption: some View {
+        Group {
+            if mode == .barcode {
+                Text("Point at the box barcode")
+            } else {
+                Text("Photograph the filament label")
+            }
+        }
+        .ncFont(size: 13, relativeTo: .footnote)
+        .foregroundStyle(NCColor.textSecondary)
+    }
 
-            VStack(spacing: 10) {
-                if mode == .labelPhoto {
-                    Button {
-                        runTextParse(scannerBridge.liveText)
-                    } label: {
-                        ZStack {
-                            Circle().stroke(Color.white, lineWidth: 3).frame(width: 72, height: 72)
-                            Circle().fill(Color.white).frame(width: 58, height: 58)
-                        }
+    private var scannerControls: some View {
+        VStack(spacing: 10) {
+            if mode == .labelPhoto {
+                Button {
+                    runTextParse(scannerBridge.liveText)
+                } label: {
+                    ZStack {
+                        Circle().stroke(Color.white, lineWidth: 3).frame(width: 72, height: 72)
+                        Circle().fill(Color.white).frame(width: 58, height: 58)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .opacity(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
-                } else {
-                    Text("Scanning automatically…")
-                        .ncFont(size: 12.5, weight: .medium, relativeTo: .caption)
-                        .foregroundStyle(NCColor.textTertiary)
-                        .frame(height: 72)
                 }
-
-                Button("or enter code manually") { showManualCodeEntry = true }
-                    .ncFont(size: 12.5, relativeTo: .caption)
+                .buttonStyle(.plain)
+                .disabled(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
+            } else {
+                Text("Scanning automatically…")
+                    .ncFont(size: 12.5, weight: .medium, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
+                    .frame(height: 72)
             }
-            .padding(.bottom, 100)
+
+            Button("or enter code manually") { showManualCodeEntry = true }
+                .ncFont(size: 12.5, relativeTo: .caption)
+                .foregroundStyle(NCColor.textTertiary)
         }
     }
 
