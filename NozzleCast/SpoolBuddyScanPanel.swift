@@ -9,7 +9,8 @@ final class SpoolBuddySession {
     enum Scan: Equatable {
         case waiting
         case matched(SpoolBuddyMatchedSpoolDTO, tagUID: String)
-        case unknown(tagUID: String, trayUUID: String?)
+        /// `tagData` is what Bambuddy decoded from a Bambu tag, when it could.
+        case unknown(tagUID: String, trayUUID: String?, tagData: SpoolBuddyTagDataDTO? = nil)
         case lookupFailed(spoolmanUnavailable: Bool)
     }
 
@@ -104,13 +105,13 @@ final class SpoolBuddySession {
                     if case .matched(let current, _) = scan, current.id == spool.id { matchedSpool = found }
                 }
             }
-        case .unknownTag(let deviceID, let tagUID, let trayUUID, _):
+        case .unknownTag(let deviceID, let tagUID, let trayUUID, _, let tagData):
             markOnline(deviceID)
-            scan = .unknown(tagUID: tagUID, trayUUID: trayUUID)
+            scan = .unknown(tagUID: tagUID, trayUUID: trayUUID, tagData: tagData)
             matchedSpool = nil
         case .tagRemoved(_, let tagUID):
             switch scan {
-            case .matched(_, let current) where current == tagUID, .unknown(let current, _) where current == tagUID:
+            case .matched(_, let current) where current == tagUID, .unknown(let current, _, _) where current == tagUID:
                 clearScan()
             default:
                 break
@@ -152,7 +153,7 @@ struct SpoolBuddyScanPanel: View {
     var onEdit: (Spool) -> Void
     var onAssign: (Spool) -> Void
     var onLinkUnknown: (_ tagUID: String, _ trayUUID: String?) -> Void
-    var onAddUnknown: (_ tagUID: String, _ trayUUID: String?) -> Void
+    var onAddUnknown: (_ tagUID: String, _ trayUUID: String?, _ tagData: SpoolBuddyTagDataDTO?) -> Void
 
     @Environment(AppStore.self) private var store
 
@@ -232,8 +233,8 @@ struct SpoolBuddyScanPanel: View {
                 waitingContent
             case .matched(let dto, _):
                 matchedContent(dto)
-            case .unknown(let tagUID, let trayUUID):
-                unknownContent(tagUID: tagUID, trayUUID: trayUUID)
+            case .unknown(let tagUID, let trayUUID, let tagData):
+                unknownContent(tagUID: tagUID, trayUUID: trayUUID, tagData: tagData)
             case .lookupFailed(let spoolmanUnavailable):
                 messageContent(
                     icon: "exclamationmark.triangle",
@@ -315,7 +316,7 @@ struct SpoolBuddyScanPanel: View {
         }
     }
 
-    private func unknownContent(tagUID: String, trayUUID: String?) -> some View {
+    private func unknownContent(tagUID: String, trayUUID: String?, tagData: SpoolBuddyTagDataDTO?) -> some View {
         VStack(spacing: 14) {
             messageContent(
                 icon: "questionmark.circle",
@@ -324,15 +325,40 @@ struct SpoolBuddyScanPanel: View {
                     ? String(localized: "This Bambu Lab tag isn't linked to any spool in your inventory yet.", comment: "SpoolBuddy scan: unknown Bambu tag")
                     : String(localized: "This tag isn't linked to any spool in your inventory yet.", comment: "SpoolBuddy scan: unknown tag")
             )
+            if let tagData {
+                tagSummary(tagData)
+            }
             HStack(spacing: 10) {
                 actionButton(String(localized: "New Spool", comment: "SpoolBuddy scan: add the unknown spool to the inventory as a new spool"), systemImage: "plus", prominent: false) {
-                    onAddUnknown(tagUID, trayUUID)
+                    onAddUnknown(tagUID, trayUUID, tagData)
                 }
                 actionButton(String(localized: "Link to a Spool", comment: "SpoolBuddy scan: link the unknown tag to a spool already in the inventory"), systemImage: "link", prominent: true) {
                     onLinkUnknown(tagUID, trayUUID)
                 }
             }
         }
+    }
+
+    /// What the tag says the roll is, so "New Spool" visibly starts from it.
+    private func tagSummary(_ tagData: SpoolBuddyTagDataDTO) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(Color(hex: tagData.colorHex ?? "#808080"))
+                .frame(width: 18, height: 18)
+                .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tagData.slicerFilamentName ?? [tagData.brand, tagData.material, tagData.subtype].compactMap { $0 }.joined(separator: " "))
+                    .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                Text(String(localized: "From the tag: \(tagData.colorName ?? tagData.colorHex ?? "") · \(tagData.labelWeight ?? 1000) g", comment: "SpoolBuddy scan: an unknown Bambu tag's colour and net weight, as decoded from the tag"))
+                    .ncFont(size: 12, relativeTo: .caption)
+                    .foregroundStyle(NCColor.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+        .accessibilityElement(children: .combine)
     }
 
     private func actionButton(_ title: String, systemImage: String, prominent: Bool, action: @escaping () -> Void) -> some View {

@@ -697,6 +697,9 @@
     "Filament color" : {
 
     },
+    "Filled in from the tag: %@" : {
+      "comment" : "Review screen: the details came from the scanned Bambu tag, followed by its filament name"
+    },
     "Find your API key in your server's Settings → API Keys. It needs Read Status and Manage Inventory permissions." : {
 
     },
@@ -711,6 +714,9 @@
     },
     "From Bambuddy" : {
       "comment" : "Settings row value: alerts read from Bambuddy's notification log"
+    },
+    "From the tag: %@ · %lld g" : {
+      "comment" : "SpoolBuddy scan: an unknown Bambu tag's colour and net weight, as decoded from the tag"
     },
     "Good" : {
       "comment" : "Print history filter\nPrint verdict"

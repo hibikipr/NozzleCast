@@ -378,6 +378,31 @@ private struct SpoolCreateBody: Codable {
     var rgba: String?
     var brand: String?
     var labelWeight: Int
+    // Only sent when set (synthesized Codable skips nil), so a plain add is the same request as
+    // before. Spoolman mode takes subtype, core weight and the slicer profile, and ignores the rest.
+    var subtype: String?
+    var extraColors: String?
+    var effectType: String?
+    var coreWeight: Int?
+    var coreWeightCatalogId: Int?
+    var slicerFilament: String?
+    var slicerFilamentName: String?
+    var nozzleTempMin: Int?
+    var nozzleTempMax: Int?
+}
+
+/// The spool fields a new spool can carry beyond the review form's material, colour, brand and
+/// weight — what a decoded Bambu tag says (see `SpoolBuddyTagDataDTO.createExtras`).
+struct SpoolCreateExtras: Equatable {
+    var subtype: String?
+    var extraColors: String?
+    var effectType: String?
+    var coreWeight: Int?
+    var coreWeightCatalogId: Int?
+    var slicerFilament: String?
+    var slicerFilamentName: String?
+    var nozzleTempMin: Int?
+    var nozzleTempMax: Int?
 }
 
 // MARK: - Notification log
@@ -871,8 +896,14 @@ struct BambuddyAPIClient {
     }
 
     @discardableResult
-    func createSpool(material: String, colorName: String, rgba: String, brand: String, labelWeight: Int) async throws -> BambuddySpoolDTO {
-        let body = try encoder.encode(SpoolCreateBody(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: labelWeight))
+    func createSpool(material: String, colorName: String, rgba: String, brand: String, labelWeight: Int, extras: SpoolCreateExtras = SpoolCreateExtras()) async throws -> BambuddySpoolDTO {
+        let body = try encoder.encode(SpoolCreateBody(
+            material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: labelWeight,
+            subtype: extras.subtype, extraColors: extras.extraColors, effectType: extras.effectType,
+            coreWeight: extras.coreWeight, coreWeightCatalogId: extras.coreWeightCatalogId,
+            slicerFilament: extras.slicerFilament, slicerFilamentName: extras.slicerFilamentName,
+            nozzleTempMin: extras.nozzleTempMin, nozzleTempMax: extras.nozzleTempMax
+        ))
         let data = try await send(request("\(inventory.basePath)/spools", method: "POST", body: body))
         do {
             return try decoder.decode(BambuddySpoolDTO.self, from: data)
@@ -981,12 +1012,89 @@ struct SpoolBuddyMatchedSpoolDTO: Codable, Equatable {
     var weightUsed: Double?
 }
 
+/// What a scanned Bambu Lab tag says about its roll, decoded by Bambuddy: the `tag_data` of a
+/// `spoolbuddy_unknown_tag` event (Bambuddy's #2685). It holds the spool values Bambuddy's AMS
+/// auto-creation would set for the same roll — material, colour (named from Bambuddy's colour
+/// catalog), slicer profile, temperatures, and the empty spool's weight. Nil from a Bambuddy older
+/// than that, for a tag that isn't Bambu's, or from a SpoolBuddy daemon that doesn't send the tag's
+/// data blocks.
+struct SpoolBuddyTagDataDTO: Codable, Equatable {
+    var material: String
+    var subtype: String?
+    var colorName: String?
+    /// RRGGBBAA.
+    var rgba: String?
+    var extraColors: String?
+    var effectType: String?
+    var brand: String?
+    var labelWeight: Int?
+    var slicerFilament: String?
+    var slicerFilamentName: String?
+    var nozzleTempMin: Int?
+    var nozzleTempMax: Int?
+    var coreWeight: Int?
+    var coreWeightCatalogId: Int?
+    /// Bambu's variant code, e.g. "A00-B08". Shown only; Bambuddy has no spool field for it.
+    var variantId: String?
+    var diameter: Double?
+    var dryingTemp: Int?
+    var dryingTime: Int?
+
+    /// "#RRGGBB" from `rgba`, or nil when it isn't a hex colour.
+    var colorHex: String? {
+        guard let rgba, rgba.count >= 6, rgba.prefix(6).allSatisfy(\.isHexDigit) else { return nil }
+        return "#" + rgba.prefix(6).uppercased()
+    }
+
+    /// What the review form starts with for this roll.
+    var scannedResult: ScannedResult {
+        ScannedResult(
+            material: FilamentMaterial.from(bambuddyMaterial: material),
+            colorName: colorName ?? "",
+            colorHex: colorHex ?? "#808080",
+            brand: brand ?? "Bambu Lab",
+            netWeightGrams: labelWeight ?? 1000,
+            barcode: nil,
+            alsoMatches: nil
+        )
+    }
+
+    /// The material to save: the tag's own ("PETG", "ASA") while the form still shows what it
+    /// started with — the form only offers four materials, so it can't hold every tag's — and the
+    /// form's otherwise.
+    func material(for form: ScannedResult) -> String {
+        FilamentMaterial.from(bambuddyMaterial: material) == form.material ? material : form.material.rawValue
+    }
+
+    /// The tag's other spool fields, for the spool created from `form`. The core weight always
+    /// applies — it's the spool, not the filament. The profile (subtype, slicer preset,
+    /// temperatures) only while the form keeps the tag's material, and the multicolour/effect
+    /// details only while it keeps the tag's colour: after an edit they'd describe another
+    /// filament.
+    func createExtras(for form: ScannedResult) -> SpoolCreateExtras {
+        var extras = SpoolCreateExtras(coreWeight: coreWeight, coreWeightCatalogId: coreWeightCatalogId)
+        if FilamentMaterial.from(bambuddyMaterial: material) == form.material {
+            extras.subtype = subtype
+            extras.slicerFilament = slicerFilament
+            extras.slicerFilamentName = slicerFilamentName
+            extras.nozzleTempMin = nozzleTempMin
+            extras.nozzleTempMax = nozzleTempMax
+        }
+        if let colorHex, colorHex.caseInsensitiveCompare(form.colorHex) == .orderedSame {
+            extras.extraColors = extraColors
+            extras.effectType = effectType
+        }
+        return extras
+    }
+}
+
 /// The SpoolBuddy messages Bambuddy broadcasts on `/api/v1/ws` (see its
 /// `backend/app/api/routes/spoolbuddy.py`). Every other message on the socket is ignored.
 enum SpoolBuddyEvent: Equatable {
     case tagMatched(deviceID: String, tagUID: String, trayUUID: String?, spool: SpoolBuddyMatchedSpoolDTO)
-    /// A tag no spool carries. `trayUUID` is only set for a genuine Bambu tag.
-    case unknownTag(deviceID: String, tagUID: String, trayUUID: String?, tagType: String?)
+    /// A tag no spool carries. `trayUUID` is only set for a genuine Bambu tag, and `tagData` only
+    /// when Bambuddy could decode one (see `SpoolBuddyTagDataDTO`).
+    case unknownTag(deviceID: String, tagUID: String, trayUUID: String?, tagType: String?, tagData: SpoolBuddyTagDataDTO? = nil)
     case tagRemoved(deviceID: String, tagUID: String)
     /// The scale's gross reading: filament plus the empty spool.
     case weight(deviceID: String, grams: Double, stable: Bool)
@@ -998,7 +1106,7 @@ enum SpoolBuddyEvent: Equatable {
 
     var deviceID: String {
         switch self {
-        case .tagMatched(let id, _, _, _), .unknownTag(let id, _, _, _), .tagRemoved(let id, _),
+        case .tagMatched(let id, _, _, _), .unknownTag(let id, _, _, _, _), .tagRemoved(let id, _),
              .weight(let id, _, _), .lookupError(let id, _), .online(let id, _), .offline(let id):
             id
         }
@@ -1017,6 +1125,12 @@ enum SpoolBuddyEvent: Equatable {
         var context: String?
     }
 
+    /// Decoded on its own, so a `tag_data` this build doesn't understand costs only the prefill,
+    /// never the unknown-tag event itself.
+    private struct TagDataEnvelope: Decodable {
+        var tagData: SpoolBuddyTagDataDTO?
+    }
+
     /// Nil for anything that isn't a well-formed SpoolBuddy event.
     static func decode(_ data: Data) -> SpoolBuddyEvent? {
         let decoder = JSONDecoder()
@@ -1028,7 +1142,8 @@ enum SpoolBuddyEvent: Equatable {
             return .tagMatched(deviceID: device, tagUID: tag, trayUUID: e.trayUuid, spool: spool)
         case "spoolbuddy_unknown_tag":
             guard let tag = e.tagUid else { return nil }
-            return .unknownTag(deviceID: device, tagUID: tag, trayUUID: e.trayUuid, tagType: e.tagType)
+            let tagData = (try? decoder.decode(TagDataEnvelope.self, from: data))?.tagData
+            return .unknownTag(deviceID: device, tagUID: tag, trayUUID: e.trayUuid, tagType: e.tagType, tagData: tagData)
         case "spoolbuddy_tag_removed":
             guard let tag = e.tagUid else { return nil }
             return .tagRemoved(deviceID: device, tagUID: tag)

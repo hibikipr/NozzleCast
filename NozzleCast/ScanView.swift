@@ -47,6 +47,9 @@ struct ScanView: View {
     @State private var isVisible = false
     /// The NFC tag of the unknown spool being added from SpoolBuddy mode, linked to the new spool.
     @State private var pendingTag: (uid: String, trayUUID: String?)?
+    /// What Bambuddy decoded from that tag, when it's a Bambu tag it could read: the form starts
+    /// from it, and the spool gets its profile and core weight too.
+    @State private var pendingTagData: SpoolBuddyTagDataDTO?
     @State private var editingSpool: Spool?
     @State private var assigningSpool: Spool?
     /// The unknown SpoolBuddy tag being linked to an existing spool.
@@ -202,11 +205,14 @@ struct ScanView: View {
                 onEdit: { editingSpool = $0 },
                 onAssign: { assigningSpool = $0 },
                 onLinkUnknown: { tagUID, trayUUID in linkingTag = UnknownTag(uid: tagUID, trayUUID: trayUUID) },
-                onAddUnknown: { tagUID, trayUUID in
-                    // The tag holds no filament details Bambuddy passes on; a tray UUID does say
-                    // it's a genuine Bambu Lab spool.
-                    result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                onAddUnknown: { tagUID, trayUUID, tagData in
+                    // Without decoded tag data (an older Bambuddy or SpoolBuddy daemon, or a
+                    // non-Bambu tag) the form starts blank; a tray UUID still says it's a genuine
+                    // Bambu Lab spool.
+                    result = tagData?.scannedResult
+                        ?? ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
                     pendingTag = (tagUID, trayUUID)
+                    pendingTagData = tagData
                     step = .review
                 }
             )
@@ -354,6 +360,11 @@ struct ScanView: View {
                         }
                         .ncFont(size: 11.5, relativeTo: .caption)
                         .foregroundStyle(NCColor.textTertiary)
+                    }
+                    if let pendingTagData {
+                        Text("Filled in from the tag: \(pendingTagData.slicerFilamentName ?? pendingTagData.material)", comment: "Review screen: the details came from the scanned Bambu tag, followed by its filament name")
+                            .ncFont(size: 11.5, relativeTo: .caption)
+                            .foregroundStyle(NCColor.textTertiary)
                     }
                 }
 
@@ -576,15 +587,17 @@ struct ScanView: View {
 
     private func addToInventory() {
         let spool = store.addSpool(
-            material: result.material.rawValue,
+            material: pendingTagData?.material(for: result) ?? result.material.rawValue,
             colorName: result.colorName,
             colorHex: result.colorHex,
             brand: result.brand,
             netWeightGrams: result.netWeightGrams,
-            tag: pendingTag
+            tag: pendingTag,
+            extras: pendingTagData?.createExtras(for: result) ?? SpoolCreateExtras()
         )
         addedSpool = spool
         pendingTag = nil
+        pendingTagData = nil
         step = .done
     }
 
@@ -598,6 +611,7 @@ struct ScanView: View {
         }
         addedSpool = nil
         pendingTag = nil
+        pendingTagData = nil
         scannerBridge.reset()
     }
 }
