@@ -873,7 +873,16 @@ final class AppStore {
     /// recently finished job. Unlike `cameraSnapshot`, no stream token — see
     /// `BambuddyAPIClient.coverImageData`. `maxPixelSize` nil keeps full resolution (the zoomable
     /// viewer wants it).
+    ///
+    /// Asks the relay first when one is configured: it also finds the cover of a cloud print or a
+    /// job name with a "/", which Bambuddy can't (see `RelayCoverClient`). Bambuddy directly is
+    /// the fallback.
     func printerCoverImage(printerID: String, maxPixelSize: CGFloat? = nil) async -> UIImage? {
+        if let name = printers.first(where: { $0.id == printerID })?.name,
+           let data = await RelayCoverClient.coverImageData(printerName: name, maxPixelSize: maxPixelSize),
+           let image = await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize) {
+            return image
+        }
         guard let client, let bbID = bambuddyID(printerID) else { return nil }
         do {
             let data = try await client.coverImageData(printerID: bbID)
