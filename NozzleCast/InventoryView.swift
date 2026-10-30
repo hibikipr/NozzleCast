@@ -233,14 +233,14 @@ struct InventoryView: View {
                         .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
                 }
                 .padding(.trailing, 20)
-                .padding(.bottom, 96)
+                .padding(.bottom, 16) // this ZStack already sits above the tab bar, wherever it is
             }
             .overlay(alignment: .bottomLeading) {
                 if let archived = store.recentlyArchivedSpool {
                     ArchivedSpoolUndoBar(spool: archived) { store.restoreArchivedSpool() }
                         .padding(.leading, 16)
                         .padding(.trailing, 88) // clear of the floating add button
-                        .padding(.bottom, 100)
+                        .padding(.bottom, 20)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
