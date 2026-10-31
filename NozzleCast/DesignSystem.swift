@@ -58,9 +58,13 @@ enum NCColor {
     static let textSecondary = Color(red: 235.0 / 255, green: 235.0 / 255, blue: 245.0 / 255).opacity(0.6)
     static let textTertiary = Color(red: 235.0 / 255, green: 235.0 / 255, blue: 245.0 / 255).opacity(0.45)
 
-    static let accent = Color(hex: "#2A5FCC")
-    static let accentLight = Color(hex: "#4F7FE0")
-    static let accentDark = Color(hex: "#1E48A8")
+    /// The barcode scanner's blue (its scan line), shared across the app and its widgets.
+    static let accent = Color(hex: "#4F7FE0")
+    /// A lighter step for accent-coloured text, spinners and marks drawn small on near-black.
+    static let accentLight = Color(hex: "#8FB4FF")
+    static let accentDark = Color(hex: "#3A66C8")
+    /// Text and icons on a solid `accent` fill.
+    static let onAccent = Color.white
 
     static let statusPrinting = Color(hex: "#22C55E")
     static let statusWarning = Color(hex: "#F59E0B")
@@ -117,7 +121,9 @@ extension View {
 extension PrinterState {
     var color: Color {
         switch self {
-        case .printing: NCColor.statusPrinting
+        // The accent, not green: a printing printer is the app's main subject, and green on the
+        // same card as the blue accent read as two competing accents.
+        case .printing: NCColor.accent
         case .paused: NCColor.statusWarning
         case .idle: NCColor.statusOffline
         case .finished: NCColor.accentLight

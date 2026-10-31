@@ -56,7 +56,7 @@ struct BambuddyConnectionSheet: View {
                         HStack {
                             Spacer()
                             if isTesting {
-                                ProgressView().tint(.white)
+                                ProgressView().tint(NCColor.onAccent)
                             } else {
                                 Text("Save & Test Connection")
                             }
@@ -65,7 +65,7 @@ struct BambuddyConnectionSheet: View {
                     }
                     .disabled(serverURLString.isEmpty || apiKey.isEmpty || isTesting)
                     .listRowBackground(NCColor.accent)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(NCColor.onAccent)
                 }
 
                 if store.config.isConfigured {

@@ -495,7 +495,7 @@ struct PrinterJobCard: View {
                     .ncFont(size: 15, weight: .semibold, relativeTo: .subheadline)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                ProgressBar(progress: progress ?? 0, tint: isPaused ? NCColor.statusWarning : NCColor.statusPrinting)
+                ProgressBar(progress: progress ?? 0, tint: isPaused ? NCColor.statusWarning : NCColor.accent)
                 HStack(spacing: 8) {
                     HStack(spacing: 4) {
                         Text(progress ?? 0, format: .percent.precision(.fractionLength(0)))

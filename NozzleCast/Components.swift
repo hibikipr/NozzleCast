@@ -560,7 +560,7 @@ struct FilterChip: View {
         Button(action: action) {
             Text(title)
                 .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
-                .foregroundStyle(isActive ? .white : NCColor.textSecondary)
+                .foregroundStyle(isActive ? NCColor.onAccent : NCColor.textSecondary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(

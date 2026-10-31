@@ -227,7 +227,7 @@ struct InventoryView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(NCColor.onAccent)
                         .frame(width: 52, height: 52)
                         .background(Circle().fill(NCColor.accent))
                         .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
@@ -341,7 +341,7 @@ struct InventoryView: View {
                     if count > 0 {
                         Text("\(count)")
                             .ncFont(size: 10, weight: .bold, relativeTo: .caption2)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(NCColor.onAccent)
                             .padding(.horizontal, 4)
                             .frame(minWidth: 16, minHeight: 16)
                             .background(Capsule().fill(NCColor.accent))

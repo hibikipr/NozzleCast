@@ -368,7 +368,7 @@ struct SpoolBuddyScanPanel: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .ncFont(size: 15, weight: .semibold, relativeTo: .body)
-                .foregroundStyle(.white)
+                .foregroundStyle(prominent ? NCColor.onAccent : .white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .background(

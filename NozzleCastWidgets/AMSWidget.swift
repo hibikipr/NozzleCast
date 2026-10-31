@@ -11,8 +11,7 @@ import NozzleCastShared
 private let widgetBG = Color(red: 0x1a / 255, green: 0x1a / 255, blue: 0x1a / 255)
 // Currently only referenced by the commented-out Refresh button in `AMSLargeView`. Kept so the
 // button can be restored as-is; not dead code to delete.
-private let accentBlue = Color(red: 0x2A / 255, green: 0x5F / 255, blue: 0xCC / 255)
-private let statusPrinting = Color(red: 0x22 / 255, green: 0xC5 / 255, blue: 0x5E / 255)
+private let accentBlue = Color(red: 0x4F / 255, green: 0x7F / 255, blue: 0xE0 / 255)
 private let statusPaused = Color(red: 0xF5 / 255, green: 0x9E / 255, blue: 0x0B / 255)
 private let deepLink = URL(string: "nozzlecast://monitor")!
 
@@ -328,7 +327,7 @@ private struct PrinterHeader: View {
     var trailing: String?
 
     private var dotColor: Color {
-        if printer.isPrinting { return statusPrinting }
+        if printer.isPrinting { return accentBlue }
         if printer.stateLabel.localizedCaseInsensitiveContains("pause") { return statusPaused }
         return Color.white.opacity(0.3)
     }

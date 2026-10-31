@@ -242,7 +242,7 @@ private struct QueueRow: View {
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
                                 .background(Capsule().fill(NCColor.accent))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(NCColor.onAccent)
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 4)

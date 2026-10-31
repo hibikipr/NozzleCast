@@ -335,7 +335,7 @@ struct PrinterCard: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    ProgressBar(progress: progress ?? 0, tint: state == .paused ? NCColor.statusWarning : NCColor.statusPrinting)
+                    ProgressBar(progress: progress ?? 0, tint: state == .paused ? NCColor.statusWarning : NCColor.accent)
                         .padding(.top, 2)
                     progressFooter
                 } else if state != .offline {
