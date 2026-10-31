@@ -580,18 +580,17 @@ struct PrinterCard: View {
         }
     }
 
-    /// The camera while printing (the cover standing in when there's no frame), the job's cover
-    /// while paused, and the last print's plate thumbnail otherwise. Never the printer art: in
+    /// The camera while printing (the cover standing in when there's no frame), otherwise the
+    /// cover of the printer's job, or the last print's plate thumbnail from the print log once the
+    /// printer has none (an idle printer whose job was cleared). Never the printer art: in
     /// these layouts the printer has a tile of its own.
     @ViewBuilder
     private func media(maxPixelSize: CGFloat) -> some View {
         Group {
             if state == .printing {
                 LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: maxPixelSize, coverFallbackJobIdentity: jobFileName ?? id, isShowingLiveFrame: $isCameraLive)
-            } else if !hasJob, let lastPrint {
-                LastPrintImage(record: lastPrint.record, maxPixelSize: maxPixelSize)
             } else {
-                PrinterCoverImage(printerID: id, jobIdentity: jobFileName ?? id, maxPixelSize: maxPixelSize)
+                PrinterCoverImage(printerID: id, jobIdentity: jobFileName ?? lastPrint?.name ?? id, maxPixelSize: maxPixelSize, fallbackRecord: hasJob ? nil : lastPrint?.record)
             }
         }
         .font(.system(size: 22))
@@ -709,32 +708,6 @@ struct PrinterCard: View {
             }
             .offset(x: isBig ? 0 : inset, y: isBig ? 0 : inset)
             .zIndex(isBig ? 0 : 1)
-    }
-}
-
-/// The last print's plate thumbnail from the print log, on the same contrast backdrop as a cover
-/// (see `PrinterCoverImage`) — an idle printer has no cover of its own to show.
-private struct LastPrintImage: View {
-    var record: PrintRecord
-    var maxPixelSize: CGFloat
-    @Environment(AppStore.self) private var store
-    @State private var image: UIImage?
-    @State private var backdrop: Color?
-
-    var body: some View {
-        ZStack {
-            if let image {
-                backdrop
-                FillingImage(image: image)
-            } else {
-                Image(systemName: "shippingbox.fill")
-                    .foregroundStyle(NCColor.textTertiary)
-            }
-        }
-        .task(id: record.id) {
-            image = await store.printThumbnail(for: record, maxPixelSize: maxPixelSize)
-            backdrop = if let image { await coverBackdrop(for: image) } else { nil }
-        }
     }
 }
 
