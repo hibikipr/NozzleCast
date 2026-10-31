@@ -271,9 +271,10 @@ struct ScanView: View {
                     CornerBracket().rotationEffect(.degrees(90)).frame(width: 28, height: 28)
                 }
                 Spacer()
-                if !ScannerAvailability.isSupported {
-                    ScanLine()
-                }
+                // Over the live camera too, not just the no-scanner placeholder: it's the cue
+                // that the screen is scanning, and VisionKit's own highlight only appears once
+                // something is recognized.
+                ScanLine()
                 Spacer()
                 HStack {
                     CornerBracket().rotationEffect(.degrees(-90)).frame(width: 28, height: 28)

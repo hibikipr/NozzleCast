@@ -191,12 +191,3 @@ private struct DataScannerView: UIViewControllerRepresentable {
         }
     }
 }
-
-/// True on a device that can actually run live camera scanning (real hardware with a
-/// Neural Engine). Always false in the Simulator. Doesn't reflect camera permission —
-/// use `ScannerCameraGate`, which handles that explicitly.
-enum ScannerAvailability {
-    static var isSupported: Bool {
-        DataScannerViewController.isSupported
-    }
-}
