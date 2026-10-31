@@ -14,6 +14,7 @@ struct MonitorView: View {
     /// pane's back button toggles this instead of clearing `selectedPrinterID`, so bringing the
     /// list back up never blanks the detail the user was already looking at.
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @AppStorage(PrinterCardLayout.storageKey) private var cardLayout: PrinterCardLayout = .classic
     @Binding var selectedTab: RootTab
 
     private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
@@ -39,7 +40,7 @@ struct MonitorView: View {
     /// The printer's most recent print from the loaded history, for its idle card.
     private func lastPrint(for printerID: String) -> LastPrintSummary? {
         store.printHistory.first { $0.printerID == printerID }.map {
-            LastPrintSummary(name: $0.name, outcome: $0.outcome, verdict: $0.verdict, finishedAt: $0.finishedAt)
+            LastPrintSummary(name: $0.name, outcome: $0.outcome, verdict: $0.verdict, finishedAt: $0.finishedAt, record: $0)
         }
     }
 
@@ -180,6 +181,23 @@ struct MonitorView: View {
                         .foregroundStyle(NCColor.textSecondary)
                     }
                     Spacer()
+                    Menu {
+                        Picker(selection: $cardLayout) {
+                            ForEach(PrinterCardLayout.allCases) { layout in
+                                Label(layout.title, systemImage: layout.systemImage).tag(layout)
+                            }
+                        } label: {
+                            Text("Card Layout", comment: "Monitor header menu: choose how printer cards look")
+                        }
+                    } label: {
+                        Image(systemName: cardLayout.systemImage)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Circle().fill(NCColor.cardFill))
+                    }
+                    .accessibilityLabel(Text("Card layout", comment: "Accessibility label for the Monitor header's card layout menu"))
+                    .padding(.top, 10)
                     Button {
                         showNotifications = true
                     } label: {
@@ -246,7 +264,8 @@ struct MonitorView: View {
             awaitingPlateClear: printer.awaitingPlateClear,
             lastPrint: lastPrint(for: printer.id),
             allTrays: printer.allTrays,
-            imageAssetName: printer.imageAssetName
+            imageAssetName: printer.imageAssetName,
+            layout: cardLayout
         )
         if horizontalSizeClass == .compact {
             NavigationLink(value: printer.id) { card }
@@ -268,6 +287,9 @@ struct LastPrintSummary: Equatable {
     var outcome: PrintRecord.Outcome
     var verdict: PrintVerdict?
     var finishedAt: Date?
+    /// For the print log's plate thumbnail, which the layouts with a picture tile show once the
+    /// printer's own cover is gone.
+    var record: PrintRecord
 }
 
 /// One printer on the Monitor tab, laid out like Bambuddy's printer card: the printer's state on
@@ -298,75 +320,117 @@ struct PrinterCard: View {
     var lastPrint: LastPrintSummary?
     var allTrays: [AMSTray]
     var imageAssetName: String?
+    var layout: PrinterCardLayout = .classic
     @Environment(AppStore.self) private var store
     @State private var isCameraLive = false
+    /// Picture in picture: whether a tap has brought the camera or cover up to the big tile.
+    @State private var isMediaSwapped = false
 
     private static let thumbnailSize: CGFloat = 80
+    private static let twinTileHeight: CGFloat = 116
+    private static let heroHeight: CGFloat = 160
+    private static let pipSize: CGFloat = 88
+    private static let pipInsetSize: CGFloat = 42
+    /// How far the picture-in-picture inset hangs past the big tile's corner.
+    private static let pipOverhang: CGFloat = 10
 
     private var hasJob: Bool { state == .printing || state == .paused }
+    /// The camera frame on screen is live, not the cover standing in for it.
+    private var showsLiveFrame: Bool { state == .printing && isCameraLive }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            thumbnail
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(name)
-                        .ncFont(size: 16, weight: .semibold, relativeTo: .headline)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if hasJob, let nozzleTemp, let bedTemp {
-                        temperatures(nozzle: nozzleTemp, bed: bedTemp)
-                    }
-                    if alertCount > 0, let alertLevel {
-                        InfoPill(icon: HMSError.Level.pillSymbol, text: "\(alertCount)", tint: alertLevel.color)
-                            .accessibilityLabel(Text("^[\(alertCount) alert](inflect: true)", comment: "Accessibility label for a printer card's alert pill"))
-                    }
-                }
-
-                statusLine
-
-                if hasJob {
-                    if let job = jobFileName {
-                        Text(job)
-                            .ncFont(size: 12.5, relativeTo: .caption)
-                            .foregroundStyle(NCColor.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    ProgressBar(progress: progress ?? 0, tint: state == .paused ? NCColor.statusWarning : NCColor.accent)
-                        .padding(.top, 2)
-                    progressFooter
-                } else if state != .offline {
-                    idleDetail
-                }
-
-                if !allTrays.isEmpty {
-                    FlowLayout(spacing: 6, rowSpacing: 6) {
-                        ForEach(allTrays) { tray in
-                            let spool = store.spool(tray.spoolID)
-                            Group {
-                                if let spool { spool.swatch.clipShape(Circle()) }
-                                else { Circle().fill(Color.white.opacity(0.08)) }
-                            }
-                            .frame(width: 13, height: 13)
-                        }
-                    }
-                    .padding(.top, 2)
-                }
+        Group {
+            switch layout {
+            case .classic:
+                rowCard(tileHeight: Self.thumbnailSize) { thumbnail }
+            case .pictureInPicture:
+                rowCard(tileHeight: Self.pipSize + Self.pipOverhang) { pictureInPicture }
+            case .twinTiles:
+                stackedCard { twinTiles }
+            case .hero:
+                stackedCard { hero }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(NCColor.textTertiary)
-                .frame(height: Self.thumbnailSize)
         }
-        .frame(minHeight: Self.thumbnailSize, alignment: .top)
         .padding(14)
         .glassCard()
     }
+
+    /// A tile on the left, the details beside it and a chevron — the classic card's shape.
+    private func rowCard(tileHeight: CGFloat, @ViewBuilder tile: () -> some View) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            tile()
+            details(showsProgressBar: true)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(NCColor.textTertiary)
+                .frame(height: tileHeight)
+        }
+        .frame(minHeight: tileHeight, alignment: .top)
+    }
+
+    /// Pictures across the top, the details underneath. The hero draws progress along its
+    /// picture's bottom edge, so it drops the bar.
+    private func stackedCard(@ViewBuilder media: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            media()
+            details(showsProgressBar: layout != .hero)
+        }
+    }
+
+    private func details(showsProgressBar: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(name)
+                    .ncFont(size: 16, weight: .semibold, relativeTo: .headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if hasJob, let nozzleTemp, let bedTemp {
+                    temperatures(nozzle: nozzleTemp, bed: bedTemp)
+                }
+                if alertCount > 0, let alertLevel {
+                    InfoPill(icon: HMSError.Level.pillSymbol, text: "\(alertCount)", tint: alertLevel.color)
+                        .accessibilityLabel(Text("^[\(alertCount) alert](inflect: true)", comment: "Accessibility label for a printer card's alert pill"))
+                }
+            }
+
+            statusLine
+
+            if hasJob {
+                if let job = jobFileName {
+                    Text(job)
+                        .ncFont(size: 12.5, relativeTo: .caption)
+                        .foregroundStyle(NCColor.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                if showsProgressBar {
+                    ProgressBar(progress: progress ?? 0, tint: progressTint)
+                        .padding(.top, 2)
+                }
+                progressFooter
+            } else if state != .offline {
+                idleDetail
+            }
+
+            if !allTrays.isEmpty {
+                FlowLayout(spacing: 6, rowSpacing: 6) {
+                    ForEach(allTrays) { tray in
+                        let spool = store.spool(tray.spoolID)
+                        Group {
+                            if let spool { spool.swatch.clipShape(Circle()) }
+                            else { Circle().fill(Color.white.opacity(0.08)) }
+                        }
+                        .frame(width: 13, height: 13)
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var progressTint: Color { state == .paused ? NCColor.statusWarning : NCColor.accent }
 
     /// "● Printing · Heatbed preheating" — the phase in its own color.
     private var statusLine: some View {
@@ -503,6 +567,185 @@ struct PrinterCard: View {
                 LiveBadge().padding(5)
             }
         }
+    }
+
+    // MARK: - Printer and picture layouts
+
+    @ViewBuilder
+    private var printerArt: some View {
+        if let imageAssetName {
+            AnimatedPrinterImage(assetName: imageAssetName, state: state)
+        } else {
+            PrinterThumbnailImage(assetName: nil)
+        }
+    }
+
+    /// The camera while printing (the cover standing in when there's no frame), the job's cover
+    /// while paused, and the last print's plate thumbnail otherwise. Never the printer art: in
+    /// these layouts the printer has a tile of its own.
+    @ViewBuilder
+    private func media(maxPixelSize: CGFloat) -> some View {
+        Group {
+            if state == .printing {
+                LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: maxPixelSize, coverFallbackJobIdentity: jobFileName ?? id, isShowingLiveFrame: $isCameraLive)
+            } else if !hasJob, let lastPrint {
+                LastPrintImage(record: lastPrint.record, maxPixelSize: maxPixelSize)
+            } else {
+                PrinterCoverImage(printerID: id, jobIdentity: jobFileName ?? id, maxPixelSize: maxPixelSize)
+            }
+        }
+        .font(.system(size: 22))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(NCColor.printerWell)
+    }
+
+    @ViewBuilder
+    private var liveBadge: some View {
+        if showsLiveFrame {
+            LiveBadge().padding(6)
+        }
+    }
+
+    private var twinTiles: some View {
+        HStack(spacing: 10) {
+            printerArt
+                .padding(12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(NCColor.printerWell)
+                .wellTile(cornerRadius: 14)
+            media(maxPixelSize: 500)
+                .wellTile(cornerRadius: 14)
+                .overlay(alignment: .topLeading) { liveBadge }
+        }
+        .frame(height: Self.twinTileHeight)
+    }
+
+    private var hero: some View {
+        media(maxPixelSize: 1000)
+            .frame(height: Self.heroHeight)
+            .overlay(alignment: .topLeading) { liveBadge }
+            .overlay(alignment: .topTrailing) {
+                if state == .printing, let etaDescription {
+                    Text("\(etaDescription) left", comment: "Remaining print time, e.g. '12m left'")
+                        .ncFont(size: 12, weight: .semibold, relativeTo: .caption)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.black.opacity(0.55)))
+                        .padding(8)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                printerArt
+                    .padding(6)
+                    .frame(width: 86, height: 64)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.canvasBackground.opacity(0.82)))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                    .padding(8)
+                    .padding(.bottom, hasJob ? 3 : 0)
+            }
+            .overlay(alignment: .bottom) {
+                if hasJob {
+                    ProgressBar(progress: progress ?? 0, height: 4, tint: progressTint)
+                }
+            }
+            .wellTile(cornerRadius: 14)
+    }
+
+    /// The big tile with a small one hanging off its corner; a tap swaps which is which. Both
+    /// layers keep their place in the stack, so swapping never restarts the camera or refetches
+    /// the cover.
+    private var pictureInPicture: some View {
+        Button {
+            withAnimation(.snappy) { isMediaSwapped.toggle() }
+        } label: {
+            ZStack(alignment: .topLeading) {
+                pipLayer(isBig: !isMediaSwapped) {
+                    printerArt
+                        .padding(isMediaSwapped ? 4 : 10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(NCColor.printerWell)
+                }
+                pipLayer(isBig: isMediaSwapped) {
+                    media(maxPixelSize: Self.pipSize * 3)
+                        .overlay(alignment: .topLeading) {
+                            if showsLiveFrame {
+                                if isMediaSwapped {
+                                    LiveBadge().padding(5)
+                                } else {
+                                    Circle()
+                                        .fill(NCColor.statusPrinting)
+                                        .frame(width: 7, height: 7)
+                                        .padding(5)
+                                }
+                            }
+                        }
+                }
+            }
+            .frame(width: Self.pipSize + Self.pipOverhang, height: Self.pipSize + Self.pipOverhang, alignment: .topLeading)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Swap the printer and the picture", comment: "Accessibility label for the picture-in-picture tile on a printer card"))
+    }
+
+    private func pipLayer(isBig: Bool, @ViewBuilder content: () -> some View) -> some View {
+        let size = isBig ? Self.pipSize : Self.pipInsetSize
+        let radius: CGFloat = isBig ? 16 : 11
+        let inset = Self.pipSize + Self.pipOverhang - Self.pipInsetSize
+        return content()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(isBig ? NCColor.printerWellBorder : .white.opacity(0.22), lineWidth: 1)
+            )
+            // A ring of the page colour lifts the inset off the tile underneath.
+            .background {
+                if !isBig {
+                    RoundedRectangle(cornerRadius: radius + 3, style: .continuous)
+                        .fill(NCColor.canvasBackground)
+                        .padding(-3)
+                }
+            }
+            .offset(x: isBig ? 0 : inset, y: isBig ? 0 : inset)
+            .zIndex(isBig ? 0 : 1)
+    }
+}
+
+/// The last print's plate thumbnail from the print log, on the same contrast backdrop as a cover
+/// (see `PrinterCoverImage`) — an idle printer has no cover of its own to show.
+private struct LastPrintImage: View {
+    var record: PrintRecord
+    var maxPixelSize: CGFloat
+    @Environment(AppStore.self) private var store
+    @State private var image: UIImage?
+    @State private var backdrop: Color?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                backdrop
+                FillingImage(image: image)
+            } else {
+                Image(systemName: "shippingbox.fill")
+                    .foregroundStyle(NCColor.textTertiary)
+            }
+        }
+        .task(id: record.id) {
+            image = await store.printThumbnail(for: record, maxPixelSize: maxPixelSize)
+            backdrop = if let image { await coverBackdrop(for: image) } else { nil }
+        }
+    }
+}
+
+private extension View {
+    /// Clipped to a rounded tile with the printer well's hairline border.
+    func wellTile(cornerRadius: CGFloat) -> some View {
+        clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(NCColor.printerWellBorder, lineWidth: 1)
+            )
     }
 }
 

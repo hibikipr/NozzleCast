@@ -210,7 +210,7 @@ struct PrinterCoverImage: View {
 /// The backdrop the Live Activity puts behind this cover — dark for a light model, light for a
 /// dark one (`CoverImageProcessing.backdrop(forRender:)`) — so a cover looks the same in the app
 /// as on the Lock Screen. Off the main thread: it reads every pixel of the render.
-private func coverBackdrop(for image: UIImage) async -> Color? {
+func coverBackdrop(for image: UIImage) async -> Color? {
     guard let cgImage = image.cgImage else { return nil }
     let rgb = await Task.detached(priority: .utility) { CoverImageProcessing.backdrop(forRender: cgImage) }.value
     return Color(red: Double(rgb.red) / 255, green: Double(rgb.green) / 255, blue: Double(rgb.blue) / 255)
