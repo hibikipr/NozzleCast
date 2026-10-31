@@ -72,9 +72,8 @@ shows new ones as notifications. **Notification History** lists past alerts.
 
 ### 3. Live Activities
 
-- **Live Activities** — turn on to get the progress card while a printer prints.
-- **Camera Preview on Lock Screen** — shows the printer's live camera frame on the card. Turn it
-  off if you don't want that visible to anyone who picks up your phone.
+- **Live Activities** — turn on to get the progress card while a printer prints. The card shows
+  the print's cover render, never the camera.
 
 ### 4. Instant push and the relay (self-built app only)
 

@@ -10,9 +10,10 @@ import ActivityTeardownPolicy
 /// server can't push directly to a Live Activity) — instead each update recomputes a start/end
 /// date range consistent with the printer's current progress, and the widget's
 /// `ProgressView(timerInterval:)` interpolates smoothly on-device until the next refresh
-/// corrects it. The one field that IS pushed independently is `liveSnapshot`, updated directly
-/// by the notification extension whenever Bambuddy's ntfy attachment carries a fresh camera
-/// frame — this manager only ever supplies `coverImage` and leaves `liveSnapshot` untouched.
+/// corrects it. The cover the widget shows is the sharp copy `AppStore.refresh` saves in
+/// `LiveActivityCoverStore`; the `coverImage` this manager supplies is only its small fallback.
+/// `liveSnapshot` (a camera frame) is no longer written by anyone: the Live Activity shows the
+/// cover only.
 @Observable
 final class PrintLiveActivityManager {
     static let shared = PrintLiveActivityManager()
@@ -40,7 +41,6 @@ final class PrintLiveActivityManager {
         var issueCount: Int?
         var stageDetail: String?
         var coverImage: Data?
-        var liveSnapshot: Data?
     }
 
     private var lastFingerprints: [String: SyncFingerprint] = [:]
@@ -100,61 +100,6 @@ final class PrintLiveActivityManager {
     /// restarted); a local activity created then registers its token *after* the relay's reset,
     /// so the relay keeps it updated.
     private static let relayStartGracePeriod: TimeInterval = 90
-
-    /// Whether a printer's activity already has a cover image cached, so callers can skip
-    /// re-fetching it (it's static for the whole print, unlike `liveSnapshot`).
-    func hasCoverImage(printerName: String) -> Bool {
-        Activity<PrintActivityAttributes>.activities
-            .first { $0.activityState == .active && $0.attributes.printerID == PrintActivityAttributes.normalizedID(printerName) }?
-            .content.state.coverImage != nil
-    }
-
-    /// Downscales a plate/cover render to a tiny JPEG for the Live Activity's content state.
-    /// Sized to coexist with `liveSnapshot` in the same ~4KB budget (see `ContentState`'s note).
-    /// The byte cap was originally tuned against a desktop JPEG encoder's output for a sample
-    /// image and turned out to reject every real cover render on-device — `UIGraphicsImageRenderer`
-    /// / `jpegData(compressionQuality:)` compress noticeably less efficiently than that encoder
-    /// did for the same content, even at the lowest quality step. Confirmed empirically this time.
-    /// What a cover's transparent background becomes once it's a JPEG. Mid-grey, so dark and
-    /// light filament models both stay visible; must match the relay's TRANSPARENCY_BACKGROUND.
-    nonisolated static let coverBackdrop = UIColor(white: 0x9A / 255, alpha: 1)
-
-    nonisolated static func downscaledCoverImage(_ image: UIImage, maxDimension: CGFloat = 36, maxBytes: Int = 1000) -> Data? {
-        let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
-        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        // The real bug behind every "downscale still won't fit" symptom: UIGraphicsImageRenderer
-        // defaults its render scale to the device's screen scale (2x/3x), so a "36pt" render was
-        // actually rasterizing at up to 108x108 pixels — up to 9x the intended pixel count — no
-        // matter how low the JPEG quality went. Pin scale to 1 so `targetSize` is the real pixel size.
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { context in
-            // JPEG has no alpha, and plate covers are PNGs with a transparent background — fill it
-            // with the same grey the relay uses (its imageDownscale.js TRANSPARENCY_BACKGROUND),
-            // so a cover looks the same whichever side created the activity.
-            coverBackdrop.setFill()
-            context.fill(CGRect(origin: .zero, size: targetSize))
-            image.draw(in: CGRect(origin: .zero, size: targetSize))
-        }
-
-        // Starting low and returning the first fit was the bug: these renders are tiny enough
-        // that quality 0.5 nearly always fits under maxBytes on the very first try, so the loop
-        // never got a chance to check whether 0.6-0.95 would also fit — spending only ~40% of
-        // the already-safe byte budget for zero size benefit and looking needlessly pixelated.
-        // Starting near the top and stepping down in finer increments still fails closed the
-        // same way, but actually uses the bytes maxBytes already allotted. Confirmed against
-        // nozzlecast-relay's identical fix (PR #24, v1.0.0-beta8): same pixel dimensions, same
-        // byte ceiling, ~2x the bytes actually used.
-        var quality: CGFloat = 0.95
-        var jpeg = resized.jpegData(compressionQuality: quality)
-        while let data = jpeg, data.count > maxBytes, quality > 0.05 {
-            quality -= 0.05
-            jpeg = resized.jpegData(compressionQuality: quality)
-        }
-        guard let jpeg, jpeg.count <= maxBytes else { return nil }
-        return jpeg
-    }
 
     /// Starts, updates, or ends activities to match the given printers. Call after every
     /// successful `AppStore.refresh()`. `coverImages` is a best-effort, pre-downscaled JPEG,
@@ -243,7 +188,7 @@ final class PrintLiveActivityManager {
             guard let printer, printer.jobPhase?.isActive == true else { continue }
             let existing = activity.content.state
             let coverImage = coverImages[activity.attributes.printerID] ?? existing.coverImage
-            let fingerprint = Self.fingerprint(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot)
+            let fingerprint = Self.fingerprint(for: printer, coverImage: coverImage)
             // Apple's Live Activity guidance: "Update a Live Activity only when new content is
             // available." `ContentState.startedAt`/`estimatedEndAt` are re-derived from `Date()`
             // below on every call and drift by fractions of a second regardless, so comparing
@@ -261,7 +206,7 @@ final class PrintLiveActivityManager {
             // pushed value with the derived one made the widget's elapsed-time math jump every
             // time the app happened to refresh. A print's start time doesn't change; nothing here
             // has any business restating it.
-            let state = Self.contentState(for: printer, coverImage: coverImage, liveSnapshot: existing.liveSnapshot, startedAt: existing.startedAt)
+            let state = Self.contentState(for: printer, coverImage: coverImage, startedAt: existing.startedAt)
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
 
@@ -309,8 +254,8 @@ final class PrintLiveActivityManager {
             }
 
             let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
-            let state = Self.contentState(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
-            lastFingerprints[id] = Self.fingerprint(for: printer, coverImage: coverImages[id], liveSnapshot: nil)
+            let state = Self.contentState(for: printer, coverImage: coverImages[id])
+            lastFingerprints[id] = Self.fingerprint(for: printer, coverImage: coverImages[id])
             let content = ActivityContent(state: state, staleDate: nil)
 
             // An activity needs a push type at creation -- per Apple's docs, one created without
@@ -374,7 +319,7 @@ final class PrintLiveActivityManager {
         return (tiers.contains(.error) ? "error" : "warning", tiers.count)
     }
 
-    private static func fingerprint(for printer: Printer, coverImage: Data?, liveSnapshot: Data?) -> SyncFingerprint {
+    private static func fingerprint(for printer: Printer, coverImage: Data?) -> SyncFingerprint {
         let issue = issueInfo(for: printer)
         return SyncFingerprint(
             progress: printer.progress ?? 0,
@@ -389,14 +334,13 @@ final class PrintLiveActivityManager {
             issueSeverity: issue.severity,
             issueCount: issue.count,
             stageDetail: printer.stageDetail,
-            coverImage: coverImage,
-            liveSnapshot: liveSnapshot
+            coverImage: coverImage
         )
     }
 
     /// `startedAt`, when non-nil, is the activity's existing start date and is used verbatim.
     /// Only a brand-new activity (which has none yet) gets the back-computed fallback below.
-    private static func contentState(for printer: Printer, coverImage: Data?, liveSnapshot: Data?, startedAt existingStartedAt: Date? = nil) -> PrintActivityAttributes.ContentState {
+    private static func contentState(for printer: Printer, coverImage: Data?, startedAt existingStartedAt: Date? = nil) -> PrintActivityAttributes.ContentState {
         let progress = printer.progress ?? 0
         let now = Date()
         let estimatedEnd = printer.etaMinutesRemaining.map { now.addingTimeInterval(TimeInterval($0 * 60)) }
@@ -434,7 +378,6 @@ final class PrintLiveActivityManager {
             rightNozzleTempC: printer.rightNozzle?.current,
             bedTempC: printer.bed.current,
             coverImage: coverImage,
-            liveSnapshot: liveSnapshot,
             issueSeverity: issue.severity,
             issueCount: issue.count,
             stageDetail: printer.stageDetail

@@ -203,9 +203,19 @@ keep working with the phone locked.
   Bambuddy's own `GET /api/v1/printers/{id}/status` directly (`BambuddyClient`/
   `bambuddyEnrichment.js`) for progress, layer count, nozzle/bed temps, job name, and remaining
   time — the same API this app's own `BambuddyAPIClient` uses — rather than regex-parsing ntfy
-  alert text. Enrichment failures fail open independently *per field* (numeric telemetry,
-  `coverImage`, and `liveSnapshot` each get their own try/catch): a flaky camera endpoint costs
-  exactly that one image, never the whole update. `estimatedEndAt` specifically distrusts an
+  alert text. Enrichment failures fail open independently *per field* (numeric telemetry and
+  `coverImage` each get their own try/catch): a flaky cover fetch costs exactly that one image,
+  never the whole update. (The relay no longer sends `liveSnapshot`, a camera frame: the Live
+  Activity shows the cover only.)
+- **The cover the Live Activity shows is a file, not the content-state's `coverImage`.** A Live
+  Activity can't fetch anything, and its content-state is capped at ~4KB, which held a cover only
+  at 36px. So `AppStore.refresh` fetches the full render (relay `GET /cover` first, Bambuddy
+  otherwise), and `CoverImageProcessing` trims it to the model and flattens it onto a backdrop
+  that suits the model's brightness; the sharp copy goes to `LiveActivityCoverStore` in the App
+  Group, keyed by printer and job, and the widget reads it from there. Refresh runs on the relay's
+  background wakes too, so a relay-started activity gets the file without the app being opened.
+  `coverImage` (96px, ≤2200 bytes: WebP from the relay, JPEG from the app) is only the fallback
+  until that file exists. `estimatedEndAt` specifically distrusts an
   implausible `remaining_time` (Bambuddy reports `0`–`3`s at print start before it's computed a
   real estimate, and for at least one test G-code file, seemingly never computes one at all) —
   when rejected, the field is simply omitted rather than shown wrong; the widget's fallback

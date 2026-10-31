@@ -56,18 +56,16 @@ public struct PrintActivityAttributes: ActivityAttributes {
         /// so it costs little of the ~4KB content-state budget.
         public var stageDetail: String?
 
-        /// The sliced-plate cover render, fetched once by the app when the print starts (it
-        /// doesn't change during the print). Shown until a live snapshot arrives, and as the
-        /// fallback whenever one hasn't.
+        /// A small copy of the sliced-plate cover render (it doesn't change during the print),
+        /// from the relay or the app. Only the fallback: the widget shows the sharp copy the app
+        /// saves in `LiveActivityCoverStore` whenever it has one for this job. Kept within
+        /// `CoverImageProcessing.contentStateMaxBytes` deliberately: ActivityKit caps the whole
+        /// content state at roughly 4KB serialized, and a Data field costs ~33% more once
+        /// base64-encoded into that JSON.
         public var coverImage: Data?
-        /// The printer's own camera frame, from Bambuddy's ntfy push attachment — refreshed by
-        /// the notification extension on each progress event, independent of app refreshes.
+        /// A camera frame. No longer written or shown — the Live Activity shows the cover only —
+        /// but kept so a content-state from an older relay that still sends one decodes.
         public var liveSnapshot: Data?
-
-        /// Kept tiny deliberately: ActivityKit caps the whole content state at roughly 4KB
-        /// serialized, a Data field costs ~33% more once base64-encoded into that JSON, and this
-        /// state carries up to two images plus the fields above.
-        public var preferredThumbnail: Data? { liveSnapshot ?? coverImage }
 
         public init(
             progress: Double,

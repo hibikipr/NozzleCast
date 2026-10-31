@@ -106,11 +106,6 @@ enum PushSharedStore {
         set { sharedDefaults.set(newValue, forKey: "liveActivitiesEnabled") }
     }
 
-    static var liveActivityCameraPreviewEnabled: Bool {
-        get { sharedDefaults.object(forKey: "liveActivityCameraPreviewEnabled") as? Bool ?? true }
-        set { sharedDefaults.set(newValue, forKey: "liveActivityCameraPreviewEnabled") }
-    }
-
     /// Whether a `nozzlecast-relay` is configured — mirrored here by the app (`RelayConfigStore`
     /// lives in the app's own container, which the notification extension can't read). With a
     /// relay, it is the Live Activity's only content writer and the extension must leave

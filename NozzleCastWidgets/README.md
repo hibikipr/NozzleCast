@@ -7,8 +7,9 @@ widget.
 
 - **`NozzleCastWidgetsBundle.swift`** — the extension's `@main` entry point.
 - **`PrintActivityWidget.swift`** — the Live Activity layout: the sliced-plate cover render (never
-  the live camera snapshot) greyed out and refilled in colour from the bottom up to the current
-  layer, a time-remaining countdown (`Text(timerInterval:)`, the one part that ticks on-device
+  the live camera snapshot; the sharp copy the app saved in `LiveActivityCoverStore`, else the
+  content-state's small `coverImage`) greyed out and refilled in colour from the bottom up to the
+  current layer, a time-remaining countdown (`Text(timerInterval:)`, the one part that ticks on-device
   between pushes; it shows the state label instead while paused or finished), a 20-segment
   progress bar, and percentage/layer counters that roll to each new value. Everything except
   the countdown animates only when a new content state arrives — ActivityKit runs no animation

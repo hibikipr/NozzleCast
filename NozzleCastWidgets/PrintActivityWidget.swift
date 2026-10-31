@@ -22,12 +22,34 @@ private struct SafeSection: View {
     var body: some View { _body }
 }
 
-private func decodedImage(_ data: Data?) -> Image? {
+/// The cover as the tile draws it: the image, its shape, and the backdrop it was flattened onto
+/// (so the tile around it can match).
+private struct CoverArt {
+    var image: Image
+    /// Width over height.
+    var aspectRatio: CGFloat
+    var backdrop: Color
+    var backdropIsLight: Bool
+}
+
+/// The sharp copy the app saved for this printer's job if there is one, else the small
+/// `coverImage` from the content-state (a relay-started activity can be showing before the app
+/// has woken to save it). Both are trimmed to the model and flattened onto one of
+/// `CoverImageProcessing`'s two backdrops.
+private func coverArt(_ attributes: PrintActivityAttributes, _ state: PrintActivityAttributes.ContentState) -> CoverArt? {
+    let data = LiveActivityCoverStore.load(printerID: attributes.printerID, jobName: state.jobName) ?? state.coverImage
     guard let data,
           let source = CGImageSourceCreateWithData(data as CFData, nil),
-          let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
+          let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil),
+          cgImage.width > 0, cgImage.height > 0
     else { return nil }
-    return Image(decorative: cgImage, scale: 1.0)
+    let backdrop = CoverImageProcessing.backdrop(of: cgImage)
+    return CoverArt(
+        image: Image(decorative: cgImage, scale: 1.0),
+        aspectRatio: CGFloat(cgImage.width) / CGFloat(cgImage.height),
+        backdrop: Color(red: Double(backdrop.red) / 255, green: Double(backdrop.green) / 255, blue: Double(backdrop.blue) / 255),
+        backdropIsLight: backdrop == CoverImageProcessing.backdropLight
+    )
 }
 
 /// How much of the model has been printed: layers when the printer reports them (that's what
@@ -48,60 +70,71 @@ private func buildFraction(_ state: PrintActivityAttributes.ContentState) -> Dou
 /// change (up to ~2s) but never runs an animation between updates, so the edge glides on each
 /// push and otherwise holds still.
 private struct BuildUpThumbnail: View {
-    var imageData: Data?
+    var cover: CoverArt?
     var fraction: Double
     var width: CGFloat
     var height: CGFloat
     var cornerRadius: CGFloat
     var showsEdge = true
 
-    /// Bambu's cover renders crop close to the model but not flush; mapping the fill across the
-    /// whole frame would make the first and last few layers look like nothing happened.
-    private static let modelSpan: ClosedRange<Double> = 0.06...0.94
+    /// Room between the model and the tile's edge, as a share of the tile's shorter side: the
+    /// cover is trimmed to the model, so without it the model would touch the rounded corners.
+    private static let insetRatio: CGFloat = 0.08
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        let span = Self.modelSpan
-        let filled = height * (span.lowerBound + (span.upperBound - span.lowerBound) * fraction)
 
-        ZStack(alignment: .bottom) {
-            shape.fill(Color(hex: "#16181C"))
-            if let image = decodedImage(imageData) {
-                // The relay downscales this to ~40px to fit ActivityKit's content-state budget
-                // (see nozzlecast-relay's MAX_DIMENSION constants); `.high` resamples the upscale
-                // smoothly rather than with `.medium`'s visible blockiness.
-                image
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: width, height: height)
-                    .grayscale(1)
-                    .opacity(0.28)
-                image
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: width, height: height)
-                    .mask(alignment: .bottom) {
-                        Rectangle().frame(height: filled)
-                    }
-                if showsEdge, fraction > 0, fraction < 1 {
-                    Capsule()
-                        .fill(accentLight)
-                        .frame(width: width - 12, height: 2)
-                        .shadow(color: accent.opacity(0.8), radius: 4)
-                        .offset(y: -filled + 1)
-                }
+        ZStack {
+            if let cover {
+                shape.fill(cover.backdrop)
+                model(cover)
             } else {
+                shape.fill(Color(hex: "#16181C"))
                 Image(systemName: "printer.fill")
                     .font(.system(size: min(width, height) * 0.45))
                     .foregroundStyle(accent)
-                    .frame(width: width, height: height)
             }
         }
         .frame(width: width, height: height)
         .clipShape(shape)
         .animation(.smooth(duration: 1.1), value: fraction)
+    }
+
+    /// The cover fitted inside the tile (it's already trimmed, so cropping it would cut off the
+    /// model): greyed out, with the colour refilled from the bottom up to the print height and a
+    /// glowing edge on top. The fill follows the image, which is the model's own height.
+    private func model(_ cover: CoverArt) -> some View {
+        let inset = min(width, height) * Self.insetRatio
+        let boxWidth = width - inset * 2, boxHeight = height - inset * 2
+        let fitsWidth = cover.aspectRatio > boxWidth / boxHeight
+        let modelWidth = fitsWidth ? boxWidth : boxHeight * cover.aspectRatio
+        let modelHeight = fitsWidth ? boxWidth / cover.aspectRatio : boxHeight
+        let filled = modelHeight * fraction
+
+        return ZStack(alignment: .bottom) {
+            cover.image
+                .resizable()
+                .interpolation(.high)
+                .frame(width: modelWidth, height: modelHeight)
+                .grayscale(1)
+                .opacity(cover.backdropIsLight ? 0.4 : 0.32)
+            cover.image
+                .resizable()
+                .interpolation(.high)
+                .frame(width: modelWidth, height: modelHeight)
+                .mask(alignment: .bottom) {
+                    Rectangle().frame(height: filled)
+                }
+            if showsEdge, fraction > 0, fraction < 1 {
+                // The light accent disappears against the light backdrop, so the full one there.
+                Capsule()
+                    .fill(cover.backdropIsLight ? accent : accentLight)
+                    .frame(width: modelWidth + 4, height: 2)
+                    .shadow(color: accent.opacity(0.8), radius: 4)
+                    .offset(y: -filled + 1)
+            }
+        }
+        .frame(width: modelWidth, height: modelHeight)
     }
 }
 
@@ -307,7 +340,7 @@ struct PrintActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     SafeSection {
                         BuildUpThumbnail(
-                            imageData: context.state.coverImage,
+                            cover: coverArt(context.attributes, context.state),
                             fraction: buildFraction(context.state),
                             width: 52, height: 52, cornerRadius: 14
                         )
@@ -368,7 +401,7 @@ struct PrintActivityWidget: Widget {
             } compactLeading: {
                 SafeSection {
                     BuildUpThumbnail(
-                        imageData: context.state.coverImage,
+                        cover: coverArt(context.attributes, context.state),
                         fraction: buildFraction(context.state),
                         width: 22, height: 22, cornerRadius: 6, showsEdge: false
                     )
@@ -392,7 +425,7 @@ struct PrintActivityWidget: Widget {
             } minimal: {
                 SafeSection {
                     BuildUpThumbnail(
-                        imageData: context.state.coverImage,
+                        cover: coverArt(context.attributes, context.state),
                         fraction: buildFraction(context.state),
                         width: 22, height: 22, cornerRadius: 6, showsEdge: false
                     )
@@ -411,7 +444,7 @@ private struct LockScreenView: View {
         HStack(alignment: .top, spacing: 14) {
             SafeSection {
                 BuildUpThumbnail(
-                    imageData: state.coverImage,
+                    cover: coverArt(attributes, state),
                     fraction: buildFraction(state),
                     width: 96, height: 128, cornerRadius: 16
                 )

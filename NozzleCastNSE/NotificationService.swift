@@ -9,7 +9,8 @@ import NozzleCastShared
 /// (`ntfy-ios/ntfyNSE/NotificationService.swift`), trimmed to what Bambuddy's alerts actually
 /// use: title/body/priority/attachment. Bambuddy attaches a live camera snapshot to most print
 /// events (confirmed against real message history), so this also attaches that photo to the
-/// visible notification and pushes a small thumbnail into the matching printer's Live Activity.
+/// visible notification. (It used to push a thumbnail of it into the Live Activity too; that
+/// shows the print's cover only now.)
 final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestAttemptContent: UNMutableNotificationContent?
@@ -85,19 +86,17 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             content.relevanceScore = 0.5
         }
 
-        var thumbnail: Data?
         if let attachmentURL = message.attachmentURL, let imageData = await Self.downloadImage(attachmentURL) {
             if let localURL = Self.writeTempFile(imageData, id: message.id),
                let attachment = try? UNNotificationAttachment(identifier: message.id, url: localURL) {
                 content.attachments = [attachment]
             }
-            thumbnail = Self.downscaledThumbnail(imageData)
             // Same full-size download used for the banner attachment, kept alongside the history
             // entry so the in-app Notifications list can show it too (that list reads the shared
             // history log directly, not the system's notification center).
             PushSharedStore.saveHistoryImage(imageData, id: message.id)
         }
-        await Self.updateLiveActivity(matching: message, thumbnail: thumbnail)
+        await Self.updateLiveActivity(matching: message)
 
         PushSharedStore.appendHistory(.init(
             id: message.id,
@@ -130,43 +129,6 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         return url
     }
 
-    /// Downscales to a tiny JPEG for the Live Activity's content state. ActivityKit's real budget
-    /// for the *whole* serialized content state is close to 4KB, and a Data field costs ~33% more
-    /// than its raw byte count once base64-encoded into that JSON — plus progress/dates/strings
-    /// already take a share; a 3KB image once blew that budget and the system ended the activity
-    /// outright rather than just dropping the update. The real bug behind every "still won't fit"
-    /// symptom: `UIGraphicsImageRenderer` defaults its render scale to the device's screen scale
-    /// (2x/3x), so a "40pt" render was actually rasterizing up to 9x the intended pixel count no
-    /// matter how low the JPEG quality went — pinning `format.scale = 1` fixes the real cause;
-    /// the byte cap only ever needed to be this generous to mask that.
-    private static func downscaledThumbnail(_ data: Data, maxDimension: CGFloat = 40, maxBytes: Int = 1300) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
-        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: targetSize))
-        }
-
-        // Starting low and returning the first fit was the bug: these renders are tiny enough
-        // that quality 0.5 nearly always fits under maxBytes on the very first try, so the loop
-        // never got a chance to check whether 0.6-0.95 would also fit — spending only ~40% of
-        // the already-safe byte budget for zero size benefit and looking needlessly pixelated.
-        // Starting near the top and stepping down in finer increments still fails closed the
-        // same way, but actually uses the bytes maxBytes already allotted. Confirmed against
-        // nozzlecast-relay's identical fix (PR #24, v1.0.0-beta8): same pixel dimensions, same
-        // byte ceiling, ~2x the bytes actually used.
-        var quality: CGFloat = 0.95
-        var jpeg = resized.jpegData(compressionQuality: quality)
-        while let data = jpeg, data.count > maxBytes, quality > 0.05 {
-            quality -= 0.05
-            jpeg = resized.jpegData(compressionQuality: quality)
-        }
-        guard let jpeg, jpeg.count <= maxBytes else { return nil }
-        return jpeg
-    }
-
     /// Bambuddy's ntfy messages don't carry a printer id, only a name embedded in the title/body
     /// text — and inconsistently, sometimes the display name ("Vic H2C") and sometimes the raw
     /// slug ("vic-h2c"). `PrintActivityAttributes.normalizedID` strips everything but
@@ -195,7 +157,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
     /// `nozzlecast-relay`'s `/register-activity`, and the relay pushes `update`/`end` events
     /// directly to that token via APNs — no local discovery needed on either side. Confirmed working
     /// end-to-end (start → progress → completion, all while locked) as of this writing.
-    private static func updateLiveActivity(matching message: NtfyPushMessage, thumbnail: Data?) async {
+    private static func updateLiveActivity(matching message: NtfyPushMessage) async {
         // Per Apple's guidance ("make it easy for people to turn them off in your app"), Settings
         // exposes this toggle. Turning it off here just stops this push-driven path from touching
         // activities further — `PrintLiveActivityManager.sync()` (the main app, on its next
@@ -230,11 +192,6 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             }
             NSLog("NCDEBUG NSE matched activity id=%@ printerID=%@", activity.id, activity.attributes.printerID)
             var state = activity.content.state
-            // A live camera frame on the Lock Screen is visible to anyone who picks up the phone
-            // — Apple's guidance calls out letting people configure whether sensitive content
-            // like this shows there. Skips assignment entirely rather than clearing an existing
-            // frame, matching how `coverImage` is already left alone when a fresh one isn't sent.
-            if let thumbnail, PushSharedStore.liveActivityCameraPreviewEnabled { state.liveSnapshot = thumbnail }
 
             // Awaited, not fired as an unstructured Task: the extension process is liable to be
             // terminated shortly after this method returns and `deliver(content)` is called, so
