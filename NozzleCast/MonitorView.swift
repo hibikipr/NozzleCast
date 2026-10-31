@@ -542,7 +542,7 @@ struct PrinterCard: View {
     private var thumbnail: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(NCColor.printerWell)
+                .fill(printerBackdrop)
             if state == .printing {
                 LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: Self.thumbnailSize * 3, coverFallbackJobIdentity: jobFileName ?? id, printerArtAssetName: imageAssetName, isShowingLiveFrame: $isCameraLive)
                     .font(.system(size: 24))
@@ -570,6 +570,10 @@ struct PrinterCard: View {
     }
 
     // MARK: - Printer and picture layouts
+
+    /// Behind the printer art: light for a dark model, dark for a light one (see
+    /// `PrinterArtBackdrop`).
+    private var printerBackdrop: Color { PrinterArtBackdrop.color(for: imageAssetName) }
 
     @ViewBuilder
     private var printerArt: some View {
@@ -610,7 +614,7 @@ struct PrinterCard: View {
             printerArt
                 .padding(12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(NCColor.printerWell)
+                .background(printerBackdrop)
                 .wellTile(cornerRadius: 14)
             media(maxPixelSize: 500)
                 .wellTile(cornerRadius: 14)
@@ -638,7 +642,7 @@ struct PrinterCard: View {
                 printerArt
                     .padding(6)
                     .frame(width: 86, height: 64)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NCColor.canvasBackground.opacity(0.82)))
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(printerBackdrop.opacity(0.9)))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.18), lineWidth: 1))
                     .padding(8)
                     .padding(.bottom, hasJob ? 3 : 0)
@@ -663,7 +667,7 @@ struct PrinterCard: View {
                     printerArt
                         .padding(isMediaSwapped ? 4 : 10)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(NCColor.printerWell)
+                        .background(printerBackdrop)
                 }
                 pipLayer(isBig: isMediaSwapped) {
                     media(maxPixelSize: Self.pipSize * 3)

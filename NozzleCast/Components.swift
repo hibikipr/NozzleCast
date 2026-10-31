@@ -218,22 +218,33 @@ struct PrinterCoverImage: View {
             // A tile reports a few sizes while it settles (a push, a layout pass); waiting a beat
             // lets those cancel here instead of as relay requests.
             try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled else { return }
-            guard let cover = await store.displayCover(printerID: printerID, pixelSize: pixelSize) else {
-                if let fallbackRecord,
-                   let thumbnail = await store.printThumbnail(for: fallbackRecord, maxPixelSize: max(pixelSize.width, pixelSize.height)) {
-                    backdrop = await coverBackdrop(for: thumbnail)
-                    image = thumbnail
-                } else {
-                    image = nil
-                    backdrop = nil
-                }
-                return
+            // A print that has only just finished may have neither a cover nor a print-log
+            // thumbnail yet, so with nothing to show, look again every half minute for a while.
+            for attempt in 0..<10 {
+                if attempt > 0 { try? await Task.sleep(for: .seconds(30)) }
+                guard !Task.isCancelled else { return }
+                if await loadImage() { return }
             }
+        }
+    }
+
+    /// Loads the cover, or the print-log thumbnail standing in for it; false when neither is there.
+    private func loadImage() async -> Bool {
+        if let cover = await store.displayCover(printerID: printerID, pixelSize: pixelSize) {
             // A composed cover has its backdrop already; a raw render gets the same one here.
             backdrop = cover.isComposed ? nil : await coverBackdrop(for: cover.image)
             image = cover.image
+            return true
         }
+        if let fallbackRecord,
+           let thumbnail = await store.printThumbnail(for: fallbackRecord, maxPixelSize: max(pixelSize.width, pixelSize.height)) {
+            backdrop = await coverBackdrop(for: thumbnail)
+            image = thumbnail
+            return true
+        }
+        image = nil
+        backdrop = nil
+        return false
     }
 }
 
