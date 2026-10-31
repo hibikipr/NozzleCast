@@ -480,12 +480,15 @@ struct PrinterCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(NCColor.printerWell)
             if state == .printing {
-                LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: Self.thumbnailSize * 3, coverFallbackJobIdentity: jobFileName ?? id, isShowingLiveFrame: $isCameraLive)
+                LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: Self.thumbnailSize * 3, coverFallbackJobIdentity: jobFileName ?? id, printerArtAssetName: imageAssetName, isShowingLiveFrame: $isCameraLive)
                     .font(.system(size: 24))
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let imageAssetName {
+                AnimatedPrinterImage(assetName: imageAssetName, state: state)
+                    .padding(10)
             } else {
-                PrinterThumbnailImage(assetName: imageAssetName)
+                PrinterThumbnailImage(assetName: nil)
                     .padding(10)
             }
         }

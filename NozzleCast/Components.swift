@@ -107,6 +107,9 @@ struct LiveCameraView: View {
     /// there's no live frame to show — a camera integration being down (as this was built for,
     /// on a P1S) shouldn't leave the thumbnail solid black when a render is already available.
     var coverFallbackJobIdentity: String?
+    /// The printer's model image, shown printing (see `AnimatedPrinterImage`) when there's
+    /// neither a live frame nor a cover — rather than a generic box glyph.
+    var printerArtAssetName: String?
     /// Reflects whether an actual live frame is currently on screen (as opposed to the cover
     /// fallback or the plain icon) — callers use this to gate a "LIVE" badge, which shouldn't
     /// show over a static plate render.
@@ -126,7 +129,7 @@ struct LiveCameraView: View {
             if let image {
                 FillingImage(image: image)
             } else if let jobIdentity = coverFallbackJobIdentity {
-                PrinterCoverImage(printerID: printerID, jobIdentity: jobIdentity, maxPixelSize: maxPixelSize)
+                PrinterCoverImage(printerID: printerID, jobIdentity: jobIdentity, maxPixelSize: maxPixelSize, printerArtAssetName: printerArtAssetName)
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: "camera.fill")
@@ -176,6 +179,8 @@ struct PrinterCoverImage: View {
     var jobIdentity: String
     /// Longest edge, in pixels, to decode the render at (see `LiveCameraView.maxPixelSize`).
     var maxPixelSize: CGFloat = 600
+    /// When set, the printer's model image (animated printing) stands in while there's no render.
+    var printerArtAssetName: String?
 
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
@@ -184,6 +189,9 @@ struct PrinterCoverImage: View {
         ZStack {
             if let image {
                 FillingImage(image: image)
+            } else if let printerArtAssetName {
+                AnimatedPrinterImage(assetName: printerArtAssetName, state: .printing)
+                    .padding(10)
             } else {
                 Image(systemName: "shippingbox.fill")
                     .foregroundStyle(NCColor.textTertiary)
