@@ -191,7 +191,7 @@ private struct LowStockSuggestionRow: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(Capsule().fill(NCColor.accent))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(NCColor.onAccent)
             }
             .buttonStyle(.plain)
         }

@@ -425,7 +425,7 @@ struct ScanView: View {
                 } label: {
                     Text("Add to Inventory")
                         .ncFont(size: 16, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(NCColor.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NCColor.accent))
@@ -486,7 +486,7 @@ struct ScanView: View {
                 } label: {
                     Text("Add to Inventory")
                         .ncFont(size: 16, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(canSubmitManual ? NCColor.onAccent : .white.opacity(0.6))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(
@@ -570,7 +570,7 @@ struct ScanView: View {
                 } label: {
                     Text("Assign to a Printer")
                         .ncFont(size: 16, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(NCColor.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NCColor.accent))
@@ -664,10 +664,10 @@ private struct ScanLine: View {
     var body: some View {
         Rectangle()
             .fill(
-                LinearGradient(colors: [.clear, Color(hex: "#4f7fe0"), .clear], startPoint: .leading, endPoint: .trailing)
+                LinearGradient(colors: [.clear, NCColor.accent, .clear], startPoint: .leading, endPoint: .trailing)
             )
             .frame(height: 2)
-            .shadow(color: Color(hex: "#4f7fe0"), radius: 6)
+            .shadow(color: NCColor.accent, radius: 6)
             .offset(y: animate ? 60 : -60)
             .onAppear {
                 withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {

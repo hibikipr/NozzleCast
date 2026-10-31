@@ -110,7 +110,7 @@ private struct MaintenanceTaskRow: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Capsule().fill(task.isDue || task.isWarning ? NCColor.accent : Color.white.opacity(0.08)))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(task.isDue || task.isWarning ? NCColor.onAccent : .white)
                 }
                 .buttonStyle(.plain)
             }

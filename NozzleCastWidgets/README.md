@@ -6,12 +6,13 @@ widget.
 ## Layout
 
 - **`NozzleCastWidgetsBundle.swift`** — the extension's `@main` entry point.
-- **`PrintActivityWidget.swift`** — the Live Activity layout: a thumbnail that prefers the live
-  camera snapshot and falls back to the cover render, a progress bar driven by
-  `ProgressView(timerInterval:)` so it animates smoothly on-device between refreshes, and a
-  percentage `Text` derived from that *same* date interpolation rather than the raw progress
-  snapshot — the two used to visibly disagree, since the bar animates continuously while a plain
-  percentage only updates when the app (or the notification extension) pushes a new value.
+- **`PrintActivityWidget.swift`** — the Live Activity layout: the sliced-plate cover render (never
+  the live camera snapshot) greyed out and refilled in colour from the bottom up to the current
+  layer, a time-remaining countdown (`Text(timerInterval:)`, the one part that ticks on-device
+  between pushes; it shows the state label instead while paused or finished), a 20-segment
+  progress bar, and percentage/layer counters that roll to each new value. Everything except
+  the countdown animates only when a new content state arrives — ActivityKit runs no animation
+  between updates.
 - **`AMSWidget.swift`** — the AMS Colors home-screen widget (Small/Medium/Large). Reads
   `PrinterAMSSnapshot`s the app wrote via `AMSWidgetStore` (app-group `UserDefaults`, see
   `NozzleCastShared/AMSWidgetSnapshot.swift`) rather than hitting the network itself. One AMS

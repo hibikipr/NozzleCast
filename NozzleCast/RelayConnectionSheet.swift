@@ -50,7 +50,7 @@ struct RelayConnectionSheet: View {
                     }
                     .disabled(urlString.isEmpty || authSecret.isEmpty)
                     .listRowBackground(NCColor.accent)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(NCColor.onAccent)
                 }
 
                 if RelayConfigStore.isConfigured {
