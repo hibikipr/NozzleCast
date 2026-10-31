@@ -79,6 +79,18 @@ public enum CoverImageProcessing {
     /// it counts the corners that are (within JPEG/WebP noise) one of the two backdrops — model
     /// pixels almost never are — and only when none is falls back to whichever backdrop the
     /// corners are nearer.
+    /// The backdrop for a raw cover render (transparent background, untrimmed): what the app puts
+    /// behind a cover it shows, so it matches the Live Activity's. Dark for a light model, light
+    /// for a dark one; dark when the render has no visible pixels.
+    public static func backdrop(forRender image: CGImage) -> RGB {
+        guard let pixels = rgbaPixels(of: image), let box = pixels.opaqueBounds(threshold: trimAlphaThreshold) else { return backdropDark }
+        return backdrop(forModelIn: pixels, box: box)
+    }
+
+    private static func backdrop(forModelIn pixels: Pixels, box: CGRect) -> RGB {
+        pixels.averageLuminance(in: box, alphaThreshold: modelAlphaThreshold) > lightModelThreshold ? backdropDark : backdropLight
+    }
+
     public static func backdrop(of image: CGImage) -> RGB {
         guard let pixels = rgbaPixels(of: image) else { return backdropDark }
         let width = image.width, height = image.height
@@ -101,8 +113,7 @@ public enum CoverImageProcessing {
               let cropped = image.cropping(to: box)
         else { return nil }
 
-        let backdrop = pixels.averageLuminance(in: box, alphaThreshold: modelAlphaThreshold) > lightModelThreshold
-            ? backdropDark : backdropLight
+        let backdrop = backdrop(forModelIn: pixels, box: box)
 
         let scale = min(Double(maxDimension) / Double(max(box.width, box.height)), 1)
         let width = max(Int((Double(box.width) * scale).rounded()), 1)

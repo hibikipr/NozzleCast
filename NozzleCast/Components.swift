@@ -1,4 +1,5 @@
 import SwiftUI
+import NozzleCastShared
 
 /// Wraps its children left-to-right, starting a new row when the next child would overflow
 /// the available width. Used for the AMS dot row so printers with many trays wrap instead of
@@ -184,10 +185,12 @@ struct PrinterCoverImage: View {
 
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
+    @State private var backdrop: Color?
 
     var body: some View {
         ZStack {
             if let image {
+                backdrop
                 FillingImage(image: image)
             } else if let printerArtAssetName {
                 AnimatedPrinterImage(assetName: printerArtAssetName, state: .printing)
@@ -199,8 +202,18 @@ struct PrinterCoverImage: View {
         }
         .task(id: "\(printerID)-\(jobIdentity)") {
             image = await store.printerCoverImage(printerID: printerID, maxPixelSize: maxPixelSize)
+            backdrop = if let image { await coverBackdrop(for: image) } else { nil }
         }
     }
+}
+
+/// The backdrop the Live Activity puts behind this cover — dark for a light model, light for a
+/// dark one (`CoverImageProcessing.backdrop(forRender:)`) — so a cover looks the same in the app
+/// as on the Lock Screen. Off the main thread: it reads every pixel of the render.
+private func coverBackdrop(for image: UIImage) async -> Color? {
+    guard let cgImage = image.cgImage else { return nil }
+    let rgb = await Task.detached(priority: .utility) { CoverImageProcessing.backdrop(forRender: cgImage) }.value
+    return Color(red: Double(rgb.red) / 255, green: Double(rgb.green) / 255, blue: Double(rgb.blue) / 255)
 }
 
 /// Full-screen, pinch-to-zoom presentation of a printer's plate render, opened by tapping the
@@ -212,6 +225,7 @@ struct CoverImageViewer: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
+    @State private var backdrop: Color?
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -219,7 +233,7 @@ struct CoverImageViewer: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            (backdrop ?? Color.black).ignoresSafeArea()
 
             if let image {
                 Image(uiImage: image)
@@ -267,6 +281,7 @@ struct CoverImageViewer: View {
         }
         .task(id: "\(printerID)-\(jobIdentity)") {
             image = await store.printerCoverImage(printerID: printerID)
+            backdrop = if let image { await coverBackdrop(for: image) } else { nil }
         }
     }
 }

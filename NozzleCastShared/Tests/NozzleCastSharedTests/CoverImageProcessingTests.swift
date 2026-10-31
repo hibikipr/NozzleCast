@@ -89,8 +89,13 @@ final class CoverImageProcessingTests: XCTestCase {
         assertNear(try XCTUnwrap(CoverImageProcessing.topRightColor(of: processed)), CoverImageProcessing.backdropDark, "backdrop behind a light model")
     }
 
-    /// The relay's backdrops (imageDownscale.js BACKDROP_DARK/LIGHT) must be the same colours, or
-    /// a cover would change shade depending on which side produced it.
+    /// The app shows the full render (not a prepared copy) on the same backdrop the Live
+    /// Activity's cover gets, so the two look alike.
+    func testBackdropForARawRenderFollowsItsModel() {
+        XCTAssertEqual(CoverImageProcessing.backdrop(forRender: modelImage(color: (0.16, 0.12, 0.35))), CoverImageProcessing.backdropLight)
+        XCTAssertEqual(CoverImageProcessing.backdrop(forRender: modelImage(color: (0.67, 0.67, 0.67))), CoverImageProcessing.backdropDark)
+    }
+
     /// The widget fills the rest of its tile with the cover's backdrop. A boxy model can fill the
     /// trimmed image right into a corner, so it snaps the corners to the nearer known backdrop
     /// rather than copying a pixel that might be filament.
@@ -101,6 +106,8 @@ final class CoverImageProcessingTests: XCTestCase {
         XCTAssertEqual(CoverImageProcessing.backdrop(of: light), CoverImageProcessing.backdropDark)
     }
 
+    /// The relay's backdrops (imageDownscale.js BACKDROP_DARK/LIGHT) must be the same colours, or
+    /// a cover would change shade depending on which side produced it.
     func testBackdropsMatchTheRelay() {
         XCTAssertEqual(CoverImageProcessing.backdropDark, CoverImageProcessing.RGB(red: 0x1F, green: 0x23, blue: 0x29))
         XCTAssertEqual(CoverImageProcessing.backdropLight, CoverImageProcessing.RGB(red: 0xC4, green: 0xC9, blue: 0xD1))
