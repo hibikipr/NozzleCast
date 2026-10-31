@@ -75,7 +75,10 @@ private struct BuildUpThumbnail: View {
     var width: CGFloat
     var height: CGFloat
     var cornerRadius: CGFloat
-    var showsEdge = true
+    /// The greyed-out model refilling in colour, with its edge. Off for the Dynamic Island's
+    /// compact and minimal tiles: at ~22pt a mostly-grey model reads as an empty square, so those
+    /// show the model in full colour.
+    var showsBuildUp = true
 
     /// Room between the model and the tile's edge, as a share of the tile's shorter side: the
     /// cover is trimmed to the model, so without it the model would touch the rounded corners.
@@ -109,7 +112,7 @@ private struct BuildUpThumbnail: View {
         let fitsWidth = cover.aspectRatio > boxWidth / boxHeight
         let modelWidth = fitsWidth ? boxWidth : boxHeight * cover.aspectRatio
         let modelHeight = fitsWidth ? boxWidth / cover.aspectRatio : boxHeight
-        let filled = modelHeight * fraction
+        let filled = modelHeight * (showsBuildUp ? fraction : 1)
 
         return ZStack(alignment: .bottom) {
             cover.image
@@ -125,7 +128,7 @@ private struct BuildUpThumbnail: View {
                 .mask(alignment: .bottom) {
                     Rectangle().frame(height: filled)
                 }
-            if showsEdge, fraction > 0, fraction < 1 {
+            if showsBuildUp, fraction > 0, fraction < 1 {
                 // The light accent disappears against the light backdrop, so the full one there.
                 Capsule()
                     .fill(cover.backdropIsLight ? accent : accentLight)
@@ -403,7 +406,7 @@ struct PrintActivityWidget: Widget {
                     BuildUpThumbnail(
                         cover: coverArt(context.attributes, context.state),
                         fraction: buildFraction(context.state),
-                        width: 22, height: 22, cornerRadius: 6, showsEdge: false
+                        width: 22, height: 22, cornerRadius: 6, showsBuildUp: false
                     )
                 }
             } compactTrailing: {
@@ -427,7 +430,7 @@ struct PrintActivityWidget: Widget {
                     BuildUpThumbnail(
                         cover: coverArt(context.attributes, context.state),
                         fraction: buildFraction(context.state),
-                        width: 22, height: 22, cornerRadius: 6, showsEdge: false
+                        width: 22, height: 22, cornerRadius: 6, showsBuildUp: false
                     )
                 }
             }
