@@ -115,6 +115,10 @@ final class PrintLiveActivityManager {
     /// image and turned out to reject every real cover render on-device — `UIGraphicsImageRenderer`
     /// / `jpegData(compressionQuality:)` compress noticeably less efficiently than that encoder
     /// did for the same content, even at the lowest quality step. Confirmed empirically this time.
+    /// What a cover's transparent background becomes once it's a JPEG. Mid-grey, so dark and
+    /// light filament models both stay visible; must match the relay's TRANSPARENCY_BACKGROUND.
+    nonisolated static let coverBackdrop = UIColor(white: 0x9A / 255, alpha: 1)
+
     nonisolated static func downscaledCoverImage(_ image: UIImage, maxDimension: CGFloat = 36, maxBytes: Int = 1000) -> Data? {
         let scale = min(maxDimension / max(image.size.width, image.size.height), 1)
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
@@ -124,7 +128,13 @@ final class PrintLiveActivityManager {
         // matter how low the JPEG quality went. Pin scale to 1 so `targetSize` is the real pixel size.
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+        format.opaque = true
+        let resized = UIGraphicsImageRenderer(size: targetSize, format: format).image { context in
+            // JPEG has no alpha, and plate covers are PNGs with a transparent background — fill it
+            // with the same grey the relay uses (its imageDownscale.js TRANSPARENCY_BACKGROUND),
+            // so a cover looks the same whichever side created the activity.
+            coverBackdrop.setFill()
+            context.fill(CGRect(origin: .zero, size: targetSize))
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
 
