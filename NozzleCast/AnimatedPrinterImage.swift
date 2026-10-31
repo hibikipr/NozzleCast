@@ -1,4 +1,24 @@
+import NozzleCastShared
 import SwiftUI
+
+/// The tile colour that sets a printer's model image off, by the same rule and colours as a
+/// cover's backdrop (`CoverImageProcessing.backdrop(forRender:)`): light behind a dark printer
+/// (the H2C, X1E), dark behind a light one. Worked out from the image once per model and kept.
+enum PrinterArtBackdrop {
+    private static var cache: [String: Color] = [:]
+
+    static func color(for assetName: String?) -> Color {
+        guard let assetName else { return NCColor.printerWell }
+        if let cached = cache[assetName] { return cached }
+        var color = NCColor.printerWell
+        if let cgImage = UIImage(named: assetName)?.cgImage {
+            let rgb = CoverImageProcessing.backdrop(forRender: cgImage)
+            color = Color(red: Double(rgb.red) / 255, green: Double(rgb.green) / 255, blue: Double(rgb.blue) / 255)
+        }
+        cache[assetName] = color
+        return color
+    }
+}
 
 /// A printer's model image, animated by what it's doing: the toolhead travels and a part grows on
 /// the plate while printing, the status light and display take the status colour, a failed print

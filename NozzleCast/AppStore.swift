@@ -1365,9 +1365,11 @@ final class AppStore {
     static let printHistoryPageSize = 40
 
     @ObservationIgnored private let printThumbnailCache = NSCache<NSString, UIImage>()
-    /// Thumbnails the server doesn't have (a print archived without one 404s), so a scrolling list
-    /// doesn't ask again every time a row reappears.
-    @ObservationIgnored private var missingPrintThumbnails: Set<String> = []
+    /// Thumbnails the server didn't have (a print archived without one 404s), and when, so a
+    /// scrolling list doesn't ask again every time a row reappears. Only for a minute: a print
+    /// that has only just finished gets its thumbnail a little after it shows up in the log.
+    @ObservationIgnored private var missingPrintThumbnails: [String: Date] = [:]
+    private static let missingPrintThumbnailRetryInterval: TimeInterval = 60
 
     var hasMorePrintHistory: Bool { printHistory.count < printHistoryTotal }
 
@@ -1526,14 +1528,15 @@ final class AppStore {
     private func cachedPrintThumbnail(key: String, maxPixelSize: CGFloat, _ fetch: (BambuddyAPIClient) async throws -> Data) async -> UIImage? {
         let cacheKey = "\(key)@\(Int(maxPixelSize))" as NSString
         if let cached = printThumbnailCache.object(forKey: cacheKey) { return cached }
-        guard !missingPrintThumbnails.contains(key), let client else { return nil }
+        if let missedAt = missingPrintThumbnails[key], Date().timeIntervalSince(missedAt) < Self.missingPrintThumbnailRetryInterval { return nil }
+        guard let client else { return nil }
         do {
             let data = try await fetch(client)
             guard let image = await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize) else { return nil }
             printThumbnailCache.setObject(image, forKey: cacheKey)
             return image
         } catch BambuddyAPIError.http(404, _) {
-            missingPrintThumbnails.insert(key)
+            missingPrintThumbnails[key] = Date()
             return nil
         } catch {
             return nil
