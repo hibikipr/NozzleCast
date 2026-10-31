@@ -71,6 +71,19 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         content.threadIdentifier = message.topic
         content.sound = .default
 
+        // Muted from the app's Notifications list: no sound, no text, no history entry and no
+        // badge bump. An extension without Apple's notification-filtering entitlement can't drop
+        // a push outright; an empty, silent, passive one is as close as it gets.
+        if PushSharedStore.isMuted(title: content.title, body: content.body) {
+            content.title = ""
+            content.body = ""
+            content.sound = nil
+            content.interruptionLevel = .passive
+            content.relevanceScore = 0
+            content.badge = NSNumber(value: PushSharedStore.unreadCount())
+            return
+        }
+
         switch message.priority ?? 3 {
         case 5:
             content.interruptionLevel = .timeSensitive

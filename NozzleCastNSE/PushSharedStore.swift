@@ -114,4 +114,20 @@ enum PushSharedStore {
         get { sharedDefaults.bool(forKey: "relayConfigured") }
         set { sharedDefaults.set(newValue, forKey: "relayConfigured") }
     }
+
+    // MARK: - Muted alerts (muted in the app's Notifications list)
+
+    /// An alert the user muted, by its exact title and body. Same key and schema as the app's copy.
+    struct MutedAlert: Codable, Hashable {
+        var title: String
+        var body: String
+    }
+
+    static var mutedAlerts: [MutedAlert] {
+        sharedDefaults.data(forKey: "mutedAlerts").flatMap { try? JSONDecoder().decode([MutedAlert].self, from: $0) } ?? []
+    }
+
+    static func isMuted(title: String, body: String) -> Bool {
+        mutedAlerts.contains(MutedAlert(title: title, body: body))
+    }
 }
