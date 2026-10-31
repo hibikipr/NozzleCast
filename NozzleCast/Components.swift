@@ -263,10 +263,26 @@ struct CoverImageViewer: View {
     var printerID: String
     var jobIdentity: String
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
     @State private var backdrop: Color?
+
+    var body: some View {
+        ZoomableImageViewer(image: image, backdrop: backdrop ?? .black)
+            .task(id: "\(printerID)-\(jobIdentity)") {
+                image = await store.printerCoverImage(printerID: printerID)
+                backdrop = if let image { await coverBackdrop(for: image) } else { nil }
+            }
+    }
+}
+
+/// A full-screen picture to pinch-zoom (up to 5x), drag while zoomed and double-tap back to fit,
+/// with a close button. A spinner until `image` arrives.
+struct ZoomableImageViewer: View {
+    var image: UIImage?
+    var backdrop: Color = .black
+
+    @Environment(\.dismiss) private var dismiss
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -274,7 +290,7 @@ struct CoverImageViewer: View {
 
     var body: some View {
         ZStack {
-            (backdrop ?? Color.black).ignoresSafeArea()
+            backdrop.ignoresSafeArea()
 
             if let image {
                 Image(uiImage: image)
@@ -319,10 +335,6 @@ struct CoverImageViewer: View {
             GlassIconButton(systemName: "xmark") { dismiss() }
                 .padding(16)
                 .padding(.top, 8)
-        }
-        .task(id: "\(printerID)-\(jobIdentity)") {
-            image = await store.printerCoverImage(printerID: printerID)
-            backdrop = if let image { await coverBackdrop(for: image) } else { nil }
         }
     }
 }

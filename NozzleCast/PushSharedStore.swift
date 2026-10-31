@@ -167,4 +167,35 @@ nonisolated enum PushSharedStore {
         get { sharedDefaults.bool(forKey: "relayConfigured") }
         set { sharedDefaults.set(newValue, forKey: "relayConfigured") }
     }
+
+    // MARK: - Muted alerts (muted in the Notifications list, honoured by the NSE)
+
+    /// An alert the user muted, by its exact title and body — e.g. a printer without Developer
+    /// LAN mode repeating Bambuddy's "MQTT Command verification failed" HMS alert. The NSE
+    /// delivers those silently and keeps them out of the history. Same key and schema in the
+    /// NSE's copy of this file.
+    struct MutedAlert: Codable, Hashable {
+        var title: String
+        var body: String
+    }
+
+    static var mutedAlerts: [MutedAlert] {
+        get { sharedDefaults.data(forKey: "mutedAlerts").flatMap { try? JSONDecoder().decode([MutedAlert].self, from: $0) } ?? [] }
+        set { sharedDefaults.set(try? JSONEncoder().encode(newValue), forKey: "mutedAlerts") }
+    }
+
+    static func isMuted(title: String, body: String) -> Bool {
+        mutedAlerts.contains(MutedAlert(title: title, body: body))
+    }
+
+    /// Drops every history entry with this title and body — what muting an alert does to the
+    /// copies already in the list.
+    static func removeHistory(title: String, body: String) async {
+        let removed = await updateHistory { entries in
+            let removed = entries.filter { $0.title == title && $0.body == body }
+            entries.removeAll { $0.title == title && $0.body == body }
+            return removed
+        }
+        for entry in removed { deleteHistoryImage(id: entry.id) }
+    }
 }
