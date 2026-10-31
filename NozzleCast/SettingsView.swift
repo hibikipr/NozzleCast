@@ -59,6 +59,7 @@ struct SettingsView: View {
     /// lives in plain statics rather than observable state.
     @State private var alertFeedStatusRefresh = 0
     @State private var liveActivitiesEnabled = PushSharedStore.liveActivitiesEnabled
+    @AppStorage(PrinterCardLayout.storageKey) private var cardLayout: PrinterCardLayout = .classic
 
     var body: some View {
         NavigationStack {
@@ -208,6 +209,21 @@ struct SettingsView: View {
                             }
                         }
                     }
+                }
+
+                Section {
+                    Picker(selection: $cardLayout) {
+                        ForEach(PrinterCardLayout.allCases) { layout in
+                            Label(layout.title, systemImage: layout.systemImage).tag(layout)
+                        }
+                    } label: {
+                        Text("Card Layout", comment: "Settings: how printer cards on the Monitor tab look").foregroundStyle(.white)
+                    }
+                    .tint(NCColor.accentLight)
+                } header: {
+                    Text("Monitor", comment: "Settings section header for Monitor tab options")
+                } footer: {
+                    Text("How each printer card pairs the animated printer with the camera or cover. Also in the Monitor tab's header.", comment: "Settings footer for the card layout picker")
                 }
 
                 Section {
