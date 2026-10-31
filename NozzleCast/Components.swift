@@ -182,6 +182,9 @@ struct PrinterCoverImage: View {
     var maxPixelSize: CGFloat = 600
     /// When set, the printer's model image (animated printing) stands in while there's no render.
     var printerArtAssetName: String?
+    /// When set, the print log's plate thumbnail for this print stands in when the printer has no
+    /// cover — an idle printer whose job was cleared.
+    var fallbackRecord: PrintRecord?
 
     @Environment(AppStore.self) private var store
     @Environment(\.displayScale) private var displayScale
@@ -210,15 +213,21 @@ struct PrinterCoverImage: View {
         }
         // A new size (the picture-in-picture swap) keeps the old picture up until its replacement
         // arrives, rather than flashing the placeholder.
-        .task(id: "\(printerID)-\(jobIdentity)-\(Int(pixelSize.width))x\(Int(pixelSize.height))") {
+        .task(id: "\(printerID)-\(jobIdentity)-\(fallbackRecord?.id ?? "")-\(Int(pixelSize.width))x\(Int(pixelSize.height))") {
             guard pixelSize.width >= 1, pixelSize.height >= 1 else { return }
             // A tile reports a few sizes while it settles (a push, a layout pass); waiting a beat
             // lets those cancel here instead of as relay requests.
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }
             guard let cover = await store.displayCover(printerID: printerID, pixelSize: pixelSize) else {
-                image = nil
-                backdrop = nil
+                if let fallbackRecord,
+                   let thumbnail = await store.printThumbnail(for: fallbackRecord, maxPixelSize: max(pixelSize.width, pixelSize.height)) {
+                    backdrop = await coverBackdrop(for: thumbnail)
+                    image = thumbnail
+                } else {
+                    image = nil
+                    backdrop = nil
+                }
                 return
             }
             // A composed cover has its backdrop already; a raw render gets the same one here.
