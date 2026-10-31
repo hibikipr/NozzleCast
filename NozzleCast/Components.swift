@@ -184,8 +184,12 @@ struct PrinterCoverImage: View {
     var printerArtAssetName: String?
 
     @Environment(AppStore.self) private var store
+    @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
     @State private var backdrop: Color?
+    /// The tile's size in pixels (capped at `maxPixelSize`): the relay composes the cover to this
+    /// shape, so the model is centred and nothing of it is cropped.
+    @State private var pixelSize: CGSize = .zero
 
     var body: some View {
         ZStack {
@@ -200,9 +204,26 @@ struct PrinterCoverImage: View {
                     .foregroundStyle(NCColor.textTertiary)
             }
         }
-        .task(id: "\(printerID)-\(jobIdentity)") {
-            image = await store.printerCoverImage(printerID: printerID, maxPixelSize: maxPixelSize)
-            backdrop = if let image { await coverBackdrop(for: image) } else { nil }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+            let scale = min(displayScale, maxPixelSize / max(size.width, size.height, 1))
+            pixelSize = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+        }
+        // A new size (the picture-in-picture swap) keeps the old picture up until its replacement
+        // arrives, rather than flashing the placeholder.
+        .task(id: "\(printerID)-\(jobIdentity)-\(Int(pixelSize.width))x\(Int(pixelSize.height))") {
+            guard pixelSize.width >= 1, pixelSize.height >= 1 else { return }
+            // A tile reports a few sizes while it settles (a push, a layout pass); waiting a beat
+            // lets those cancel here instead of as relay requests.
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            guard let cover = await store.displayCover(printerID: printerID, pixelSize: pixelSize) else {
+                image = nil
+                backdrop = nil
+                return
+            }
+            // A composed cover has its backdrop already; a raw render gets the same one here.
+            backdrop = cover.isComposed ? nil : await coverBackdrop(for: cover.image)
+            image = cover.image
         }
     }
 }

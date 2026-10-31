@@ -876,6 +876,33 @@ final class AppStore {
         }
     }
 
+    /// Whether the relay composes covers itself (`bg=auto`, relay v1.5.0+). Nil until it's been
+    /// asked; false after an older relay refused it, so the app stops asking until it relaunches.
+    @ObservationIgnored private var relayComposesCovers: Bool?
+
+    /// The cover for showing in a tile `pixelSize` big: composed by the relay to fit it — trimmed
+    /// to the model, on the backdrop for its brightness — when it can, else the raw render, for
+    /// the caller to put on that backdrop itself (`isComposed` false).
+    func displayCover(printerID: String, pixelSize: CGSize) async -> (image: UIImage, isComposed: Bool)? {
+        var askRelayForRaw = true
+        if relayComposesCovers != false, let name = printers.first(where: { $0.id == printerID })?.name {
+            switch await RelayCoverClient.displayCoverImageData(printerName: name, pixelSize: pixelSize) {
+            case .image(let data):
+                relayComposesCovers = true
+                if let image = await ImageDownsampling.image(from: data, maxPixelSize: nil) { return (image, true) }
+            case .unsupported:
+                relayComposesCovers = false
+            case .unavailable:
+                // The relay has no cover either way (or no relay); straight to Bambuddy.
+                askRelayForRaw = false
+            }
+        }
+        guard let data = await printerCoverData(printerID: printerID, maxPixelSize: max(pixelSize.width, pixelSize.height), askRelay: askRelayForRaw),
+              let image = await ImageDownsampling.image(from: data, maxPixelSize: max(pixelSize.width, pixelSize.height))
+        else { return nil }
+        return (image, false)
+    }
+
     /// Fetches the rendered plate preview (angled 3D view) for a printer's current or most
     /// recently finished job. Unlike `cameraSnapshot`, no stream token — see
     /// `BambuddyAPIClient.coverImageData`. `maxPixelSize` nil keeps full resolution (the zoomable
@@ -891,8 +918,8 @@ final class AppStore {
 
     /// The cover render's encoded bytes as served (a PNG with its transparency intact), from the
     /// relay first and Bambuddy directly otherwise — see `printerCoverImage`.
-    func printerCoverData(printerID: String, maxPixelSize: CGFloat? = nil) async -> Data? {
-        if let name = printers.first(where: { $0.id == printerID })?.name,
+    func printerCoverData(printerID: String, maxPixelSize: CGFloat? = nil, askRelay: Bool = true) async -> Data? {
+        if askRelay, let name = printers.first(where: { $0.id == printerID })?.name,
            let data = await RelayCoverClient.coverImageData(printerName: name, maxPixelSize: maxPixelSize) {
             return data
         }
