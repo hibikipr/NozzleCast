@@ -329,11 +329,13 @@ final class AppStore {
             }
             resolvePendingDeepLink()
 
-            // The cover render is static for the whole print, so only fetch it once per job
-            // rather than on every refresh — the Live Activity manager tells us who already has one.
+            // The cover render is static for the whole print, so only fetch it once per job —
+            // until the sharp copy for this job is saved. That copy is what the Live Activity
+            // shows (it can't fetch anything itself), and this runs on the relay's background
+            // wakes too, so a relay-started activity gets it without the app being opened.
             let printersNeedingCover = printers.filter {
                 $0.state == .printing
-                    && !PrintLiveActivityManager.shared.hasCoverImage(printerName: $0.name)
+                    && !LiveActivityCoverStore.has(printerID: PrintActivityAttributes.normalizedID($0.name), jobName: $0.jobFileName)
                     && !coverFetchFailedJobs.contains(Self.coverJobKey($0))
             }
             var coverImages: [String: Data] = [:]
@@ -341,10 +343,15 @@ final class AppStore {
                 await withTaskGroup(of: (String, Data?).self) { group in
                     for printer in printersNeedingCover {
                         group.addTask {
-                            // The API call itself still needs Bambuddy's real numeric id; only the
-                            // dictionary key handed to the Live Activity manager uses the name-based one.
-                            let image = await self.printerCoverImage(printerID: printer.id, maxPixelSize: 144)
-                            return (Self.coverJobKey(printer), image.flatMap { PrintLiveActivityManager.downscaledCoverImage($0) })
+                            // The API call itself still needs Bambuddy's real numeric id; the Live
+                            // Activity side is keyed by the name-based one.
+                            guard let render = await self.printerCoverData(printerID: printer.id) else { return (Self.coverJobKey(printer), nil) }
+                            if let sharp = CoverImageProcessing.sharpCover(from: render) {
+                                LiveActivityCoverStore.save(sharp, printerID: PrintActivityAttributes.normalizedID(printer.name), jobName: printer.jobFileName)
+                            }
+                            // The small copy for the content-state, the fallback for when the
+                            // saved one can't be read.
+                            return (Self.coverJobKey(printer), CoverImageProcessing.contentStateCover(from: render))
                         }
                     }
                     for await (jobKey, data) in group {
@@ -878,18 +885,19 @@ final class AppStore {
     /// job name with a "/", which Bambuddy can't (see `RelayCoverClient`). Bambuddy directly is
     /// the fallback.
     func printerCoverImage(printerID: String, maxPixelSize: CGFloat? = nil) async -> UIImage? {
+        guard let data = await printerCoverData(printerID: printerID, maxPixelSize: maxPixelSize) else { return nil }
+        return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
+    }
+
+    /// The cover render's encoded bytes as served (a PNG with its transparency intact), from the
+    /// relay first and Bambuddy directly otherwise — see `printerCoverImage`.
+    func printerCoverData(printerID: String, maxPixelSize: CGFloat? = nil) async -> Data? {
         if let name = printers.first(where: { $0.id == printerID })?.name,
-           let data = await RelayCoverClient.coverImageData(printerName: name, maxPixelSize: maxPixelSize),
-           let image = await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize) {
-            return image
+           let data = await RelayCoverClient.coverImageData(printerName: name, maxPixelSize: maxPixelSize) {
+            return data
         }
         guard let client, let bbID = bambuddyID(printerID) else { return nil }
-        do {
-            let data = try await client.coverImageData(printerID: bbID)
-            return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
-        } catch {
-            return nil
-        }
+        return try? await client.coverImageData(printerID: bbID)
     }
 
     /// URL of the printer's live MJPEG camera stream, carrying a (shared, reused) stream token.

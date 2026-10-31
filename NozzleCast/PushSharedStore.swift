@@ -159,16 +159,6 @@ nonisolated enum PushSharedStore {
         set { sharedDefaults.set(newValue, forKey: "liveActivitiesEnabled") }
     }
 
-    /// Whether the printer's live camera frame is shown on the Lock Screen Live Activity.
-    /// Defaults to on (existing behavior), but per Apple's guidance to "let people configure
-    /// whether to show sensitive data," a live camera feed of someone's workshop is exactly the
-    /// kind of thing worth an explicit opt-out for — the Lock Screen is visible to anyone who
-    /// picks up the phone.
-    static var liveActivityCameraPreviewEnabled: Bool {
-        get { sharedDefaults.object(forKey: "liveActivityCameraPreviewEnabled") as? Bool ?? true }
-        set { sharedDefaults.set(newValue, forKey: "liveActivityCameraPreviewEnabled") }
-    }
-
     /// Whether a `nozzlecast-relay` is configured — mirrored here by the app (`RelayConfigStore`
     /// lives in the app's own container, which the notification extension can't read). With a
     /// relay, it is the Live Activity's only content writer and the extension must leave

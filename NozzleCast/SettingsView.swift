@@ -59,7 +59,6 @@ struct SettingsView: View {
     /// lives in plain statics rather than observable state.
     @State private var alertFeedStatusRefresh = 0
     @State private var liveActivitiesEnabled = PushSharedStore.liveActivitiesEnabled
-    @State private var liveActivityCameraPreviewEnabled = PushSharedStore.liveActivityCameraPreviewEnabled
 
     var body: some View {
         NavigationStack {
@@ -223,22 +222,10 @@ struct SettingsView: View {
                                 Task { await PrintLiveActivityManager.shared.sync(printers: store.printers) }
                             }
                     }
-                    if liveActivitiesEnabled {
-                        HStack {
-                            Text("Camera Preview on Lock Screen").foregroundStyle(.white)
-                            Spacer()
-                            Toggle("", isOn: $liveActivityCameraPreviewEnabled)
-                                .labelsHidden()
-                                .tint(NCColor.accent)
-                                .onChange(of: liveActivityCameraPreviewEnabled) { _, enabled in
-                                    PushSharedStore.liveActivityCameraPreviewEnabled = enabled
-                                }
-                        }
-                    }
                 } header: {
                     Text("Live Activities")
                 } footer: {
-                    Text("Shows a printer's progress on the Lock Screen and in the Dynamic Island while it prints. Camera Preview shows the printer's live camera frame there too — turn it off if you don't want that visible to anyone who picks up your phone.")
+                    Text("Shows a printer's progress on the Lock Screen and in the Dynamic Island while it prints.")
                 }
 
                 Section("App Icon") {
