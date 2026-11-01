@@ -44,12 +44,15 @@ enum RelayConfigStore {
         let data = try JSONEncoder().encode(config)
         try data.write(to: storedURL, options: .atomic)
         PushSharedStore.relayConfigured = true
+        PushSharedStore.saveRelayConnection(.init(url: url, authSecret: trimmedSecret))
         return config
     }
 
     static func clear() {
         try? FileManager.default.removeItem(at: storedURL)
         PushSharedStore.relayConfigured = false
+        PushSharedStore.saveRelayConnection(nil)
+        PushSharedStore.relayAlertsActive = false
     }
 
     static func load() -> Config? {

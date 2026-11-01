@@ -407,11 +407,12 @@ final class PushNotificationManager: NSObject {
     /// comment for why a push-to-start-created activity is otherwise invisible to the app, NSE,
     /// and widget extension until something runs that sync at least once.
     private func registerDeviceToken(_ deviceToken: Data) async {
+        let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+        PushSharedStore.deviceToken = token
         guard let config = RelayConfigStore.load() else {
             NSLog("NCDEBUG device token registration skipped: no relay configured")
             return
         }
-        let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         let environment = APNSEnvironment.current
 
         var request = URLRequest(url: config.url.appendingPathComponent("register-device"))
@@ -427,6 +428,8 @@ final class PushNotificationManager: NSObject {
                 return
             }
             NSLog("NCDEBUG relay device token registration succeeded (environment=%@)", environment)
+            // The relay keeps muted alerts by device token, so a new token needs them again.
+            await RelayAlertClient.syncMutes()
         } catch {
             NSLog("NCDEBUG relay device token registration failed: %@", String(describing: error))
         }
