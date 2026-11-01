@@ -262,9 +262,20 @@ struct SpoolBuddyTagDataTests {
         let form = tag.scannedResult
         #expect(tag.material(for: form) == "PLA")
         #expect(tag.createExtras(for: form) == SpoolCreateExtras(
-            subtype: "Basic", coreWeight: 250, slicerFilament: "GFA00", slicerFilamentName: "Bambu PLA Basic",
+            rgba: "0086D6FF", subtype: "Basic", coreWeight: 250, slicerFilament: "GFA00", slicerFilamentName: "Bambu PLA Basic",
             nozzleTempMin: 190, nozzleTempMax: 230
         ))
+    }
+
+    /// The pink PETG on the user's SpoolBuddy: Bambuddy's tag_data carried F9C1BD80, and the
+    /// spool NozzleCast created was saved F9C1BDFF, opaque.
+    @Test func anUntouchedColourKeepsTheTagsAlpha() {
+        let translucent = SpoolBuddyTagDataDTO(material: "PETG", subtype: "Translucent", colorName: "Translucent Pink", rgba: "F9C1BD80", effectType: "translucent")
+        var form = translucent.scannedResult
+        #expect(form.colorHex == "#F9C1BD")
+        #expect(translucent.createExtras(for: form).rgba == "F9C1BD80")
+        form.colorHex = "#123456"
+        #expect(translucent.createExtras(for: form).rgba == nil)
     }
 
     @Test func aTagMaterialTheFormCantShowIsKeptWhileUntouched() {
@@ -303,5 +314,13 @@ struct SpoolBuddyTagDataTests {
         #expect(tag.colorHex == nil)
         #expect(tag.scannedResult.colorHex == "#808080")
         #expect(tag.scannedResult.material == .petg)
+    }
+}
+
+struct SpoolRGBATests {
+    @Test func alphaRoundTripsThroughBambuddysRGBA() {
+        #expect(AppStore.rgba(hex: "#f9c1bd", alpha: 1) == "F9C1BDFF")
+        #expect(AppStore.rgba(hex: "#F9C1BD", alpha: Double(0x80) / 255) == "F9C1BD80")
+        #expect(AppStore.rgba(hex: "F9C1BD", alpha: 0) == "F9C1BD00")
     }
 }

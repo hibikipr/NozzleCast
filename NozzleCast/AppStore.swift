@@ -640,6 +640,12 @@ final class AppStore {
     /// "#" being present or not and stray whitespace, since that's user-typed input.
     /// Bambuddy's `rgba` field is 6 hex digits (opaque) or 8 (RRGGBB**AA** — the last byte is
     /// alpha). Anything short of 8 digits is treated as fully opaque.
+    /// Bambuddy's RRGGBBAA for a "#RRGGBB" colour and a 0...1 alpha — `parseAlpha`'s inverse.
+    static func rgba(hex: String, alpha: Double) -> String {
+        let byte = UInt8((min(max(alpha, 0), 1) * 255).rounded())
+        return hex.replacingOccurrences(of: "#", with: "").uppercased() + String(format: "%02X", byte)
+    }
+
     private static func parseAlpha(_ rgba: String?) -> Double {
         guard let rgba else { return 1 }
         let clean = rgba.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
@@ -1195,7 +1201,7 @@ final class AppStore {
             netWeightGrams: netWeightGrams,
             location: .storage(name: nil)
         )
-        let rgba = colorHex.replacingOccurrences(of: "#", with: "").uppercased() + "FF"
+        let rgba = extras.rgba ?? Self.rgba(hex: colorHex, alpha: 1)
         // The pending placeholder is replaced by the real record on the follow-up refresh — or,
         // if creation failed, dropped by the failure path's own refresh.
         performAction(localChange: { self.spools.insert(spool, at: 0) }) { client in
@@ -1261,7 +1267,8 @@ final class AppStore {
     ) {
         guard let idx = spools.firstIndex(where: { $0.id == spoolID }),
               let bbID = bambuddyID(spoolID) ?? (isShowingDemoData ? 0 : nil) else { return }
-        let rgba = colorHex.replacingOccurrences(of: "#", with: "").uppercased() + "FF"
+        // The form edits the colour, not its alpha, so a translucent spool stays translucent.
+        let rgba = Self.rgba(hex: colorHex, alpha: spools[idx].colorAlpha)
         let update = BambuddySpoolUpdateBody(
             material: material,
             subtype: subtype,
