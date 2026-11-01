@@ -21,6 +21,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // been imported — leaving a fully-configured relay with no push-to-start token to push to.
         PushNotificationManager.shared.startObservingActivityKitTokens()
         UNUserNotificationCenter.current().delegate = self
+        // A scene-based app (every SwiftUI app) never gets UIApplicationDelegate's
+        // applicationDidBecomeActive: iOS sends scene callbacks instead. It still posts this
+        // notification, so the activation work hangs off it.
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.appDidBecomeActive() }
+        }
 
         // Must be registered before launch finishes. Checks Bambuddy's notification log when no
         // Firebase config delivers alerts as pushes — see BambuddyAlertFeed.
@@ -71,7 +77,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     /// Being foreground means the device is unlocked, so this is the one moment both stores are
     /// guaranteed readable. Both callees guard on their own already-running check, so re-arming
     /// on every activation is idempotent.
-    func applicationDidBecomeActive(_ application: UIApplication) {
+    ///
+    /// This used to be `applicationDidBecomeActive`, which a scene-based app never receives, so
+    /// none of it ran: the extension never got the relay's address (`saveRelayConnection`), so
+    /// alert photos kept on the relay were never fetched.
+    private func appDidBecomeActive() {
         store.config.reloadIfStorageWasUnavailable()
         // Foreground means unlocked, so the relay config is readable — mirror whether it exists
         // for the notification extension, which can't read the app's own container.
