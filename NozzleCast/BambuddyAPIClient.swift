@@ -394,6 +394,9 @@ private struct SpoolCreateBody: Codable {
 /// The spool fields a new spool can carry beyond the review form's material, colour, brand and
 /// weight — what a decoded Bambu tag says (see `SpoolBuddyTagDataDTO.createExtras`).
 struct SpoolCreateExtras: Equatable {
+    /// RRGGBBAA to save instead of the form's colour with an opaque alpha: a tag's own colour,
+    /// whose alpha says a translucent filament is translucent.
+    var rgba: String?
     var subtype: String?
     var extraColors: String?
     var effectType: String?
@@ -1068,9 +1071,9 @@ struct SpoolBuddyTagDataDTO: Codable, Equatable {
 
     /// The tag's other spool fields, for the spool created from `form`. The core weight always
     /// applies — it's the spool, not the filament. The profile (subtype, slicer preset,
-    /// temperatures) only while the form keeps the tag's material, and the multicolour/effect
-    /// details only while it keeps the tag's colour: after an edit they'd describe another
-    /// filament.
+    /// temperatures) only while the form keeps the tag's material, and the tag's exact colour
+    /// (with its alpha — translucent filaments' is below FF) and multicolour/effect details only
+    /// while it keeps the tag's colour: after an edit they'd describe another filament.
     func createExtras(for form: ScannedResult) -> SpoolCreateExtras {
         var extras = SpoolCreateExtras(coreWeight: coreWeight, coreWeightCatalogId: coreWeightCatalogId)
         if FilamentMaterial.from(bambuddyMaterial: material) == form.material {
@@ -1081,6 +1084,7 @@ struct SpoolBuddyTagDataDTO: Codable, Equatable {
             extras.nozzleTempMax = nozzleTempMax
         }
         if let colorHex, colorHex.caseInsensitiveCompare(form.colorHex) == .orderedSame {
+            extras.rgba = rgba?.uppercased()
             extras.extraColors = extraColors
             extras.effectType = effectType
         }
