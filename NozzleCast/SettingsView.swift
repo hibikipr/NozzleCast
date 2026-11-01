@@ -59,6 +59,9 @@ struct SettingsView: View {
     /// lives in plain statics rather than observable state.
     @State private var alertFeedStatusRefresh = 0
     @State private var liveActivitiesEnabled = PushSharedStore.liveActivitiesEnabled
+    @State private var relayAlertsActive = PushSharedStore.relayAlertsActive
+    @State private var firebaseConfigured = FirebaseConfigStore.isConfigured
+    @State private var confirmRemoveFirebase = false
     @AppStorage(PrinterCardLayout.storageKey) private var cardLayout: PrinterCardLayout = .classic
 
     var body: some View {
@@ -66,90 +69,69 @@ struct SettingsView: View {
             List {
                 Section {
                     Button {
+                        Task { await enableAlerts() }
+                    } label: {
+                        settingsRow(title: String(localized: "Alerts", comment: "Settings row label: where Bambuddy's alerts come from"), value: alertsStatus)
+                    }
+                    .id(alertFeedStatusRefresh)
+                    NavigationLink {
+                        NotificationsView()
+                    } label: {
+                        Text("Notification History")
+                            .foregroundStyle(.white)
+                    }
+                    Button {
+                        showRelaySheet = true
+                    } label: {
+                        settingsRow(
+                            title: String(localized: "Push-to-Start Relay", comment: "Settings row label"),
+                            value: pushManager.registeredPushToStartToken != nil
+                                ? String(localized: "Registered", comment: "Settings row value: relay token registered")
+                                : (RelayConfigStore.isConfigured
+                                    ? String(localized: "Configured", comment: "Settings row value: relay saved but not yet confirmed registered")
+                                    : String(localized: "Not configured", comment: "Settings row value when no relay is set"))
+                        )
+                    }
+                    Button {
                         showFileImporter = true
                     } label: {
                         settingsRow(
                             title: String(localized: "Firebase Config", comment: "Settings row label"),
-                            value: FirebaseConfigStore.isConfigured
+                            value: firebaseConfigured
                                 ? (FirebaseConfigStore.projectID ?? String(localized: "Imported", comment: "Settings row value when Firebase config is set but has no project id"))
                                 : String(localized: "Not imported", comment: "Settings row value when no Firebase config is set")
                         )
                     }
-                    if !FirebaseConfigStore.isConfigured {
-                        Button {
-                            Task {
-                                try? await pushManager.requestAuthorization()
-                                _ = await store.checkBambuddyAlerts()
-                                BambuddyAlertFeed.scheduleBackgroundCheck()
-                                alertFeedStatusRefresh += 1
+                    if firebaseConfigured {
+                        Button(role: .destructive) {
+                            confirmRemoveFirebase = true
+                        } label: {
+                            Text("Remove Firebase Config", comment: "Settings button: delete the imported Firebase config and stop ntfy pushes")
+                        }
+                        .confirmationDialog(
+                            String(localized: "Remove the Firebase config?", comment: "Confirmation title for removing the Firebase config"),
+                            isPresented: $confirmRemoveFirebase,
+                            titleVisibility: .visible
+                        ) {
+                            Button(String(localized: "Remove", comment: "Confirm removing the Firebase config"), role: .destructive) {
+                                removeFirebaseConfig()
                             }
-                        } label: {
-                            settingsRow(
-                                title: String(localized: "Alerts", comment: "Settings row label: Bambuddy alerts without Firebase"),
-                                value: pushManager.authorizationStatus != .authorized
-                                    ? String(localized: "Tap to enable", comment: "Settings row value: needs permission")
-                                    : (BambuddyAlertFeed.lastError != nil
-                                        ? String(localized: "Can't read alerts", comment: "Settings row value: alert log not readable")
-                                        : String(localized: "From Bambuddy", comment: "Settings row value: alerts read from Bambuddy's notification log"))
-                            )
-                        }
-                        .id(alertFeedStatusRefresh)
-                        NavigationLink {
-                            NotificationsView()
-                        } label: {
-                            Text("Notification History")
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    if FirebaseConfigStore.isConfigured {
-                        Button {
-                            Task {
-                                try? await pushManager.requestAuthorization()
-                                await store.discoverAndSubscribeNtfy()
-                            }
-                        } label: {
-                            settingsRow(
-                                title: String(localized: "Push Notifications", comment: "Settings row label"),
-                                value: pushManager.authorizationStatus == .authorized
-                                    ? (pushManager.subscribedTopic != nil
-                                        ? String(localized: "Enabled", comment: "Settings row value: push notifications on")
-                                        : String(localized: "Tap to subscribe", comment: "Settings row value: needs subscription"))
-                                    : String(localized: "Tap to enable", comment: "Settings row value: needs permission")
-                            )
-                        }
-                        NavigationLink {
-                            NotificationsView()
-                        } label: {
-                            Text("Notification History")
-                                .foregroundStyle(.white)
-                        }
-                        Button {
-                            showRelaySheet = true
-                        } label: {
-                            settingsRow(
-                                title: String(localized: "Push-to-Start Relay", comment: "Settings row label"),
-                                value: pushManager.registeredPushToStartToken != nil
-                                    ? String(localized: "Registered", comment: "Settings row value: relay token registered")
-                                    : (RelayConfigStore.isConfigured
-                                        ? String(localized: "Configured", comment: "Settings row value: relay saved but not yet confirmed registered")
-                                        : String(localized: "Not configured", comment: "Settings row value when no relay is set"))
-                            )
+                        } message: {
+                            Text(relayAlertsActive
+                                ? String(localized: "Alerts keep coming through your relay.", comment: "Confirmation message when the relay delivers alerts")
+                                : String(localized: "NozzleCast stops receiving ntfy pushes and reads Bambuddy's alerts from its notification log instead, which can be late.", comment: "Confirmation message when nothing else pushes alerts"))
                         }
                     }
                 } header: {
                     Text("Push Notifications")
                 } footer: {
-                    if FirebaseConfigStore.isConfigured {
-                        Text("Import the GoogleService-Info.plist from the Firebase project your ntfy server publishes through. NozzleCast will subscribe to the same alert topic your server already sends to.")
-                    } else {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Without a Firebase config, NozzleCast reads the alerts Bambuddy sends to your notification providers (ntfy, Pushover, Discord, email…) from its notification log, and shows new ones as notifications. It checks whenever the app refreshes, and in the background when iOS allows, so alerts can arrive late. For instant alerts, import the GoogleService-Info.plist from the Firebase project your ntfy server publishes through.", comment: "Settings footer explaining the alert fallback without Firebase")
-                            if let error = BambuddyAlertFeed.lastError {
-                                Text(error).foregroundStyle(NCColor.statusWarning)
-                            }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(alertsFooter)
+                        if alertSource == .bambuddyLog, let error = BambuddyAlertFeed.lastError {
+                            Text(error).foregroundStyle(NCColor.statusWarning)
                         }
-                        .id(alertFeedStatusRefresh)
                     }
+                    .id(alertFeedStatusRefresh)
                 }
 
                 Section {
@@ -324,6 +306,7 @@ struct SettingsView: View {
                     do {
                         try FirebaseConfigStore.importConfig(from: url)
                         pushManager.configureFirebaseIfNeeded()
+                        firebaseConfigured = true
                     } catch {
                         importError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     }
@@ -338,6 +321,9 @@ struct SettingsView: View {
             }
             .task {
                 await pushManager.refreshAuthorizationStatus()
+                relayAlertsActive = PushSharedStore.relayAlertsActive
+                await store.updateRelayAlertDelivery()
+                relayAlertsActive = PushSharedStore.relayAlertsActive
             }
         }
     }
@@ -401,6 +387,69 @@ struct SettingsView: View {
             guard error == nil else { return }
             Task { @MainActor in selectedIcon = option }
         }
+    }
+
+    private enum AlertSource { case relay, ntfy, bambuddyLog }
+
+    /// Where Bambuddy's alerts reach this device from: the relay when its webhook delivers them
+    /// (with mutes applied there), else ntfy through Firebase, else Bambuddy's notification log.
+    private var alertSource: AlertSource {
+        if relayAlertsActive { return .relay }
+        return firebaseConfigured ? .ntfy : .bambuddyLog
+    }
+
+    private var alertsStatus: String {
+        guard pushManager.authorizationStatus == .authorized else {
+            return String(localized: "Tap to enable", comment: "Settings row value: needs permission")
+        }
+        switch alertSource {
+        case .relay:
+            return String(localized: "Through relay", comment: "Settings row value: alerts pushed by the relay")
+        case .ntfy:
+            return pushManager.subscribedTopic != nil
+                ? String(localized: "ntfy", comment: "Settings row value: alerts pushed by ntfy through Firebase")
+                : String(localized: "Tap to subscribe", comment: "Settings row value: needs subscription")
+        case .bambuddyLog:
+            return BambuddyAlertFeed.lastError != nil
+                ? String(localized: "Can't read alerts", comment: "Settings row value: alert log not readable")
+                : String(localized: "From Bambuddy", comment: "Settings row value: alerts read from Bambuddy's notification log")
+        }
+    }
+
+    private var alertsFooter: String {
+        switch alertSource {
+        case .relay:
+            String(localized: "Bambuddy sends its alerts to your relay, which pushes them here, leaving out the ones you've muted. NozzleCast doesn't need ntfy or a Firebase config for them.", comment: "Settings footer when the relay delivers alerts")
+        case .ntfy:
+            String(localized: "Alerts come from your ntfy server through the Firebase project in the imported config. To have your relay deliver them instead, with muted alerts kept off the Lock Screen, add a Webhook provider in Bambuddy pointing at the relay's /bambuddy/alerts.", comment: "Settings footer when ntfy delivers alerts")
+        case .bambuddyLog:
+            String(localized: "NozzleCast reads the alerts Bambuddy sends to its notification providers from its notification log, whenever the app refreshes and in the background when iOS allows, so they can arrive late. For instant alerts, add a Webhook provider in Bambuddy pointing at your relay's /bambuddy/alerts.", comment: "Settings footer explaining the alert fallback")
+        }
+    }
+
+    /// Asks for notification permission, then sets up whatever delivers alerts here.
+    private func enableAlerts() async {
+        try? await pushManager.requestAuthorization()
+        await store.updateRelayAlertDelivery()
+        relayAlertsActive = PushSharedStore.relayAlertsActive
+        switch alertSource {
+        case .relay: break
+        case .ntfy: await store.discoverAndSubscribeNtfy()
+        case .bambuddyLog:
+            _ = await store.checkBambuddyAlerts()
+            BambuddyAlertFeed.scheduleBackgroundCheck()
+        }
+        alertFeedStatusRefresh += 1
+    }
+
+    /// Drops the ntfy subscription and the imported config. Firebase itself stays set up until the
+    /// app next launches (it can't be unconfigured), but with no topic nothing reaches it.
+    private func removeFirebaseConfig() {
+        pushManager.unsubscribeCurrent()
+        FirebaseConfigStore.clear()
+        firebaseConfigured = false
+        BambuddyAlertFeed.scheduleBackgroundCheck()
+        alertFeedStatusRefresh += 1
     }
 
     private func settingsRow(title: String, value: String) -> some View {
