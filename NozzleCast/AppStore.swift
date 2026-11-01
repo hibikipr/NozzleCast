@@ -1423,6 +1423,9 @@ final class AppStore {
             printHistory = Self.markingVerdictEligibility(printHistory + fresh)
             printHistoryTotal = page.total
         } catch {
+            // The page loads from the list's last row, whose task is cancelled when it scrolls
+            // off screen; it loads again when the row comes back, so that's not worth an alert.
+            guard !Self.isCancellation(error) else { return }
             actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
