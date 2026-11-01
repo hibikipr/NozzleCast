@@ -15,8 +15,8 @@ import UserNotifications
 /// This is a fallback, not push: iOS decides when background refresh runs (often every half hour
 /// or longer, less on a phone that's rarely used), so an alert can arrive well after it happened.
 enum BambuddyAlertFeed {
-    /// Active whenever there's no Firebase config to push alerts through.
-    static var isActive: Bool { !FirebaseConfigStore.isConfigured }
+    /// Active whenever nothing pushes alerts: no Firebase config, and no relay delivering them.
+    static var isActive: Bool { !FirebaseConfigStore.isConfigured && !PushSharedStore.relayAlertsActive }
 
     /// The most recent failure, for Settings — a key without `notifications:read` gets a 403 on
     /// every check, which otherwise looks exactly like "no alerts".

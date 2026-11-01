@@ -204,13 +204,30 @@ final class AppStore {
     /// has already set up to relay through Firebase, it doesn't create one.
     @discardableResult
     func discoverAndSubscribeNtfy() async -> Bool {
-        guard let client else { return false }
+        // The relay pushes Bambuddy's alerts itself; a second path would deliver each one twice.
+        guard let client, !PushSharedStore.relayAlertsActive else { return false }
         guard let providers = try? await client.notificationProviders(),
               let ntfy = providers.first(where: { $0.providerType == "ntfy" && $0.enabled }),
               let server = ntfy.config.server, let topic = ntfy.config.topic
         else { return false }
         PushNotificationManager.shared.subscribe(server: server, topic: topic, authToken: ntfy.config.authToken)
         return true
+    }
+
+    /// Asks the relay whether it delivers Bambuddy's alerts (`RelayAlertClient`), and switches the
+    /// app's own ntfy/Firebase subscription off when it starts to (on again if it stops), so every
+    /// alert arrives exactly once. Keeps the last answer when the relay can't be asked.
+    func updateRelayAlertDelivery() async {
+        guard let active = await RelayAlertClient.isDelivering() else { return }
+        let wasActive = PushSharedStore.relayAlertsActive
+        guard active != wasActive else { return }
+        PushSharedStore.relayAlertsActive = active
+        if active {
+            PushNotificationManager.shared.unsubscribeCurrent()
+            BambuddyAlertFeed.scheduleBackgroundCheck()
+        } else {
+            await discoverAndSubscribeNtfy()
+        }
     }
 
     /// The refresh cycle currently running, if any, and whether another refresh was asked for
@@ -381,6 +398,7 @@ final class AppStore {
             lastSuccessfulRefreshAt = Date()
             // No Firebase means no pushed alerts; read them from Bambuddy's log instead. Every
             // refresh, so the foreground poll and the relay's background wakes both check.
+            await updateRelayAlertDelivery()
             if BambuddyAlertFeed.isActive { await BambuddyAlertFeed.check(using: client) }
             // A failed refresh drops connectionStatus to .failed; a later successful one must lift
             // it again, or the unreachable banner would outlive the outage.

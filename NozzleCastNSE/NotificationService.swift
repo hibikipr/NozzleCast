@@ -22,6 +22,17 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
 
         NSLog("NCDEBUG NSE didReceive userInfo=%@", request.content.userInfo)
 
+        // An alert the relay forwarded from Bambuddy's webhook: title and body are already in it.
+        if let relayAlert = request.content.userInfo["nozzlecast"] as? [String: Any] {
+            let alertID = relayAlert["alertID"] as? String
+            let photoID = relayAlert["photoID"] as? String
+            Task {
+                guard let content = bestAttemptContent else { return }
+                await handleRelayAlert(alertID: alertID, photoID: photoID, content: content)
+            }
+            return
+        }
+
         guard let message = NtfyPushMessage(userInfo: request.content.userInfo) else {
             deliver(content)
             return
@@ -74,15 +85,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         // Muted from the app's Notifications list: no sound, no text, no history entry and no
         // badge bump. An extension without Apple's notification-filtering entitlement can't drop
         // a push outright; an empty, silent, passive one is as close as it gets.
-        if PushSharedStore.isMuted(title: content.title, body: content.body) {
-            content.title = ""
-            content.body = ""
-            content.sound = nil
-            content.interruptionLevel = .passive
-            content.relevanceScore = 0
-            content.badge = NSNumber(value: PushSharedStore.unreadCount())
-            return
-        }
+        if silenceIfMuted(content) { return }
 
         switch message.priority ?? 3 {
         case 5:
@@ -123,6 +126,55 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         // recomputed from the log rather than incremented, since this and the main app's own
         // "mark all read" both write the same file and an increment could drift out of sync.
         content.badge = NSNumber(value: PushSharedStore.unreadCount())
+    }
+
+    /// Muted from the app's Notifications list: no sound, no text, no history entry and no badge
+    /// bump. An extension without Apple's notification-filtering entitlement can't drop a push
+    /// outright; an empty, silent, passive one is as close as it gets. (Through the relay, a muted
+    /// alert isn't pushed at all; this covers ntfy, and a mute that hasn't reached the relay yet.)
+    private func silenceIfMuted(_ content: UNMutableNotificationContent) -> Bool {
+        guard PushSharedStore.isMuted(title: content.title, body: content.body) else { return false }
+        content.title = ""
+        content.body = ""
+        content.sound = nil
+        content.interruptionLevel = .passive
+        content.relevanceScore = 0
+        content.badge = NSNumber(value: PushSharedStore.unreadCount())
+        return true
+    }
+
+    /// A Bambuddy alert the relay pushed (`RelayAlertClient`), with the alert and photo ids from its
+    /// `nozzlecast` payload (`{ alertID, event, printer, photoID }`). The relay sets the alert's text, sound and
+    /// interruption level; this adds the photo (kept on the relay), logs it to the in-app history
+    /// and sets the badge, as for an ntfy message. No Live Activity work: the relay already drives
+    /// those.
+    private func handleRelayAlert(alertID: String?, photoID: String?, content: UNMutableNotificationContent) async {
+        if silenceIfMuted(content) {
+            deliver(content)
+            return
+        }
+        let id = alertID ?? UUID().uuidString
+        if let photoID, let imageData = await Self.downloadRelayPhoto(photoID) {
+            if let localURL = Self.writeTempFile(imageData, id: id),
+               let attachment = try? UNNotificationAttachment(identifier: id, url: localURL) {
+                content.attachments = [attachment]
+            }
+            PushSharedStore.saveHistoryImage(imageData, id: id)
+        }
+        PushSharedStore.appendHistory(.init(id: id, title: content.title, body: content.body, receivedAt: Date(), isRead: false))
+        content.badge = NSNumber(value: PushSharedStore.unreadCount())
+        deliver(content)
+    }
+
+    private static func downloadRelayPhoto(_ photoID: String) async -> Data? {
+        guard let relay = PushSharedStore.loadRelayConnection() else { return nil }
+        var request = URLRequest(url: relay.url.appendingPathComponent("alert-photo").appendingPathComponent(photoID))
+        request.setValue("Bearer \(relay.authSecret)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 15
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200
+        else { return nil }
+        return data
     }
 
     private static func downloadImage(_ url: URL) async -> Data? {

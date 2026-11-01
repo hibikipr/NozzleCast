@@ -107,7 +107,10 @@ struct NotificationsView: View {
         withAnimation {
             entries.removeAll { $0.title == entry.title && $0.body == entry.body }
         }
-        Task { await PushSharedStore.removeHistory(title: entry.title, body: entry.body) }
+        Task {
+            await PushSharedStore.removeHistory(title: entry.title, body: entry.body)
+            await RelayAlertClient.syncMutes()
+        }
     }
 
     private struct ViewingImage: Identifiable {
@@ -136,6 +139,7 @@ private struct MutedAlertsView: View {
                         Button(String(localized: "Unmute", comment: "Button: show a muted alert again")) {
                             withAnimation { mutedAlerts.removeAll { $0 == alert } }
                             PushSharedStore.mutedAlerts = mutedAlerts
+                            Task { await RelayAlertClient.syncMutes() }
                         }
                         .buttonStyle(.borderless)
                         .tint(NCColor.accentLight)

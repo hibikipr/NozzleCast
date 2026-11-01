@@ -168,6 +168,45 @@ nonisolated enum PushSharedStore {
         set { sharedDefaults.set(newValue, forKey: "relayConfigured") }
     }
 
+    // MARK: - Alerts through the relay
+
+    /// Whether Bambuddy's alerts come through the relay (its webhook has reached it, see
+    /// `RelayAlertClient`): then the app has switched off its ntfy/Firebase path and the alert-log
+    /// fallback, and the extension handles the relay's pushes. Set by the app.
+    static var relayAlertsActive: Bool {
+        get { sharedDefaults.bool(forKey: "relayAlertsActive") }
+        set { sharedDefaults.set(newValue, forKey: "relayAlertsActive") }
+    }
+
+    /// The relay's address and secret, mirrored from the app's own `RelayConfigStore` (which the
+    /// extension can't read) so the extension can fetch a relay alert's photo.
+    struct RelayConnection: Codable {
+        var url: URL
+        var authSecret: String
+    }
+
+    private static var relayConnectionURL: URL { containerURL.appendingPathComponent("relay-connection.json") }
+
+    static func loadRelayConnection() -> RelayConnection? {
+        guard let data = try? Data(contentsOf: relayConnectionURL) else { return nil }
+        return try? JSONDecoder().decode(RelayConnection.self, from: data)
+    }
+
+    static func saveRelayConnection(_ connection: RelayConnection?) {
+        guard let connection, let data = try? JSONEncoder().encode(connection) else {
+            try? FileManager.default.removeItem(at: relayConnectionURL)
+            return
+        }
+        try? data.write(to: relayConnectionURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    /// This device's APNs token (hex), as registered with the relay: the key its muted alerts are
+    /// stored under there.
+    static var deviceToken: String? {
+        get { sharedDefaults.string(forKey: "deviceToken") }
+        set { sharedDefaults.set(newValue, forKey: "deviceToken") }
+    }
+
     // MARK: - Muted alerts (muted in the Notifications list, honoured by the NSE)
 
     /// An alert the user muted, by its exact title and body — e.g. a printer without Developer
