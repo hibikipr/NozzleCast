@@ -908,8 +908,8 @@ final class AppStore {
     /// `BambuddyAPIClient.coverImageData`. `maxPixelSize` nil keeps full resolution (the zoomable
     /// viewer wants it).
     ///
-    /// Asks the relay first when one is configured: it also finds the cover of a cloud print or a
-    /// job name with a "/", which Bambuddy can't (see `RelayCoverClient`). Bambuddy directly is
+    /// Asks the relay first when one is configured: it also finds the cover of an HTTPS-dispatched
+    /// print or a job name with a "/", which Bambuddy can't (see `RelayCoverClient`). Bambuddy directly is
     /// the fallback.
     func printerCoverImage(printerID: String, maxPixelSize: CGFloat? = nil) async -> UIImage? {
         guard let data = await printerCoverData(printerID: printerID, maxPixelSize: maxPixelSize) else { return nil }
@@ -1511,7 +1511,16 @@ final class AppStore {
 
     func printThumbnail(for record: PrintRecord, maxPixelSize: CGFloat) async -> UIImage? {
         await cachedPrintThumbnail(key: record.id, maxPixelSize: maxPixelSize) { client in
-            try await client.printLogThumbnailData(entryID: record.logID)
+            do {
+                return try await client.printLogThumbnailData(entryID: record.logID)
+            } catch BambuddyAPIError.http(404, let body) {
+                // Bambuddy has no thumbnail for an HTTPS-dispatched print (it never gets the job's
+                // 3MF); the relay keeps that print's cover by archive id.
+                if let archiveID = record.archiveID, let data = await RelayCoverClient.archiveCoverData(archiveID: archiveID) {
+                    return data
+                }
+                throw BambuddyAPIError.http(404, body)
+            }
         }
     }
 
