@@ -8,10 +8,14 @@
     "padding": "5%"
   },
   "data": [
-    { "filter": "01-monitor-live-status", "keyword": { "text": "LIVE STATUS" }, "title": { "text": "Every printer, one glance away" } },
-    { "filter": "02-printer-detail", "keyword": { "text": "FULL CONTROL" }, "title": { "text": "Every detail of every print" } },
-    { "filter": "03-ams-filament", "keyword": { "text": "SMART AMS" }, "title": { "text": "Know what's loaded, instantly" } },
-    { "filter": "04-widget-large", "keyword": { "text": "ON YOUR HOME SCREEN" }, "title": { "text": "Filament status without opening the app" } },
-    { "filter": "05-live-activity", "keyword": { "text": "ALWAYS IN VIEW" }, "title": { "text": "Track prints from your Lock Screen" } }
+    { "filter": "01-monitor-animated", "keyword": { "text": "ALIVE ON SCREEN" }, "title": { "text": "Watch every printer at work" } },
+    { "filter": "02-card-layouts", "keyword": { "text": "YOUR LAYOUT" }, "title": { "text": "Four ways to see your farm" } },
+    { "filter": "03-printer-detail", "keyword": { "text": "FULL CONTROL" }, "title": { "text": "Every detail of every print" } },
+    { "filter": "04-live-activity", "keyword": { "text": "ALWAYS IN VIEW" }, "title": { "text": "Track prints from your Lock Screen" } },
+    { "filter": "05-spool-reader", "keyword": { "text": "SPOOL READER" }, "title": { "text": "Drop a spool, it's in your inventory" } },
+    { "filter": "06-prints-history", "keyword": { "text": "PRINT HISTORY" }, "title": { "text": "Every print, and how it came out" } },
+    { "filter": "07-print-queue", "keyword": { "text": "SMART QUEUE" }, "title": { "text": "Never print on the wrong filament" } },
+    { "filter": "08-notifications", "keyword": { "text": "ALERTS THAT MATTER" }, "title": { "text": "Photos, and mute the noise" } },
+    { "filter": "09-inventory", "keyword": { "text": "FILAMENT INVENTORY" }, "title": { "text": "Know every spool you own" } }
   ]
 }
