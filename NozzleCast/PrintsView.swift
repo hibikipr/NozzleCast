@@ -88,43 +88,6 @@ struct PrintsView: View {
             .navigationBarHidden(true)
             .refreshable { await store.loadPrints() }
             .task { await store.loadPrints() }
-            .confirmationDialog(
-                Text("Remove from the queue?", comment: "Confirmation title for removing a queued print"),
-                isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
-                titleVisibility: .visible,
-                presenting: pendingRemoval
-            ) { item in
-                Button(String(localized: "Remove \(item.name)", comment: "Confirm removing a queued print"), role: .destructive) {
-                    store.removeQueuedPrint(item.id)
-                }
-            } message: { _ in
-                Text("The file stays in Bambuddy; only the queued job is removed.", comment: "Explains what removing a queued print does")
-            }
-            .confirmationDialog(
-                Text("Start this print?", comment: "Confirmation title for starting a staged queued print"),
-                isPresented: Binding(get: { pendingStart != nil }, set: { if !$0 { pendingStart = nil } }),
-                titleVisibility: .visible,
-                presenting: pendingStart
-            ) { item in
-                Button(String(localized: "Start", comment: "Confirm starting a staged queued print")) {
-                    store.startQueuedPrint(item.id)
-                }
-            } message: { item in
-                Text("Bambuddy sends it to \(item.destination) as soon as the printer is free. Make sure the build plate is clear.", comment: "Explains what starting a staged print does")
-            }
-            .confirmationDialog(
-                Text("Print anyway?", comment: "Title when Bambuddy held a queued print over its filament"),
-                isPresented: Binding(get: { store.filamentHold != nil }, set: { if !$0 { store.filamentHold = nil } }),
-                titleVisibility: .visible,
-                presenting: store.filamentHold
-            ) { prompt in
-                Button(String(localized: "Print Anyway", comment: "Start a queued print despite Bambuddy's filament check")) {
-                    store.startQueuedPrint(prompt.itemID, skipFilamentCheck: true)
-                }
-                Button(String(localized: "Keep Waiting", comment: "Leave a held print in the queue"), role: .cancel) {}
-            } message: { prompt in
-                Text(Self.filamentHoldMessage(prompt))
-            }
         }
     }
 
@@ -166,7 +129,7 @@ struct PrintsView: View {
     @ViewBuilder
     private var queueContent: some View {
         if store.queue.isEmpty {
-            emptyState(String(localized: "Nothing queued. Jobs added to Bambuddy's print queue show up here.", comment: "Empty print queue"))
+            emptyState(String(localized: "Nothing queued. Jobs added to your server's print queue show up here.", comment: "Empty print queue"))
         } else {
             ForEach(store.queue) { item in
                 QueueRow(
@@ -176,13 +139,50 @@ struct PrintsView: View {
                     onRemove: { pendingRemoval = item }
                 )
                 .padding(.horizontal, 16)
+                // On the row, not the scroll view: on iPad a confirmation dialog is a popover
+                // pointing at the view it's attached to.
+                .confirmationDialog(
+                    Text("Remove from the queue?", comment: "Confirmation title for removing a queued print"),
+                    isPresented: Binding(get: { pendingRemoval?.id == item.id }, set: { if !$0 { pendingRemoval = nil } }),
+                    titleVisibility: .visible
+                ) {
+                    Button(String(localized: "Remove \(item.name)", comment: "Confirm removing a queued print"), role: .destructive) {
+                        store.removeQueuedPrint(item.id)
+                    }
+                } message: {
+                    Text("The file stays on your server; only the queued job is removed.", comment: "Explains what removing a queued print does")
+                }
+                .confirmationDialog(
+                    Text("Start this print?", comment: "Confirmation title for starting a staged queued print"),
+                    isPresented: Binding(get: { pendingStart?.id == item.id }, set: { if !$0 { pendingStart = nil } }),
+                    titleVisibility: .visible
+                ) {
+                    Button(String(localized: "Start", comment: "Confirm starting a staged queued print")) {
+                        store.startQueuedPrint(item.id)
+                    }
+                } message: {
+                    Text("Your server sends it to \(item.destination) as soon as the printer is free. Make sure the build plate is clear.", comment: "Explains what starting a staged print does")
+                }
+                .confirmationDialog(
+                    Text("Print anyway?", comment: "Title when the server held a queued print over its filament"),
+                    isPresented: Binding(get: { store.filamentHold?.itemID == item.id }, set: { if !$0 { store.filamentHold = nil } }),
+                    titleVisibility: .visible,
+                    presenting: store.filamentHold
+                ) { prompt in
+                    Button(String(localized: "Print Anyway", comment: "Start a queued print despite the server's filament check")) {
+                        store.startQueuedPrint(prompt.itemID, skipFilamentCheck: true)
+                    }
+                    Button(String(localized: "Keep Waiting", comment: "Leave a held print in the queue"), role: .cancel) {}
+                } message: { prompt in
+                    Text(Self.filamentHoldMessage(prompt))
+                }
             }
         }
     }
 
     private func startBlockedReason(_ item: QueuedPrint) -> String? {
         guard let printerID = item.printerID, store.printer(printerID)?.lacksDeveloperMode == true else { return nil }
-        return String(localized: "Developer LAN mode is off on \(item.destination), so it won't accept a print from Bambuddy.", comment: "Why a queued print can't be started")
+        return String(localized: "Developer LAN mode is off on \(item.destination), so it won't accept a print from your server.", comment: "Why a queued print can't be started")
     }
 
     // MARK: History

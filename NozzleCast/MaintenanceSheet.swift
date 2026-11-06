@@ -25,7 +25,7 @@ struct MaintenanceSheet: View {
                             MaintenanceTaskRow(task: task) { pendingDone = task }
                         }
                     } else {
-                        Text("No maintenance tasks are set up for this printer. Add them in Bambuddy's Maintenance page.", comment: "Maintenance sheet empty state")
+                        Text("No maintenance tasks are set up for this printer. Add them on your server's Maintenance page.", comment: "Maintenance sheet empty state")
                             .ncFont(size: 13, relativeTo: .footnote)
                             .foregroundStyle(NCColor.textTertiary)
                             .multilineTextAlignment(.center)
@@ -54,7 +54,7 @@ struct MaintenanceSheet: View {
                     store.performMaintenance(printerID: printerID, taskID: task.id)
                 }
             } message: { _ in
-                Text("Bambuddy records it as done now and restarts its interval.", comment: "Explains marking a maintenance task done")
+                Text("Your server records it as done now and restarts its interval.", comment: "Explains marking a maintenance task done")
             }
         }
         .preferredColorScheme(.dark)

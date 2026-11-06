@@ -227,17 +227,17 @@ struct SpoolBuddyScanPanel: View {
     private var statusText: String {
         switch session.connectionState {
         case .idle, .connecting:
-            return String(localized: "Connecting to Bambuddy…", comment: "SpoolBuddy scan mode: opening the live event connection")
+            return String(localized: "Connecting to your server…", comment: "SpoolBuddy scan mode: opening the live event connection")
         case .retrying(let attempt, _):
             return attempt > 2
-                ? String(localized: "Can't reach Bambuddy's live updates. Retrying…", comment: "SpoolBuddy scan mode: event connection keeps failing")
-                : String(localized: "Reconnecting to Bambuddy…", comment: "SpoolBuddy scan mode: event connection dropped")
+                ? String(localized: "Can't reach your server's live updates. Retrying…", comment: "SpoolBuddy scan mode: event connection keeps failing")
+                : String(localized: "Reconnecting to your server…", comment: "SpoolBuddy scan mode: event connection dropped")
         case .connected:
             guard let devices = session.devices else {
                 return String(localized: "Connected", comment: "SpoolBuddy scan mode: connected, SpoolBuddy state not known yet")
             }
             if devices.isEmpty {
-                return String(localized: "No SpoolBuddy registered with Bambuddy", comment: "SpoolBuddy scan mode status")
+                return String(localized: "No SpoolBuddy registered with your server", comment: "SpoolBuddy scan mode status")
             }
             if let online = devices.values.first(where: \.online) {
                 if let name = online.hostname, !name.isEmpty {
@@ -263,8 +263,8 @@ struct SpoolBuddyScanPanel: View {
                     icon: "exclamationmark.triangle",
                     title: String(localized: "Lookup Failed", comment: "SpoolBuddy scan: Bambuddy couldn't look the tag up"),
                     message: spoolmanUnavailable
-                        ? String(localized: "Bambuddy couldn't reach Spoolman to look this spool up. Place it again once Spoolman is back.", comment: "SpoolBuddy scan: lookup failed, Spoolman down")
-                        : String(localized: "Bambuddy hit an error looking this spool up. Place it on the SpoolBuddy again.", comment: "SpoolBuddy scan: lookup failed")
+                        ? String(localized: "Your server couldn't reach Spoolman to look this spool up. Place it again once Spoolman is back.", comment: "SpoolBuddy scan: lookup failed, Spoolman down")
+                        : String(localized: "Your server hit an error looking this spool up. Place it on the SpoolBuddy again.", comment: "SpoolBuddy scan: lookup failed")
                 )
             }
         }
@@ -436,8 +436,8 @@ struct SpoolBuddyScanPanel: View {
     private var unavailableCard: some View {
         messageContent(
             icon: "sensor.tag.radiowaves.forward",
-            title: String(localized: "Connect to Bambuddy", comment: "SpoolBuddy scan mode without a server"),
-            message: String(localized: "SpoolBuddy scans come through your Bambuddy server. Connect it in Settings to use this mode.", comment: "SpoolBuddy scan mode without a server")
+            title: String(localized: "Connect to Your Server", comment: "SpoolBuddy scan mode without a server"),
+            message: String(localized: "SpoolBuddy scans come through your server. Connect it in Settings to use this mode.", comment: "SpoolBuddy scan mode without a server")
         )
         .frame(maxWidth: .infinity, minHeight: 300)
         .padding(20)

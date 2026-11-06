@@ -119,7 +119,7 @@ struct SettingsView: View {
                         } message: {
                             Text(relayAlertsActive
                                 ? String(localized: "Alerts keep coming through your relay.", comment: "Confirmation message when the relay delivers alerts")
-                                : String(localized: "NozzleCast stops receiving ntfy pushes and reads Bambuddy's alerts from its notification log instead, which can be late.", comment: "Confirmation message when nothing else pushes alerts"))
+                                : String(localized: "NozzleCast stops receiving ntfy pushes and reads your server's alerts from its notification log instead, which can be late.", comment: "Confirmation message when nothing else pushes alerts"))
                         }
                     }
                 } header: {
@@ -419,20 +419,20 @@ struct SettingsView: View {
         case .bambuddyLog:
             return BambuddyAlertFeed.lastError != nil
                 ? String(localized: "Can't read alerts", comment: "Settings row value: alert log not readable")
-                : String(localized: "From Bambuddy", comment: "Settings row value: alerts read from Bambuddy's notification log")
+                : String(localized: "From Server", comment: "Settings row value: alerts read from Bambuddy's notification log")
         }
     }
 
     private var alertsFooter: String {
         switch alertSource {
         case .relay:
-            String(localized: "Bambuddy sends its alerts to your relay, which pushes them here, leaving out the ones you've muted. NozzleCast doesn't need ntfy or a Firebase config for them.", comment: "Settings footer when the relay delivers alerts")
+            String(localized: "Your server sends its alerts to your relay, which pushes them here, leaving out the ones you've muted. NozzleCast doesn't need ntfy or a Firebase config for them.", comment: "Settings footer when the relay delivers alerts")
         case .relayFeed:
-            String(localized: "Bambuddy sends its alerts to your relay, and NozzleCast fetches them from it, leaving out the ones you've muted. Your relay has no Apple push keys, so nothing can wake NozzleCast when an alert fires: while it's open alerts show within seconds, otherwise when iOS next lets it check in the background, which can be much later.", comment: "Settings footer when alerts are fetched from a relay without push keys")
+            String(localized: "Your server sends its alerts to your relay, and NozzleCast fetches them from it, leaving out the ones you've muted. Your relay has no Apple push keys, so nothing can wake NozzleCast when an alert fires: while it's open alerts show within seconds, otherwise when iOS next lets it check in the background, which can be much later.", comment: "Settings footer when alerts are fetched from a relay without push keys")
         case .ntfy:
-            String(localized: "Alerts come from your ntfy server through the Firebase project in the imported config. To have your relay deliver them instead, with muted alerts kept off the Lock Screen, add a Webhook provider in Bambuddy pointing at the relay's /bambuddy/alerts.", comment: "Settings footer when ntfy delivers alerts")
+            String(localized: "Alerts come from your ntfy server through the Firebase project in the imported config. To have your relay deliver them instead, with muted alerts kept off the Lock Screen, add a Webhook provider on your server pointing at the relay's /bambuddy/alerts.", comment: "Settings footer when ntfy delivers alerts")
         case .bambuddyLog:
-            String(localized: "NozzleCast reads the alerts Bambuddy sends to its notification providers from its notification log, whenever the app refreshes and in the background when iOS allows, so they can arrive late. For instant alerts, add a Webhook provider in Bambuddy pointing at your relay's /bambuddy/alerts.", comment: "Settings footer explaining the alert fallback")
+            String(localized: "NozzleCast reads the alerts your server sends to its notification providers from its notification log, whenever the app refreshes and in the background when iOS allows, so they can arrive late. For instant alerts, add a Webhook provider on your server pointing at your relay's /bambuddy/alerts.", comment: "Settings footer explaining the alert fallback")
         }
     }
 
