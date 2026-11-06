@@ -30,6 +30,8 @@ Its accent colour is also out of date.
 
 ## Shot list
 
+Apple rejected 1.0 under 5.2.1 for naming Bambuddy, so no headline or metadata names Bambuddy or SpoolBuddy (part of the same project). The app's own UI still says SpoolBuddy on shot 05.
+
 This covers iPhone 6.9" and 6.5". iPad 13" uses the same file names.
 
 | # | File | Screen and state | Keyword / title (Framefile) |
@@ -38,7 +40,7 @@ This covers iPhone 6.9" and 6.5". iPad 13" uses the same file names.
 | 02 | `02-card-layouts` | Monitor in **Twin tiles**, with the layout picker open. | YOUR LAYOUT / Four ways to see your farm |
 | 03 | `03-printer-detail` | Redesigned printer screen while printing: job card, temperature chips, AMS columns. | FULL CONTROL / Every detail of every print |
 | 04 | `04-live-activity` | Lock Screen showing the redesigned Live Activity, with a sharp cover on its contrast tile. | ALWAYS IN VIEW / Track prints from your Lock Screen |
-| 05 | `05-spoolbuddy-scan` | Scan › SpoolBuddy after reading an unknown Bambu tag, with the **New Spool** form prefilled from the tag. | SPOOLBUDDY / Drop a spool, it's in your inventory |
+| 05 | `05-spoolbuddy-scan` | Scan › SpoolBuddy after reading an unknown Bambu tag, with the **New Spool** form prefilled from the tag. | SPOOL READER / Drop a spool, it's in your inventory |
 | 06 | `06-prints-history` | Prints › History: thumbnails, Good and Reject badges, one Needs Verdict row. | PRINT HISTORY / Every print, and how it came out |
 | 07 | `07-print-queue` | Prints › Queue, showing the **Print anyway?** dialog for a held job. | SMART QUEUE / Never print on the wrong filament |
 | 08 | `08-notifications` | Notifications list with camera photos, and one row swiped to **Mute**. | ALERTS THAT MATTER / Photos, and mute the noise |
