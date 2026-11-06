@@ -3,52 +3,58 @@ description: |-
   NozzleCast is a live monitoring companion for your self-hosted 3D printer management server, built for Bambu Lab printers. Connect it to your own server instance and monitor every printer on your farm — no cloud account, no subscription, no data leaving your own network.
 
   LIVE ACTIVITIES THAT ACTUALLY UPDATE
-  Start a print and NozzleCast puts a Live Activity on your Lock Screen and in the Dynamic Island — even if the app isn't open and your phone is locked. It shows real progress (not a rough estimate), a localized finish time, live temperatures, and the cover image or camera snapshot for the job, and keeps updating for the entire print.
+  Start a print and NozzleCast puts a Live Activity on your Lock Screen and in the Dynamic Island — even if the app isn't open and your phone is locked. It shows real progress (not a rough estimate), a localized finish time, live temperatures, and a sharp cover image of the model, and keeps updating for the entire print.
 
   KNOW WHEN SOMETHING NEEDS ATTENTION
-  A color-coded badge — yellow for a warning, red for an error — appears the moment your server reports an HMS issue serious enough to matter, matching the same severity your server's own dashboard shows. No more guessing whether "Paused" means a filament runout or nothing at all.
+  A color-coded badge — yellow for a warning, red for an error — appears the moment your server reports an HMS issue serious enough to matter, matching the same severity your server's own dashboard shows. No more guessing whether "Paused" means a filament runout or nothing at all. Alerts arrive with a camera photo you can open full screen, and an alert you don't need can be muted with a swipe.
 
   YOUR WHOLE FARM AT A GLANCE
-  The Monitor tab shows every printer's state, job, progress, and AMS filament colors at once. Tap in for full detail: temperatures, print controls, and per-slot filament info.
+  The Monitor tab shows every printer's state, job, progress, and AMS filament colors at once, with an animated picture of each printer showing what it's doing. Choose from four card layouts, with the live camera while printing, the job's cover while paused, and the last print when idle. Tap in for full detail: temperatures, print controls, and per-slot filament info.
 
-  NOW SUPPORTS IPHONE DUO
-  NozzleCast now supports iPhone Duo. With the Duo open, your printer list and the selected printer sit side by side. Partly open, the printer's live camera view stays pinned on top while the controls scroll below it. Closed, you get the familiar single-column layout.
+  MADE FOR IPHONE DUO
+  NozzleCast supports iPhone Duo. With the Duo open, your printer list and the selected printer sit side by side. Partly open, the printer's live camera view stays pinned on top while the controls scroll below it. Closed, you get the familiar single-column layout.
 
   FILAMENT INVENTORY, NOT GUESSWORK
-  Track every spool — material, color, brand, remaining weight, and whether it's loaded in an AMS or sitting in storage. Scan a spool's barcode or printed label with your camera to add it in seconds, entirely on-device.
+  Track every spool — material, color, brand, remaining weight, and whether it's loaded in an AMS or sitting in storage. Scan a spool's barcode or printed label with your camera to add it in seconds, entirely on-device, or put it on a spool reader connected to your server.
+
+  PRINT QUEUE AND HISTORY
+  See what's queued and why, start staged jobs, and find out before a job starts on filament that won't last. Browse past prints with pictures, and mark how each one came out.
 
   BUILT FOR SELF-HOSTERS
   NozzleCast talks directly to your self-hosted server's API. Live Activity push updates go through a small relay you run yourself (nozzlecast-relay, open source). There is no NozzleCast account and no NozzleCast server in between — your printer data stays on your own infrastructure.
 
   Requires an existing compatible self-hosted printer management server on your network. Live Activities and Lock Screen push updates require the optional nozzlecast-relay component.
 keywords: bambu,3d printing,3d printer,filament,ams,print farm,live activity,x1c,p1s,a1,octoprint
-promotional_text: NozzleCast now supports iPhone Duo! Live Activities for your Bambu printers
-  — real progress, real ETA, and HMS alerts, driven by your own self-hosted server.
+promotional_text: 'New in 1.5: animated printers, four card layouts, a redesigned
+  Live Activity, and spool reader scanning, all driven by your own self-hosted server.'
 marketing_url: https://nozzlecast.townsville.cc
 support_url: https://nozzlecast.townsville.cc
 whats_new: |-
-  NOW SUPPORTS IPHONE DUO
-  • NozzleCast now supports iPhone Duo. Open, your printer list and the selected printer sit side by side; partly open, the live camera view stays pinned on top with the controls scrolling below; closed, you get the familiar single-column layout.
-  • The printer list is wider and its cards no longer wrap or truncate on larger screens.
+  A LIVELIER MONITOR
+  • Each printer's picture is animated to show what it's doing: printing, paused, finished, or idle.
+  • Choose from four card layouts: Classic, Twin tiles, Hero, and Picture in picture. Cards show the live camera while printing, the job's cover while paused, and the last print when idle.
+  • Adds the Bambu Lab H3C.
 
-  PRINT QUEUE AND HISTORY
-  • New Prints tab shows your server's print queue and print history. See what's waiting and why, start staged jobs, and reorder or remove queued jobs.
-  • Browse past prints with plate thumbnails, duration, filament, cost, and failure reasons, and filter by Needs Verdict, Good, Rejected, or Failed.
-  • Mark how a print came out with Good or Reject, right from the app.
+  REDESIGNED LIVE ACTIVITY
+  • A new Lock Screen and Dynamic Island design with a sharp cover of the model, on a background that keeps it visible whatever the filament color.
+  • With nozzlecast-relay, covers also show for HTTPS-dispatched prints.
 
-  SMARTER FILAMENT INVENTORY
-  • Low-stock warnings on spools, with a Low Stock filter and a running count.
-  • Shopping list for filament you need to buy, with running-low spools suggested for you.
-  • Each spool now shows grams left, last used, and per-print usage history.
-  • Works whether your server tracks filament itself or through Spoolman.
+  SCAN SPOOLS WITH A SPOOL READER
+  • Put a spool on a spool reader connected to your server and NozzleCast opens it, ready to edit or assign to an AMS slot.
+  • A tag that isn't linked yet can be linked to one of your spools, or added as a new spool with its material, color, and brand filled in from the tag.
 
-  REDESIGNED PRINTER SCREEN
-  • Controls and sections now adapt to what the printer is doing, with a new last-print card, compact temperature chips, and AMS slots in full-width columns.
-  • Monitor cards are taller and keep a steady size as prints start and finish.
-  • Printer state and alerts are now shown separately, so an idle printer with an alert no longer reads "Error".
+  NOTIFICATIONS
+  • Notification photos are bigger and open full screen, with pinch to zoom.
+  • Swipe left on an alert you don't need to mute it. With nozzlecast-relay, muted alerts stay off your Lock Screen too.
+  • Settings shows where your alerts come from. nozzlecast-relay can deliver them without Firebase.
 
-  ALERTS WITHOUT FIREBASE
-  • Server alerts now reach you as notifications even if your server has no Firebase set up, including while the app is in the background.
-  • Alert colors follow your server's HMS alert levels.
+  PRINTS
+  • Print history shows a picture for every print, including HTTPS-dispatched ones with nozzlecast-relay.
+  • When your server holds a queued job because its filament isn't loaded or won't last, NozzleCast says why and lets you print anyway.
+  • Rate each print of a file you've printed more than once, on servers that track every print separately.
 
-  Plus improved localization and assorted fixes.
+  ALSO
+  • One blue accent color across the app and widgets.
+  • Translucent filaments added from a spool tag stay translucent.
+  • The time remaining on the printer screen is no longer cut off.
+  • The Scan screen fits in landscape and on iPhone Duo.
