@@ -123,7 +123,7 @@ enum RelayAlertFeed {
         let skipped = alerts.count - shown.count
         if skipped > 0 {
             let content = UNMutableNotificationContent()
-            content.title = String(localized: "More alerts from Bambuddy", comment: "Summary notification when several alerts arrived at once")
+            content.title = String(localized: "More alerts from your server", comment: "Summary notification when several alerts arrived at once")
             content.body = String(AttributedString(localized: "^[\(skipped) more alert](inflect: true) arrived. Open NozzleCast to see them all.", comment: "Summary notification body").inflected().characters)
             try? await center.add(UNNotificationRequest(identifier: "relayfeed-summary-\(UUID().uuidString)", content: content, trigger: nil))
         }

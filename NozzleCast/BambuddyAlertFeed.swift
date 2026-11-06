@@ -80,7 +80,7 @@ enum BambuddyAlertFeed {
             lastError = nil
             lastCheckedAt = Date()
         } catch BambuddyAPIError.http(403, _) {
-            lastError = String(localized: "Your API key can't read Bambuddy's notifications. Give it the notifications:read permission.", comment: "Alert feed error: API key lacks permission")
+            lastError = String(localized: "Your API key can't read your server's notifications. Give it the notifications:read permission.", comment: "Alert feed error: API key lacks permission")
             return 0
         } catch {
             lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -155,7 +155,7 @@ enum BambuddyAlertFeed {
         let skipped = alerts.count - shown.count
         if skipped > 0 {
             let content = UNMutableNotificationContent()
-            content.title = String(localized: "More alerts from Bambuddy", comment: "Summary notification when several alerts arrived at once")
+            content.title = String(localized: "More alerts from your server", comment: "Summary notification when several alerts arrived at once")
             content.body = String(AttributedString(localized: "^[\(skipped) more alert](inflect: true) arrived. Open NozzleCast to see them all.", comment: "Summary notification body").inflected().characters)
             try? await center.add(UNNotificationRequest(identifier: "bblog-summary-\(UUID().uuidString)", content: content, trigger: nil))
         }

@@ -34,7 +34,7 @@ struct ShoppingListSheet: View {
                     } header: {
                         Text("Running Low", comment: "Shopping list section: low-stock spools not on the list")
                     } footer: {
-                        Text("Spools below their low-stock level in Bambuddy.", comment: "Shopping list footer under the low-stock suggestions")
+                        Text("Spools below their low-stock level on your server.", comment: "Shopping list footer under the low-stock suggestions")
                     }
                 }
 

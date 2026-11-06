@@ -115,7 +115,7 @@ struct AMSAssignSheet: View {
                 // this explains the fault up front rather than blocking anything.
                 if printer?.lacksDeveloperMode == true {
                     Label {
-                        Text("Developer LAN mode is off on this printer. Assigning still saves, but the printer will reject the slot settings Bambuddy sends and show an \"MQTT command verification failed\" error.", comment: "Assign sheet note for a printer without Developer LAN mode")
+                        Text("Developer LAN mode is off on this printer. Assigning still saves, but the printer will reject the slot settings your server sends and show an \"MQTT command verification failed\" error.", comment: "Assign sheet note for a printer without Developer LAN mode")
                     } icon: {
                         Image(systemName: "lock.fill")
                     }
