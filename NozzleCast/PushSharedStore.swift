@@ -207,6 +207,24 @@ nonisolated enum PushSharedStore {
         set { sharedDefaults.set(newValue, forKey: "deviceToken") }
     }
 
+    /// Whether the relay pushes its alerts (it has Apple push keys). False on a relay without
+    /// them, where the app fetches alerts from the relay instead (`RelayAlertFeed`). Stored
+    /// inverted so an install that hasn't asked yet reads as pushing, as every older relay does.
+    static var relayAlertsPush: Bool {
+        get { !sharedDefaults.bool(forKey: "relayAlertsNoPush") }
+        set { sharedDefaults.set(!newValue, forKey: "relayAlertsNoPush") }
+    }
+
+    /// The key this device's muted alerts are kept under on the relay: its APNs token when it has
+    /// one, else an id made up once and kept (a device the relay can't push to still mutes).
+    static var alertDeviceKey: String {
+        if let deviceToken { return deviceToken }
+        if let id = sharedDefaults.string(forKey: "alertDeviceID") { return id }
+        let id = UUID().uuidString.lowercased()
+        sharedDefaults.set(id, forKey: "alertDeviceID")
+        return id
+    }
+
     // MARK: - Muted alerts (muted in the Notifications list, honoured by the NSE)
 
     /// An alert the user muted, by its exact title and body — e.g. a printer without Developer

@@ -30,9 +30,10 @@ enum BambuddyAlertFeed {
     static let backgroundTaskIdentifier = "com.victormanuel.NozzleCast.bambuddy-alerts"
 
     /// Asks iOS for the next background check. iOS treats the date as "not before" and picks
-    /// the actual time itself; asking again replaces the pending request.
+    /// the actual time itself; asking again replaces the pending request. The same task checks
+    /// the relay's feed when that's where alerts come from (`RelayAlertFeed`).
     static func scheduleBackgroundCheck() {
-        guard isActive else {
+        guard isActive || RelayAlertFeed.isActive else {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: backgroundTaskIdentifier)
             return
         }
