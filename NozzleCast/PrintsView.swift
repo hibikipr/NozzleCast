@@ -112,7 +112,30 @@ struct PrintsView: View {
             } message: { item in
                 Text("Bambuddy sends it to \(item.destination) as soon as the printer is free. Make sure the build plate is clear.", comment: "Explains what starting a staged print does")
             }
+            .confirmationDialog(
+                Text("Print anyway?", comment: "Title when Bambuddy held a queued print over its filament"),
+                isPresented: Binding(get: { store.filamentHold != nil }, set: { if !$0 { store.filamentHold = nil } }),
+                titleVisibility: .visible,
+                presenting: store.filamentHold
+            ) { prompt in
+                Button(String(localized: "Print Anyway", comment: "Start a queued print despite Bambuddy's filament check")) {
+                    store.startQueuedPrint(prompt.itemID, skipFilamentCheck: true)
+                }
+                Button(String(localized: "Keep Waiting", comment: "Leave a held print in the queue"), role: .cancel) {}
+            } message: { prompt in
+                Text(Self.filamentHoldMessage(prompt))
+            }
         }
+    }
+
+    static func filamentHoldMessage(_ prompt: AppStore.FilamentHoldPrompt) -> String {
+        let reason = prompt.hold.errorDescription ?? ""
+        let details = prompt.hold.problems.joined(separator: "\n")
+        let consequence = switch prompt.hold.kind {
+        case .notLoaded: String(localized: "\(prompt.destination) will print \(prompt.name) with whatever is loaded.", comment: "What Print Anyway does when the filament isn't loaded")
+        case .tooShort: String(localized: "\(prompt.destination) may run out partway through \(prompt.name).", comment: "What Print Anyway does when a spool is too short")
+        }
+        return [reason, details, consequence].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
     // MARK: Header
