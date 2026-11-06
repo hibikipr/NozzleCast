@@ -496,12 +496,13 @@ struct PrinterJobCard: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 ProgressBar(progress: progress ?? 0, tint: isPaused ? NCColor.statusWarning : NCColor.accent)
+                // The times always show in full; the progress side gives way first, dropping the
+                // word "layer", then the layer count, as the card narrows.
                 HStack(spacing: 8) {
-                    HStack(spacing: 4) {
+                    ViewThatFits(in: .horizontal) {
+                        progressSummary(layerWord: true)
+                        progressSummary(layerWord: false)
                         Text(progress ?? 0, format: .percent.precision(.fractionLength(0)))
-                        if let currentLayer, let totalLayers, totalLayers > 0 {
-                            Text("· layer \(currentLayer)/\(totalLayers)", comment: "Print progress in layers, e.g. '· layer 140/226'")
-                        }
                     }
                     Spacer(minLength: 4)
                     HStack(spacing: 4) {
@@ -510,6 +511,8 @@ struct PrinterJobCard: View {
                             Text("· \(estimatedFinish.formatted(date: .omitted, time: .shortened))", comment: "Clock time the print should finish")
                         }
                     }
+                    .fixedSize()
+                    .layoutPriority(1)
                 }
                 .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                 .foregroundStyle(NCColor.textSecondary)
@@ -518,6 +521,21 @@ struct PrinterJobCard: View {
         }
         .padding(14)
         .glassCard()
+    }
+
+    /// "38% · layer 246/750", or "38% · 246/750" without the word.
+    private func progressSummary(layerWord: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(progress ?? 0, format: .percent.precision(.fractionLength(0)))
+            if let currentLayer, let totalLayers, totalLayers > 0 {
+                if layerWord {
+                    Text("· layer \(currentLayer)/\(totalLayers)", comment: "Print progress in layers, e.g. '· layer 140/226'")
+                } else {
+                    Text("· \(currentLayer)/\(totalLayers)", comment: "Print progress in layers, short form, e.g. '· 140/226'")
+                }
+            }
+        }
+        .fixedSize()
     }
 }
 
