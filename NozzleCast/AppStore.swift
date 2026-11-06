@@ -1400,6 +1400,8 @@ final class AppStore {
     private(set) var printHistory: [PrintRecord] = []
     /// Total records on the server, for knowing when the last page is in.
     private(set) var printHistoryTotal = 0
+    /// Bambuddy 1.3.0+ keeps a verdict per print rather than per archive (`BambuddyPrintLogPageDTO.ratesEachPrint`).
+    private(set) var serverRatesEachPrint = false
     private(set) var isLoadingPrints = false
     private(set) var hasLoadedPrints = false
     private(set) var printsLoadError: String?
@@ -1425,7 +1427,8 @@ final class AppStore {
             async let firstPage = client.printLog(limit: Self.printHistoryPageSize, offset: 0)
             let (queueItems, page) = try await (queueDTOs, firstPage)
             queue = mapQueue(queueItems)
-            printHistory = Self.markingVerdictEligibility(page.items.map(mapPrintRecord))
+            serverRatesEachPrint = page.ratesEachPrint
+            printHistory = Self.markingVerdictEligibility(page.items.map(mapPrintRecord), eachPrint: serverRatesEachPrint)
             printHistoryTotal = page.total
             printsLoadError = nil
             hasLoadedPrints = true
@@ -1444,7 +1447,7 @@ final class AppStore {
             // first row of this page — drop anything already listed.
             let known = Set(printHistory.map(\.id))
             let fresh = page.items.map(mapPrintRecord).filter { !known.contains($0.id) }
-            printHistory = Self.markingVerdictEligibility(printHistory + fresh)
+            printHistory = Self.markingVerdictEligibility(printHistory + fresh, eachPrint: serverRatesEachPrint)
             printHistoryTotal = page.total
         } catch {
             // The page loads from the list's last row, whose task is cancelled when it scrolls
@@ -1483,7 +1486,11 @@ final class AppStore {
         printHistory[index].verdict = verdict
         Task {
             do {
-                try await client.setVerdict(archiveID: archiveID, verdict: verdict?.rawValue)
+                try await client.setVerdict(
+                    archiveID: archiveID,
+                    runID: serverRatesEachPrint ? printHistory.first(where: { $0.id == recordID })?.logID : nil,
+                    verdict: verdict?.rawValue
+                )
             } catch {
                 if let index = printHistory.firstIndex(where: { $0.id == recordID }) {
                     printHistory[index].verdict = previous
@@ -1495,15 +1502,36 @@ final class AppStore {
 
     /// Releases a staged job so Bambuddy sends it to the printer once it's free. That dispatch is a
     /// print command, so a printer without Developer LAN mode would refuse it.
-    func startQueuedPrint(_ itemID: String) {
+    /// `skipFilamentCheck` is Bambuddy's "Print Anyway": the answer to `filamentHold`. Without it,
+    /// a job Bambuddy holds over its filament comes back as `filamentHold` for the user to decide.
+    func startQueuedPrint(_ itemID: String, skipFilamentCheck: Bool = false) {
         guard let item = queue.first(where: { $0.id == itemID }), item.isStaged else { return }
         if let printerID = item.printerID, refuseWithoutDeveloperMode(printerID) { return }
         performQueueAction(localChange: {
             if let index = self.queue.firstIndex(where: { $0.id == itemID }) { self.queue[index].isStaged = false }
+        }, onError: { error in
+            guard let hold = error as? QueueStartFilamentHold else { return false }
+            // Still staged on the server: put it back so "Print Anyway" passes the guard above
+            // without waiting for the reload.
+            if let index = self.queue.firstIndex(where: { $0.id == itemID }) { self.queue[index].isStaged = true }
+            self.filamentHold = FilamentHoldPrompt(itemID: itemID, name: item.name, destination: item.destination, hold: hold)
+            return true
         }) { client in
-            try await client.startQueueItem(itemID: item.bambuddyID)
+            try await client.startQueueItem(itemID: item.bambuddyID, skipFilamentCheck: skipFilamentCheck)
         }
     }
+
+    /// A staged job Bambuddy wouldn't start over its filament, waiting for "Print Anyway" or a
+    /// cancel (the job stays staged either way until then).
+    struct FilamentHoldPrompt: Identifiable, Equatable {
+        var itemID: String
+        var name: String
+        var destination: String
+        var hold: QueueStartFilamentHold
+        var id: String { itemID }
+    }
+
+    var filamentHold: FilamentHoldPrompt?
 
     /// Takes a pending job out of the queue. Bambuddy keeps no undo — the UI confirms first.
     func removeQueuedPrint(_ itemID: String) {
@@ -1534,7 +1562,13 @@ final class AppStore {
     }
 
     /// Like `performAction`, but what it refreshes afterwards is the queue, not the printers.
-    private func performQueueAction(localChange: () -> Void, _ operation: @escaping (BambuddyAPIClient) async throws -> Void) {
+    /// `onError` gets first look at a failure and returns true when it handled it, so no
+    /// `actionError` is shown.
+    private func performQueueAction(
+        localChange: () -> Void,
+        onError: @escaping (Error) -> Bool = { _ in false },
+        _ operation: @escaping (BambuddyAPIClient) async throws -> Void
+    ) {
         if isShowingDemoData {
             localChange()
             return
@@ -1548,7 +1582,9 @@ final class AppStore {
             do {
                 try await operation(client)
             } catch {
-                actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                if !onError(error) {
+                    actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
             }
             await loadPrints()
         }
@@ -1655,9 +1691,10 @@ final class AppStore {
         )
     }
 
-    /// Sets `acceptsVerdict` on a newest-first list: only the newest completed run of each archive
-    /// can carry a verdict (see `PrintRecord.acceptsVerdict`).
-    static func markingVerdictEligibility(_ records: [PrintRecord]) -> [PrintRecord] {
+    /// Sets `acceptsVerdict` on a newest-first list: every completed print with an archive when
+    /// Bambuddy keeps a verdict per print (`eachPrint`, 1.3.0+), else only the newest completed run
+    /// of each archive (see `PrintRecord.acceptsVerdict`).
+    static func markingVerdictEligibility(_ records: [PrintRecord], eachPrint: Bool = false) -> [PrintRecord] {
         var seenArchives: Set<Int> = []
         return records.map { record in
             var record = record
@@ -1666,7 +1703,7 @@ final class AppStore {
                 return record
             }
             let isLatestRun = seenArchives.insert(archiveID).inserted
-            record.acceptsVerdict = isLatestRun && record.outcome == .completed
+            record.acceptsVerdict = (eachPrint || isLatestRun) && record.outcome == .completed
             return record
         }
     }

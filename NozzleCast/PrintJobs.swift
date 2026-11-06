@@ -71,10 +71,10 @@ struct PrintRecord: Identifiable, Equatable {
     var cost: Double?
     var failureReason: String?
     var verdict: PrintVerdict?
-    /// Whether "How did it come out?" can be answered for this record. Bambuddy stores the verdict
-    /// on the print's archive and copies it to that archive's *latest* run only, so an older run of
-    /// a reprinted file can't carry its own; and a print that failed or was cancelled already
-    /// says how it came out.
+    /// Whether "How did it come out?" can be answered for this record. Bambuddy 1.3.0+ keeps a
+    /// verdict on each print of an archive; before that it stored one on the archive and copied it
+    /// to the archive's *latest* run only, so an older run of a reprinted file couldn't carry its
+    /// own. A print that failed or was cancelled already says how it came out.
     var acceptsVerdict: Bool
 
     /// How long after finishing a print still asks "How did it come out?" up front. Older

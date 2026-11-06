@@ -479,6 +479,61 @@ struct BambuddyPrintLogEntryDTO: Codable {
 struct BambuddyPrintLogPageDTO: Codable {
     var items: [BambuddyPrintLogEntryDTO]
     var total: Int
+    /// Sent on every page from Bambuddy 1.3.0, which is also when each print of an archive got
+    /// its own verdict — so its presence says `setVerdict` may name the print (`runID`).
+    var deletedArchiveIds: [Int]?
+
+    var ratesEachPrint: Bool { deletedArchiveIds != nil }
+}
+
+/// Bambuddy refused to start a staged job over its filament (HTTP 409 from `/queue/{id}/start`):
+/// a spool too short for the job (`insufficient_filament`), or, from 1.3.0, filament the printer
+/// has no tray loaded with (`unmatched_filament`, the jobs it now holds instead of printing on the
+/// wrong filament). Starting again with `skipFilamentCheck` is its "Print Anyway".
+struct QueueStartFilamentHold: LocalizedError, Equatable {
+    enum Kind: Equatable { case notLoaded, tooShort }
+    var kind: Kind
+    /// One line per filament, ready to show.
+    var problems: [String]
+
+    var errorDescription: String? {
+        switch kind {
+        case .notLoaded: String(localized: "The filament this job needs isn't loaded.", comment: "Why Bambuddy didn't start a queued print")
+        case .tooShort: String(localized: "A spool doesn't have enough filament left for this job.", comment: "Why Bambuddy didn't start a queued print")
+        }
+    }
+
+    init(kind: Kind, problems: [String]) {
+        self.kind = kind
+        self.problems = problems
+    }
+
+    /// Reads Bambuddy's 409 body, `{"detail": {"code": …, …}}`; nil for any other 409.
+    init?(body: String) {
+        guard let data = body.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let detail = root["detail"] as? [String: Any],
+              let code = detail["code"] as? String else { return nil }
+        switch code {
+        case "unmatched_filament":
+            kind = .notLoaded
+            // Already worded by Bambuddy the way its queue row says it, e.g. "PLA #A4AAAC".
+            problems = (detail["missing"] as? [Any] ?? []).compactMap { $0 as? String }
+        case "insufficient_filament":
+            kind = .tooShort
+            problems = (detail["deficit"] as? [[String: Any]] ?? []).map(Self.describeDeficit)
+        default:
+            return nil
+        }
+    }
+
+    private static func describeDeficit(_ slot: [String: Any]) -> String {
+        let type = (slot["filament_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? String(localized: "Filament", comment: "Stands in for an unknown filament type")
+        let needed = Int(((slot["required_grams"] as? NSNumber)?.doubleValue ?? 0).rounded())
+        let left = Int(((slot["remaining_grams"] as? NSNumber)?.doubleValue ?? 0).rounded())
+        return String(localized: "\(type): needs \(needed) g, \(left) g left", comment: "A spool too short for a queued print, e.g. 'PETG: needs 120 g, 40 g left'")
+    }
 }
 
 private struct QueueReorderBody: Codable {
@@ -846,20 +901,31 @@ struct BambuddyAPIClient {
     }
 
     /// Records "how did it come out" on a print's archive: `"good"`, `"reject"`, or nil to clear
-    /// it. Bambuddy copies the verdict onto the archive's latest print-log row (its #1444 mirror),
-    /// which is the row the History screen shows, and retires the one-tap link in any
-    /// notification it sent for the print. `dialog` is the source Bambuddy's own prompt claims —
-    /// a person answered it, as opposed to a script (`api`).
-    func setVerdict(archiveID: Int, verdict: String?) async throws {
-        let payload: [String: Any] = verdict.map { ["user_verdict": $0, "user_verdict_source": "dialog"] } ?? ["user_verdict": NSNull()]
+    /// it, and retires the one-tap link in any notification Bambuddy sent for the print. `runID`
+    /// (the print-log row's id) puts it on that one print of the archive — Bambuddy 1.3.0+, where
+    /// each print of a file has its own outcome. Without it, Bambuddy puts it on the archive's
+    /// latest print, as before 1.3.0. `dialog` is the source Bambuddy's own prompt claims — a
+    /// person answered it, as opposed to a script (`api`).
+    func setVerdict(archiveID: Int, runID: Int? = nil, verdict: String?) async throws {
+        var payload: [String: Any] = verdict.map { ["user_verdict": $0, "user_verdict_source": "dialog"] } ?? ["user_verdict": NSNull()]
+        if let runID { payload["run_id"] = runID }
         let body = try JSONSerialization.data(withJSONObject: payload)
         _ = try await send(request("/api/v1/archives/\(archiveID)", method: "PATCH", body: body))
     }
 
     /// Releases a staged (`manualStart`) job: Bambuddy clears the flag and its scheduler sends the
-    /// job to the printer once the printer is free.
-    func startQueueItem(itemID: Int) async throws {
-        _ = try await send(request("/api/v1/queue/\(itemID)/start", method: "POST"))
+    /// job to the printer once the printer is free. Unless `skipFilamentCheck` is set, Bambuddy first
+    /// checks the job's filament and refuses with `QueueStartFilamentHold` when a spool runs short
+    /// or (1.3.0+) the printer has no tray loaded with it; `skipFilamentCheck` is its
+    /// "Print Anyway".
+    func startQueueItem(itemID: Int, skipFilamentCheck: Bool = false) async throws {
+        let query = skipFilamentCheck ? [URLQueryItem(name: "skip_filament_check", value: "true")] : []
+        do {
+            _ = try await send(request("/api/v1/queue/\(itemID)/start", method: "POST", query: query))
+        } catch BambuddyAPIError.http(409, let body) {
+            if let hold = QueueStartFilamentHold(body: body) { throw hold }
+            throw BambuddyAPIError.http(409, body)
+        }
     }
 
     /// Takes a job out of the queue. Bambuddy refuses for a job that's printing.
