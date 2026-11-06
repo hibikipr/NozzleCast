@@ -441,6 +441,7 @@ final class AppStore {
         if m.contains("P1P") { return "PrinterP1P" }
         if m.contains("P2S") { return "PrinterP2S" }
         if m.contains("H2C") { return "PrinterH2C" }
+        if m.contains("H3C") { return "PrinterH3C" }
         if m.contains("H2S") { return "PrinterH2S" }
         if m.contains("H2D") { return "PrinterH2D" }
         if m.contains("X2D") { return "PrinterX2D" }

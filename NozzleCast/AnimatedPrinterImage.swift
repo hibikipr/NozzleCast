@@ -101,6 +101,11 @@ struct PrinterArtGeometry {
     var partCenterX: CGFloat
     var floorY: CGFloat
     var partSize: CGSize
+    /// For art with no toolhead drawn in its window (the H3C): a head and rail the animation draws
+    /// itself, the head moving along the rail by `travel`. `heads` is empty then.
+    var addedHead: CGRect? = nil
+    var addedRail: CGRect? = nil
+    var headColor: Color = .clear
 
     static func forAsset(_ name: String) -> PrinterArtGeometry? {
         switch name {
@@ -111,10 +116,39 @@ struct PrinterArtGeometry {
         case "PrinterP1S", "PrinterP2S", "PrinterX1C", "PrinterX2D": narrow(strip: CGRect(x: 539, y: 213, width: 10, height: 138), greyBody: false)
         case "PrinterX1E": narrow(strip: CGRect(x: 538, y: 212, width: 12, height: 140), greyBody: true)
         case "PrinterP1P": p1p
+        case "PrinterH3C": h3c
         case "PrinterA1": openFrame(strip: CGRect(x: 551, y: 381, width: 70, height: 32))
         case "PrinterA2L": openFrame(strip: CGRect(x: 591, y: 381, width: 49, height: 32))
         default: nil
         }
+    }
+
+    /// H3C: a tall body under its AMS, its dark door window at x 189-358, y 288-512, with no
+    /// toolhead drawn in it, so the animation adds one on a rail across the window. The blue bar
+    /// right of the door is the status light, the small screen above the door's left corner the
+    /// display.
+    private static var h3c: PrinterArtGeometry {
+        let rail = CGRect(x: 200, y: 340, width: 147, height: 5)
+        let head = CGRect(x: 261, y: 327, width: 26, height: 30)
+        let margin: CGFloat = 4
+        return PrinterArtGeometry(
+            kind: .enclosed,
+            heads: [],
+            travel: (rail.minX + margin - head.minX)...(rail.maxX - margin - head.maxX),
+            rail: rail,
+            windowColor: Color(hex: "#292935"),
+            railColor: Color(hex: "#5C6272"),
+            strip: CGRect(x: 367, y: 305, width: 9, height: 87),
+            stripBase: Color(hex: "#4E6789"),
+            screen: CGRect(x: 194, y: 247, width: 46, height: 8),
+            screenBase: Color(hex: "#323849"),
+            partCenterX: 273,
+            floorY: 500,
+            partSize: CGSize(width: 60, height: 80),
+            addedHead: head,
+            addedRail: rail,
+            headColor: Color(hex: "#B9BFC9")
+        )
     }
 
     /// The P1P's open sides are drawn as a light-grey chamber.
@@ -283,6 +317,13 @@ private struct PrinterArtLayers: View {
 
             part
 
+            // A head the art doesn't draw (the H3C): its rail, then the head riding it.
+            if let addedRail = geometry.addedRail, let addedHead = geometry.addedHead {
+                box(addedRail, geometry.railColor, cornerRatio: 0.5)
+                box(addedHead, geometry.headColor, cornerRatio: 0.25)
+                    .offset(x: headOffset * scale)
+            }
+
             // The heads, cut from the image where they're drawn and moved along the rail/post.
             ForEach(Array(geometry.heads.enumerated()), id: \.offset) { _, head in
                 Image(assetName)
@@ -348,7 +389,7 @@ private struct PrinterArtLayers: View {
 #Preview("Every status") {
     ScrollView {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 110))], spacing: 16) {
-            ForEach(["PrinterH2C", "PrinterH2D", "PrinterP1S", "PrinterA1"], id: \.self) { asset in
+            ForEach(["PrinterH2C", "PrinterH3C", "PrinterH2D", "PrinterP1S", "PrinterA1"], id: \.self) { asset in
                 ForEach(PrinterState.allCases, id: \.self) { state in
                     VStack {
                         AnimatedPrinterImage(assetName: asset, state: state)
