@@ -90,7 +90,7 @@ struct NotificationsView: View {
             NotificationImageViewer(entryID: viewing.id)
         }
         .onAppear {
-            entries = PushSharedStore.loadHistory()
+            entries = ScreenshotMocks.isActive ? ScreenshotMocks.notificationHistory() : PushSharedStore.loadHistory()
             mutedAlerts = PushSharedStore.mutedAlerts
             Task {
                 await PushSharedStore.markAllRead()
@@ -214,7 +214,7 @@ private struct NotificationImageViewer: View {
 
 @concurrent
 private nonisolated func loadHistoryImageData(_ id: String) async -> Data? {
-    PushSharedStore.loadHistoryImage(id: id)
+    ScreenshotMocks.notificationImage(id: id) ?? PushSharedStore.loadHistoryImage(id: id)
 }
 
 #Preview {
