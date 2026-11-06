@@ -143,6 +143,24 @@ final class AppStore {
         resolvePendingDeepLink()
         AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
         WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
+        if ScreenshotMocks.isActive {
+            Task { await startScreenshotLiveActivities() }
+        }
+    }
+
+    /// Screenshot mode: Live Activities for the demo printers that are printing, with their mock
+    /// covers, the way a refresh starts them for real ones.
+    private func startScreenshotLiveActivities() async {
+        var coverImages: [String: Data] = [:]
+        for printer in printers where printer.state == .printing {
+            guard let render = ScreenshotMocks.coverData(job: printer.jobFileName) else { continue }
+            let id = PrintActivityAttributes.normalizedID(printer.name)
+            if let sharp = CoverImageProcessing.sharpCover(from: render) {
+                LiveActivityCoverStore.save(sharp, printerID: id, jobName: printer.jobFileName)
+            }
+            coverImages[id] = CoverImageProcessing.contentStateCover(from: render)
+        }
+        await PrintLiveActivityManager.shared.sync(printers: printers, coverImages: coverImages)
     }
 
     func printer(_ id: String) -> Printer? { printers.first { $0.id == id } }
@@ -895,6 +913,9 @@ final class AppStore {
     /// camera frames were decoded on the main thread every few seconds just to fill a 60pt
     /// thumbnail.
     func cameraSnapshot(printerID: String, maxPixelSize: CGFloat) async -> UIImage? {
+        if isShowingDemoData, let data = ScreenshotMocks.cameraData(job: printer(printerID)?.jobFileName) {
+            return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
+        }
         guard let client, let bbID = bambuddyID(printerID) else {
             setCameraError(String(localized: "Not connected to a server."), for: printerID)
             return nil
@@ -923,6 +944,11 @@ final class AppStore {
     /// to the model, on the backdrop for its brightness — when it can, else the raw render, for
     /// the caller to put on that backdrop itself (`isComposed` false).
     func displayCover(printerID: String, pixelSize: CGSize) async -> (image: UIImage, isComposed: Bool)? {
+        // An idle demo printer shows its last print, fitted the same way.
+        if isShowingDemoData,
+           let image = ScreenshotMocks.fittedCover(job: printer(printerID)?.jobFileName ?? printHistory.first { $0.printerID == printerID }?.name, pixelSize: pixelSize) {
+            return (image, false)
+        }
         var askRelayForRaw = true
         if relayComposesCovers != false, let name = printers.first(where: { $0.id == printerID })?.name {
             switch await RelayCoverClient.displayCoverImageData(printerName: name, pixelSize: pixelSize) {
@@ -958,6 +984,7 @@ final class AppStore {
     /// The cover render's encoded bytes as served (a PNG with its transparency intact), from the
     /// relay first and Bambuddy directly otherwise — see `printerCoverImage`.
     func printerCoverData(printerID: String, maxPixelSize: CGFloat? = nil, askRelay: Bool = true) async -> Data? {
+        if isShowingDemoData, let data = ScreenshotMocks.coverData(job: printer(printerID)?.jobFileName) { return data }
         if askRelay, let name = printers.first(where: { $0.id == printerID })?.name,
            let data = await RelayCoverClient.coverImageData(printerName: name, maxPixelSize: maxPixelSize) {
             return data
@@ -1507,6 +1534,10 @@ final class AppStore {
     func startQueuedPrint(_ itemID: String, skipFilamentCheck: Bool = false) {
         guard let item = queue.first(where: { $0.id == itemID }), item.isStaged else { return }
         if let printerID = item.printerID, refuseWithoutDeveloperMode(printerID) { return }
+        if isShowingDemoData, ScreenshotMocks.isActive, !skipFilamentCheck, let hold = ScreenshotMocks.filamentHold {
+            filamentHold = FilamentHoldPrompt(itemID: itemID, name: item.name, destination: item.destination, hold: hold)
+            return
+        }
         performQueueAction(localChange: {
             if let index = self.queue.firstIndex(where: { $0.id == itemID }) { self.queue[index].isStaged = false }
         }, onError: { error in
@@ -1591,7 +1622,10 @@ final class AppStore {
     }
 
     func printThumbnail(for record: PrintRecord, maxPixelSize: CGFloat) async -> UIImage? {
-        await cachedPrintThumbnail(key: record.id, maxPixelSize: maxPixelSize) { client in
+        if isShowingDemoData, let data = ScreenshotMocks.coverData(job: record.name) {
+            return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
+        }
+        return await cachedPrintThumbnail(key: record.id, maxPixelSize: maxPixelSize) { client in
             do {
                 return try await client.printLogThumbnailData(entryID: record.logID)
             } catch BambuddyAPIError.http(404, let body) {
@@ -1606,6 +1640,9 @@ final class AppStore {
     }
 
     func queueThumbnail(for item: QueuedPrint, maxPixelSize: CGFloat) async -> UIImage? {
+        if isShowingDemoData, let data = ScreenshotMocks.coverData(job: item.name) {
+            return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
+        }
         guard let thumbnail = item.thumbnail else { return nil }
         return await cachedPrintThumbnail(key: item.id, maxPixelSize: maxPixelSize) { client in
             switch thumbnail {
@@ -1883,7 +1920,7 @@ final class AppStore {
 
 /// Debug builds launched with `-NCScreenshotMode` (the fastlane screenshot workflow, see
 /// fastlane/README.md) hide the demo-data banner. Always off in release builds.
-enum ScreenshotMode {
+nonisolated enum ScreenshotMode {
     #if DEBUG
     static let isActive = ProcessInfo.processInfo.arguments.contains("-NCScreenshotMode")
     #else

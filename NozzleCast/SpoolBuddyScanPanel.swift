@@ -36,7 +36,9 @@ final class SpoolBuddySession {
 
     @ObservationIgnored private weak var store: AppStore?
 
-    var connectionState: BambuddyEventStream.State { stream?.state ?? .idle }
+    var connectionState: BambuddyEventStream.State { isPlayingMockScan ? .connected : stream?.state ?? .idle }
+    /// Screenshot mode with demo data: no server to listen to, so `ScreenshotMocks` plays a scan.
+    @ObservationIgnored private var isPlayingMockScan = false
     var anyDeviceOnline: Bool { devices?.values.contains(where: \.online) ?? false }
     /// The online SpoolBuddy, if any, the status line is about.
     var onlineDevice: Device? { devices?.values.first(where: \.online) }
@@ -54,7 +56,13 @@ final class SpoolBuddySession {
             listeners += 1
             return true
         }
-        guard let stream = store.makeEventStream() else { return false }
+        guard let stream = store.makeEventStream() else {
+            guard ScreenshotMocks.isActive, store.isShowingDemoData else { return false }
+            isPlayingMockScan = true
+            listeners = 1
+            ScreenshotMocks.spoolBuddyEvents.forEach(apply)
+            return true
+        }
         stream.onEvent = { [weak self] in self?.apply($0) }
         self.stream = stream
         listeners = 1

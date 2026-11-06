@@ -1,6 +1,7 @@
 import Foundation
 
 enum MockData {
+    static let studioH2C = "mock-studio-h2c"
     static let workshopX1C = "mock-workshop-x1c"
     static let garageA1 = "mock-garage-a1"
     static let officeP1S = "mock-office-p1s"
@@ -21,17 +22,17 @@ enum MockData {
 
     static func makeSpools() -> [Spool] {
         [
-            Spool(id: sunsetOrange, material: "PLA", colorName: "Sunset Orange", colorHex: "#E8622C", brand: "Bambu Lab", remainingPercent: 72, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 0)),
-            Spool(id: onyxBlack, material: "PLA", colorName: "Onyx Black", colorHex: "#1A1A1A", brand: "Bambu Lab", remainingPercent: 45, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 1)),
-            Spool(id: cobaltBlue, material: "PETG", colorName: "Cobalt Blue", colorHex: "#2A5FCC", brand: "Polymaker", remainingPercent: 88, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 2)),
+            Spool(id: sunsetOrange, material: "PLA", colorName: "Sunset Orange", colorHex: "#E8622C", brand: "Bambu Lab", remainingPercent: 72, netWeightGrams: 1000, location: .ams(printerID: studioH2C, amsIndex: 0, trayIndex: 0)),
+            Spool(id: onyxBlack, material: "PLA", colorName: "Onyx Black", colorHex: "#1A1A1A", brand: "Bambu Lab", remainingPercent: 45, netWeightGrams: 1000, location: .ams(printerID: studioH2C, amsIndex: 0, trayIndex: 1)),
+            Spool(id: cobaltBlue, material: "PETG", colorName: "Cobalt Blue", colorHex: "#2A5FCC", brand: "Polymaker", remainingPercent: 88, netWeightGrams: 1000, location: .ams(printerID: studioH2C, amsIndex: 0, trayIndex: 2)),
             Spool(id: amberGold, material: "PLA", colorName: "Amber Gold", colorHex: "#D9A426", brand: "eSun", remainingPercent: 30, netWeightGrams: 1000, location: .ams(printerID: garageA1, amsIndex: 0, trayIndex: 0)),
-            Spool(id: forestGreen, material: "PLA", colorName: "Forest Green", colorHex: "#2F6B3A", brand: "Bambu Lab", remainingPercent: 100, netWeightGrams: 1000, location: .storage(name: nil)),
+            Spool(id: forestGreen, material: "PLA", colorName: "Forest Green", colorHex: "#2F6B3A", brand: "Bambu Lab", remainingPercent: 100, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 0)),
             Spool(id: pureWhite, material: "ABS", colorName: "Pure White", colorHex: "#F2F2F2", brand: "Bambu Lab", remainingPercent: 60, netWeightGrams: 1000, location: .ams(printerID: officeP1S, amsIndex: 0, trayIndex: 2)),
             Spool(id: magentaPink, material: "TPU", colorName: "Magenta Pink", colorHex: "#C22A7A", brand: "Overture", remainingPercent: 55, netWeightGrams: 500, location: .storage(name: nil)),
-            Spool(id: charcoalGrey, material: "PETG", colorName: "Charcoal Grey", colorHex: "#4A4A4A", brand: "Polymaker", remainingPercent: 20, netWeightGrams: 1000, location: .storage(name: nil)),
+            Spool(id: charcoalGrey, material: "PETG", colorName: "Charcoal Grey", colorHex: "#4A4A4A", brand: "Polymaker", remainingPercent: 20, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 1)),
             Spool(id: clearPETG, material: "PETG", colorName: "Clear", colorHex: "#D9E4E8", colorAlpha: 0.18, brand: "Bambu Lab", remainingPercent: 80, netWeightGrams: 1000, location: .storage(name: nil), effectType: "translucent"),
-            Spool(id: rainbowSilk, material: "PLA", colorName: "Silk Multicolor", colorHex: "#E8622C", extraColorHexes: ["#D9A426", "#2A5FCC", "#C22A7A"], brand: "eSun", remainingPercent: 65, netWeightGrams: 1000, location: .storage(name: nil), subtype: "Multicolor", effectType: "multicolor"),
-            Spool(id: sparkleBlack, material: "PLA", colorName: "Galaxy Black", colorHex: "#141414", brand: "Polymaker", remainingPercent: 40, netWeightGrams: 1000, location: .storage(name: nil), effectType: "sparkle"),
+            Spool(id: rainbowSilk, material: "PLA", colorName: "Silk Multicolor", colorHex: "#E8622C", extraColorHexes: ["#D9A426", "#2A5FCC", "#C22A7A"], brand: "eSun", remainingPercent: 65, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 2), subtype: "Multicolor", effectType: "multicolor"),
+            Spool(id: sparkleBlack, material: "PLA", colorName: "Galaxy Black", colorHex: "#141414", brand: "Polymaker", remainingPercent: 40, netWeightGrams: 1000, location: .ams(printerID: workshopX1C, amsIndex: 0, trayIndex: 3), effectType: "sparkle"),
             Spool(id: panchromaYellowGlow, material: "PLA", colorName: "Yellow", colorHex: "#F2C230", brand: "Panchroma", remainingPercent: 90, netWeightGrams: 1000, location: .storage(name: nil), effectType: "glow"),
             Spool(id: panchromaYellowMatte, material: "PLA", colorName: "Yellow", colorHex: "#F2C230", brand: "Panchroma", remainingPercent: 75, netWeightGrams: 1000, location: .storage(name: nil), effectType: "matte"),
         ]
@@ -44,22 +45,42 @@ enum MockData {
     static func makePrinters() -> [Printer] {
         [
             Printer(
+                id: studioH2C,
+                name: "Studio H2C",
+                model: "H2C",
+                imageAssetName: "PrinterH2C",
+                state: .printing,
+                jobFileName: "Honeycomb_Organizer.3mf",
+                progress: 0.64,
+                etaMinutesRemaining: 72,
+                currentLayer: 140,
+                totalLayers: 226,
+                nozzle: TemperatureReading(current: 220, target: 220),
+                rightNozzle: TemperatureReading(current: 150, target: nil),
+                bed: TemperatureReading(current: 60, target: 60),
+                chamber: TemperatureReading(current: 38, target: nil),
+                lightOn: true,
+                amsUnits: [amsUnit([sunsetOrange, onyxBlack, cobaltBlue, nil])],
+                fanSpeeds: FanSpeeds(partCooling: 100, auxiliary: 40, chamber: 20),
+                activeTrayID: 0
+            ),
+            Printer(
                 id: workshopX1C,
                 name: "Workshop X1C",
                 model: "X1 Carbon",
                 imageAssetName: "PrinterX1C",
                 state: .printing,
-                jobFileName: "Articulated_Dragon_v2.3.mf",
-                progress: 0.64,
-                etaMinutesRemaining: 72,
-                currentLayer: 140,
-                totalLayers: 226,
-                nozzle: TemperatureReading(current: 245, target: 245),
-                bed: TemperatureReading(current: 60, target: 60),
-                chamber: TemperatureReading(current: 42, target: nil),
+                jobFileName: "Gridfinity_Bin_2x3.3mf",
+                progress: 0.22,
+                etaMinutesRemaining: 108,
+                currentLayer: 56,
+                totalLayers: 248,
+                nozzle: TemperatureReading(current: 220, target: 220),
+                bed: TemperatureReading(current: 55, target: 55),
+                chamber: TemperatureReading(current: 34, target: nil),
                 lightOn: true,
-                amsUnits: [amsUnit([sunsetOrange, onyxBlack, cobaltBlue, nil])],
-                fanSpeeds: FanSpeeds(partCooling: 100, auxiliary: 40, chamber: 20),
+                amsUnits: [amsUnit([forestGreen, charcoalGrey, rainbowSilk, sparkleBlack])],
+                fanSpeeds: FanSpeeds(partCooling: 100, auxiliary: 30, chamber: 10),
                 activeTrayID: 0
             ),
             Printer(
@@ -109,10 +130,11 @@ enum MockData {
             PrintRecord(id: "mock-log-\(n)", logID: n, archiveID: archive, name: name, printerID: printer, printerName: printerName, outcome: outcome, startedAt: now.addingTimeInterval(-(hoursAgo * 3600 + minutes * 60)), finishedAt: now.addingTimeInterval(-hoursAgo * 3600), duration: minutes * 60, filamentGrams: grams, filamentType: type, filamentColorHex: color, cost: grams * 0.025, failureReason: failure, verdict: verdict, acceptsVerdict: false)
         }
         return [
-            record(6, "Phone Stand", officeP1S, "Office P1S", hoursAgo: 1.5, minutes: 95, grams: 41, type: "PLA", color: "#FF6B35", archive: 16),
-            record(5, "Gridfinity Bin 2x3", workshopX1C, "Workshop X1C", hoursAgo: 6, minutes: 140, grams: 64, type: "PLA", color: "#1E1E1E", archive: 15, verdict: .good),
-            record(4, "Vase Mode Lamp Shade", garageA1, "Garage A1", hoursAgo: 20, minutes: 210, grams: 88, type: "PETG", color: "#F5F5F5", outcome: .failed, archive: 14, failure: "Spaghetti detected"),
-            record(3, "Gridfinity Bin 2x3", workshopX1C, "Workshop X1C", hoursAgo: 30, minutes: 138, grams: 64, type: "PLA", color: "#1E1E1E", archive: 15, verdict: .reject),
+            record(7, "Phone Stand", officeP1S, "Office P1S", hoursAgo: 1.5, minutes: 95, grams: 41, type: "PLA", color: "#FF6B35", archive: 16),
+            record(6, "Gridfinity Bin 2x3", workshopX1C, "Workshop X1C", hoursAgo: 6, minutes: 140, grams: 64, type: "PLA", color: "#2F6B3A", archive: 15, verdict: .good),
+            record(5, "Planter Insert", studioH2C, "Studio H2C", hoursAgo: 12, minutes: 180, grams: 96, type: "PLA", color: "#2E7D32", archive: 17, verdict: .good),
+            record(4, "Vase Mode Lamp Shade", garageA1, "Garage A1", hoursAgo: 20, minutes: 210, grams: 88, type: "PLA", color: "#D9A426", outcome: .failed, archive: 14, failure: "Spaghetti detected"),
+            record(3, "Gridfinity Bin 2x3", workshopX1C, "Workshop X1C", hoursAgo: 30, minutes: 138, grams: 64, type: "PLA", color: "#2F6B3A", archive: 15, verdict: .reject),
             record(2, "Cable Clips x12", officeP1S, "Office P1S", hoursAgo: 52, minutes: 160, grams: 38, type: "PETG", color: "#1F2A44", archive: 12, verdict: .good),
             record(1, "Calibration Cube", garageA1, "Garage A1", hoursAgo: 70, minutes: 22, grams: 9, type: "PLA", color: "#4F7FE0", outcome: .cancelled, archive: 11),
         ]
