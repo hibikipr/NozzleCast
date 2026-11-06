@@ -102,6 +102,7 @@ struct ScanView: View {
             .task(id: listensToSpoolBuddy) {
                 guard listensToSpoolBuddy else { return }
                 spoolBuddyAvailable = spoolBuddy.start(store: store)
+                guard spoolBuddyAvailable else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(3600))
                 }

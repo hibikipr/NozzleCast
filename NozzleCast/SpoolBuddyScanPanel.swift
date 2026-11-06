@@ -41,14 +41,23 @@ final class SpoolBuddySession {
     /// The online SpoolBuddy, if any, the status line is about.
     var onlineDevice: Device? { devices?.values.first(where: \.online) }
 
-    /// False with no Bambuddy server to listen to (demo data).
+    /// How many `start` calls haven't had their `stop` yet. Leaving the Scan tab and coming back
+    /// starts a new listener before the old one's `stop` runs; counting keeps that late `stop`
+    /// from closing the stream the new listener is using.
+    @ObservationIgnored private(set) var listeners = 0
+
+    /// False with no Bambuddy server to listen to (demo data). Each true needs one `stop`.
     @discardableResult
     func start(store: AppStore) -> Bool {
         self.store = store
-        guard stream == nil else { return true }
+        if stream != nil {
+            listeners += 1
+            return true
+        }
         guard let stream = store.makeEventStream() else { return false }
         stream.onEvent = { [weak self] in self?.apply($0) }
         self.stream = stream
+        listeners = 1
         stream.start()
         Task {
             guard let list = await store.spoolBuddyDevices() else { return }
@@ -74,7 +83,10 @@ final class SpoolBuddySession {
         if !known.values.contains(where: { $0.online && $0.scaleWorks }) { weight = nil }
     }
 
+    /// Ends one `start`; the stream closes when the last listener stops.
     func stop() {
+        listeners = max(0, listeners - 1)
+        guard listeners == 0 else { return }
         stream?.stop()
         stream = nil
     }
