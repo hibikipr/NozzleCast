@@ -216,18 +216,27 @@ final class AppStore {
 
     /// Asks the relay whether it delivers Bambuddy's alerts (`RelayAlertClient`), and switches the
     /// app's own ntfy/Firebase subscription off when it starts to (on again if it stops), so every
-    /// alert arrives exactly once. Keeps the last answer when the relay can't be asked.
+    /// alert arrives exactly once. Keeps the last answer when the relay can't be asked. A relay
+    /// without Apple push keys can't push them, so `RelayAlertFeed` fetches them from it instead.
     func updateRelayAlertDelivery() async {
-        guard let active = await RelayAlertClient.isDelivering() else { return }
+        guard let delivery = await RelayAlertClient.delivery() else { return }
+        let wasFeedActive = RelayAlertFeed.isActive
+        PushSharedStore.relayAlertsPush = delivery.pushes
         let wasActive = PushSharedStore.relayAlertsActive
-        guard active != wasActive else { return }
-        PushSharedStore.relayAlertsActive = active
-        if active {
-            PushNotificationManager.shared.unsubscribeCurrent()
-            BambuddyAlertFeed.scheduleBackgroundCheck()
-        } else {
-            await discoverAndSubscribeNtfy()
+        if delivery.active != wasActive {
+            PushSharedStore.relayAlertsActive = delivery.active
+            if delivery.active {
+                PushNotificationManager.shared.unsubscribeCurrent()
+            } else {
+                await discoverAndSubscribeNtfy()
+            }
         }
+        if RelayAlertFeed.isActive != wasFeedActive || delivery.active != wasActive {
+            BambuddyAlertFeed.scheduleBackgroundCheck()
+        }
+        // The feed leaves out what this device muted under its own key, which the relay may not
+        // have heard yet (a device without an APNs token never registered one).
+        if RelayAlertFeed.isActive && !wasFeedActive { await RelayAlertClient.syncMutes() }
     }
 
     /// The refresh cycle currently running, if any, and whether another refresh was asked for
@@ -398,8 +407,13 @@ final class AppStore {
             lastSuccessfulRefreshAt = Date()
             // No Firebase means no pushed alerts; read them from Bambuddy's log instead. Every
             // refresh, so the foreground poll and the relay's background wakes both check.
+            // A relay without Apple push keys keeps them for the app to fetch instead.
             await updateRelayAlertDelivery()
-            if BambuddyAlertFeed.isActive { await BambuddyAlertFeed.check(using: client) }
+            if RelayAlertFeed.isActive {
+                await RelayAlertFeed.check()
+            } else if BambuddyAlertFeed.isActive {
+                await BambuddyAlertFeed.check(using: client)
+            }
             // A failed refresh drops connectionStatus to .failed; a later successful one must lift
             // it again, or the unreachable banner would outlive the outage.
             if case .failed = connectionStatus, let username = lastConnectedUsername {
@@ -965,9 +979,11 @@ final class AppStore {
         Task { try? await client.stopCameraStream(printerID: bbID) }
     }
 
-    /// Checks Bambuddy's notification log for new alerts without a full refresh — for the
-    /// background app refresh task, which has seconds, not the minute a refresh can take.
+    /// Checks for new alerts without a full refresh — the relay's feed when it can't push them,
+    /// else Bambuddy's notification log — for the background app refresh task, which has seconds,
+    /// not the minute a refresh can take.
     func checkBambuddyAlerts() async -> Int {
+        if RelayAlertFeed.isActive { return await RelayAlertFeed.check() }
         guard let client else { return 0 }
         return await BambuddyAlertFeed.check(using: client)
     }

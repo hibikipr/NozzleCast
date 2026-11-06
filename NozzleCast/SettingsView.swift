@@ -130,6 +130,9 @@ struct SettingsView: View {
                         if alertSource == .bambuddyLog, let error = BambuddyAlertFeed.lastError {
                             Text(error).foregroundStyle(NCColor.statusWarning)
                         }
+                        if alertSource == .relayFeed, let error = RelayAlertFeed.lastError {
+                            Text(error).foregroundStyle(NCColor.statusWarning)
+                        }
                     }
                     .id(alertFeedStatusRefresh)
                 }
@@ -389,12 +392,12 @@ struct SettingsView: View {
         }
     }
 
-    private enum AlertSource { case relay, ntfy, bambuddyLog }
+    private enum AlertSource { case relay, relayFeed, ntfy, bambuddyLog }
 
     /// Where Bambuddy's alerts reach this device from: the relay when its webhook delivers them
     /// (with mutes applied there), else ntfy through Firebase, else Bambuddy's notification log.
     private var alertSource: AlertSource {
-        if relayAlertsActive { return .relay }
+        if relayAlertsActive { return RelayAlertFeed.isActive ? .relayFeed : .relay }
         return firebaseConfigured ? .ntfy : .bambuddyLog
     }
 
@@ -405,6 +408,10 @@ struct SettingsView: View {
         switch alertSource {
         case .relay:
             return String(localized: "Through relay", comment: "Settings row value: alerts pushed by the relay")
+        case .relayFeed:
+            return RelayAlertFeed.lastError != nil
+                ? String(localized: "Can't reach relay", comment: "Settings row value: relay alert feed not reachable")
+                : String(localized: "From relay (checked periodically)", comment: "Settings row value: alerts fetched from the relay")
         case .ntfy:
             return pushManager.subscribedTopic != nil
                 ? String(localized: "ntfy", comment: "Settings row value: alerts pushed by ntfy through Firebase")
@@ -420,6 +427,8 @@ struct SettingsView: View {
         switch alertSource {
         case .relay:
             String(localized: "Bambuddy sends its alerts to your relay, which pushes them here, leaving out the ones you've muted. NozzleCast doesn't need ntfy or a Firebase config for them.", comment: "Settings footer when the relay delivers alerts")
+        case .relayFeed:
+            String(localized: "Bambuddy sends its alerts to your relay, and NozzleCast fetches them from it, leaving out the ones you've muted. Your relay has no Apple push keys, so nothing can wake NozzleCast when an alert fires: while it's open alerts show within seconds, otherwise when iOS next lets it check in the background, which can be much later.", comment: "Settings footer when alerts are fetched from a relay without push keys")
         case .ntfy:
             String(localized: "Alerts come from your ntfy server through the Firebase project in the imported config. To have your relay deliver them instead, with muted alerts kept off the Lock Screen, add a Webhook provider in Bambuddy pointing at the relay's /bambuddy/alerts.", comment: "Settings footer when ntfy delivers alerts")
         case .bambuddyLog:
@@ -434,6 +443,9 @@ struct SettingsView: View {
         relayAlertsActive = PushSharedStore.relayAlertsActive
         switch alertSource {
         case .relay: break
+        case .relayFeed:
+            _ = await store.checkBambuddyAlerts()
+            BambuddyAlertFeed.scheduleBackgroundCheck()
         case .ntfy: await store.discoverAndSubscribeNtfy()
         case .bambuddyLog:
             _ = await store.checkBambuddyAlerts()
