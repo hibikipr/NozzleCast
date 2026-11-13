@@ -254,12 +254,29 @@ private func countdownEnd(_ state: PrintActivityAttributes.ContentState) -> Date
 ///
 /// While the Lock Screen is dimmed (`isLuminanceReduced`) iOS stops per-second refreshes and draws
 /// a seconds timer as "1:15:--", so there it counts in whole minutes instead ("1:15").
+///
+/// `compact` (the Dynamic Island's compact trailing slot) keeps the text short. iOS narrows that
+/// slot when a second app's Live Activity is running, and an h:mm:ss timer clipped to "3:25:"
+/// (issue #110): timer text doesn't honour `minimumScaleFactor`. So while an hour or more
+/// remains it shows "3h 25m", which can shrink to fit but only changes on the next push (a print
+/// pushes every percent or so), and in the last hour the ticking m:ss timer ("24:59"). A timer
+/// can't tick as a short h:mm: with fewer fields or minute precision it spells the time out
+/// ("1 hour, 11 minutes").
 private struct Countdown: View {
     var state: PrintActivityAttributes.ContentState
+    var compact = false
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
-        if let end = countdownEnd(state) {
+        if let end = countdownEnd(state), compact, end.timeIntervalSinceNow >= 3600 {
+            Text(
+                Duration.seconds(end.timeIntervalSinceNow)
+                    .formatted(.units(allowed: [.hours, .minutes], width: .narrow))
+            )
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+        } else if let end = countdownEnd(state) {
             Text(
                 .currentDate,
                 format: .timer(
@@ -414,11 +431,14 @@ struct PrintActivityWidget: Widget {
                     // Countdown while printing, the percentage otherwise (a paused or finished
                     // print has no remaining time worth showing in this little space).
                     if countdownEnd(context.state) != nil {
-                        Countdown(state: context.state)
+                        // Sized for the short text `compact` keeps to ("3h 25m", "24:59"). The
+                        // old 60 pt frame was wider than the slot iOS leaves beside another
+                        // app's Live Activity.
+                        Countdown(state: context.state, compact: true)
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white)
                             .multilineTextAlignment(.trailing)
-                            .frame(width: 60, alignment: .trailing)
+                            .frame(width: 42, alignment: .trailing)
                     } else {
                         LiveProgressText(state: context.state)
                             .font(.caption2)
