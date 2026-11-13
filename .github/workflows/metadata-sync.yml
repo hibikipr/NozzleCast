@@ -7,6 +7,11 @@ on:
       - "fastlane/metadata_config/**"
   workflow_dispatch: {}
 
+# Checks out the repo and talks to App Store Connect with its own API key;
+# the GITHUB_TOKEN needs nothing beyond reading the repo.
+permissions:
+  contents: read
+
 jobs:
   metadata_push:
     # No Xcode/simulator step here -- this lane only talks to the App Store
