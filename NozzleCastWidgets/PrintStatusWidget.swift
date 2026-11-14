@@ -161,16 +161,16 @@ private extension PrintStatusSnapshot {
 
 // MARK: - Shared pieces
 
-private struct PercentCapsule: View {
-    let state: PrintActivityAttributes.ContentState
-
-    var body: some View {
-        LiveProgressText(state: state)
-            .font(.caption)
-            .foregroundStyle(accentLight)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(accent.opacity(0.2)))
+/// The cover in full colour. A widget only redraws when the app refreshes, so the Live Activity's
+/// build-up fill, % and segments would sit frozen at an old percentage here; the countdown, which
+/// ticks on its own, carries the progress instead.
+private func statusCover(_ snapshot: PrintStatusSnapshot, width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
+    BuildUpThumbnail(
+        cover: snapshot.cover, fraction: 1,
+        width: width, height: height, cornerRadius: cornerRadius, showsBuildUp: false
+    )
+    .overlay(alignment: .topTrailing) {
+        issueBadge(snapshot.contentState).padding(-3)
     }
 }
 
@@ -213,29 +213,14 @@ private struct StatusCard: View {
         let state = snapshot.contentState
         HStack(alignment: .top, spacing: 14) {
             SafeSection {
-                BuildUpThumbnail(
-                    cover: snapshot.cover,
-                    fraction: snapshot.isActive ? buildFraction(state) : 1,
-                    width: 96, height: thumbHeight, cornerRadius: 16
-                )
-                .overlay(alignment: .topTrailing) {
-                    issueBadge(state).padding(-3)
-                }
+                statusCover(snapshot, width: 96, height: thumbHeight, cornerRadius: 16)
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                SafeSection {
-                    HStack {
-                        Text(snapshot.printerName)
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                        Spacer()
-                        if snapshot.isActive {
-                            PercentCapsule(state: state)
-                        }
-                    }
-                }
+                Text(snapshot.printerName)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
                 if snapshot.isActive {
                     SafeSection { JobSubtitle(state: state, font: .caption) }
                     SafeSection {
@@ -256,9 +241,6 @@ private struct StatusCard: View {
                         }
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.7))
-                    }
-                    SafeSection {
-                        SegmentedProgress(progress: state.progress, height: 7, spacing: 2)
                     }
                     if detailed {
                         SafeSection {
@@ -321,22 +303,10 @@ private struct PrintStatusSmallView: View {
     var body: some View {
         let state = snapshot.contentState
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top) {
-                SafeSection {
-                    BuildUpThumbnail(
-                        cover: snapshot.cover,
-                        fraction: snapshot.isActive ? buildFraction(state) : 1,
-                        width: 56, height: 72, cornerRadius: 12
-                    )
-                    .overlay(alignment: .topTrailing) {
-                        issueBadge(state).padding(-3)
-                    }
-                }
-                Spacer(minLength: 0)
-                if snapshot.isActive {
-                    PercentCapsule(state: state)
-                }
+            SafeSection {
+                statusCover(snapshot, width: 56, height: 72, cornerRadius: 12)
             }
+            Spacer(minLength: 0)
             Text(snapshot.printerName)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
@@ -346,9 +316,6 @@ private struct PrintStatusSmallView: View {
                     Countdown(state: state)
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(.white)
-                }
-                SafeSection {
-                    SegmentedProgress(progress: state.progress, height: 6, spacing: 2)
                 }
             } else {
                 FinishedText(snapshot: snapshot, size: 16)
