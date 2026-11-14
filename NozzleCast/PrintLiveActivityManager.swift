@@ -340,7 +340,7 @@ final class PrintLiveActivityManager {
 
     /// `startedAt`, when non-nil, is the activity's existing start date and is used verbatim.
     /// Only a brand-new activity (which has none yet) gets the back-computed fallback below.
-    private static func contentState(for printer: Printer, coverImage: Data?, startedAt existingStartedAt: Date? = nil) -> PrintActivityAttributes.ContentState {
+    static func contentState(for printer: Printer, coverImage: Data?, startedAt existingStartedAt: Date? = nil) -> PrintActivityAttributes.ContentState {
         let progress = printer.progress ?? 0
         let now = Date()
         let estimatedEnd = printer.etaMinutesRemaining.map { now.addingTimeInterval(TimeInterval($0 * 60)) }
