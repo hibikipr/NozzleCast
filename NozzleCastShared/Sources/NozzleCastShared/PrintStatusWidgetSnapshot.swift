@@ -26,6 +26,12 @@ public struct PrintStatusSnapshot: Codable, Sendable, Equatable {
     public var lastJobName: String?
     /// When idle: when that last print ended.
     public var finishedAt: Date?
+    /// When idle: how that last print ended, so a failed one doesn't read as "Finished".
+    public var lastOutcome: Outcome?
+
+    public enum Outcome: String, Codable, Sendable {
+        case completed, failed, cancelled
+    }
 
     public init(
         printerID: String,
@@ -45,7 +51,8 @@ public struct PrintStatusSnapshot: Codable, Sendable, Equatable {
         issueCount: Int? = nil,
         stageDetail: String? = nil,
         lastJobName: String? = nil,
-        finishedAt: Date? = nil
+        finishedAt: Date? = nil,
+        lastOutcome: Outcome? = nil
     ) {
         self.printerID = printerID
         self.printerName = printerName
@@ -65,6 +72,7 @@ public struct PrintStatusSnapshot: Codable, Sendable, Equatable {
         self.stageDetail = stageDetail
         self.lastJobName = lastJobName
         self.finishedAt = finishedAt
+        self.lastOutcome = lastOutcome
     }
 
     public init(from decoder: Decoder) throws {
@@ -88,6 +96,8 @@ public struct PrintStatusSnapshot: Codable, Sendable, Equatable {
         stageDetail = try c.decodeIfPresent(String.self, forKey: .stageDetail)
         lastJobName = try c.decodeIfPresent(String.self, forKey: .lastJobName)
         finishedAt = try c.decodeIfPresent(Date.self, forKey: .finishedAt)
+        // `try?`: an outcome a later version adds decodes as unknown rather than failing the snapshot.
+        lastOutcome = (try? c.decodeIfPresent(Outcome.self, forKey: .lastOutcome)) ?? nil
     }
 }
 

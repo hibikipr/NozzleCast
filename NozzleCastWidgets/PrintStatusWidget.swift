@@ -180,8 +180,15 @@ private struct FinishedText: View {
 
     var body: some View {
         Group {
+            // Worded by how the last print ended: a failed or cancelled print didn't "finish", and
+            // an outcome the app couldn't read gets the neutral wording.
             if let finishedAt = snapshot.finishedAt {
-                Text("Finished \(finishedAt, style: .relative) ago")
+                switch snapshot.lastOutcome {
+                case .completed: Text("Finished \(finishedAt, style: .relative) ago")
+                case .failed: Text("Failed \(finishedAt, style: .relative) ago")
+                case .cancelled: Text("Cancelled \(finishedAt, style: .relative) ago")
+                case nil: Text("Last print \(finishedAt, style: .relative) ago")
+                }
             } else {
                 Text("Idle")
             }
@@ -518,6 +525,7 @@ private func idlePrintStatusPreviewSnapshot() -> PrintStatusSnapshot {
         stateLabel: "Idle",
         isActive: false,
         lastJobName: "Honeycomb_Organizer.3mf",
-        finishedAt: .now.addingTimeInterval(-25 * 60)
+        finishedAt: .now.addingTimeInterval(-25 * 60),
+        lastOutcome: .completed
     )
 }

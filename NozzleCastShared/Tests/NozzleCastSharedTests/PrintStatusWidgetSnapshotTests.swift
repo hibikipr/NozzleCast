@@ -103,6 +103,24 @@ struct PrintStatusWidgetSnapshotTests {
         #expect(decoded.isActive == true)
     }
 
+    @Test func lastOutcomeRoundTrips() throws {
+        let snapshot = PrintStatusSnapshot(printerID: "garagea1", printerName: "Garage A1", lastOutcome: .failed)
+
+        let decoded = try JSONDecoder().decode(PrintStatusSnapshot.self, from: JSONEncoder().encode(snapshot))
+
+        #expect(decoded.lastOutcome == .failed)
+    }
+
+    /// An outcome a later app version adds must not cost the whole snapshot.
+    @Test func unknownLastOutcomeDecodesAsNil() throws {
+        let json = Data(#"{"printerID":"garagea1","printerName":"Garage A1","lastOutcome":"skipped","isActive":false}"#.utf8)
+
+        let decoded = try JSONDecoder().decode(PrintStatusSnapshot.self, from: json)
+
+        #expect(decoded.printerName == "Garage A1")
+        #expect(decoded.lastOutcome == nil)
+    }
+
     @Test func storeLoadsOlderSnapshotDataFromDefaults() {
         withIsolatedDefaults { defaults in
             let older = Data(#"[{"printerID":"vich2c","printerName":"Vich 2C","futureKey":"y"}]"#.utf8)

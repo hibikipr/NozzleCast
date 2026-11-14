@@ -825,6 +825,7 @@ final class AppStore {
             let isActive = printer.jobPhase.map(\.isActive) ?? [.printing, .paused].contains(printer.state)
             var lastJobName: String?
             var finishedAt: Date?
+            var lastOutcome: PrintStatusSnapshot.Outcome?
             if !isActive {
                 let newest = history
                     .filter { $0.printerID == printer.id || $0.printerName == printer.name }
@@ -832,6 +833,12 @@ final class AppStore {
                 // Raw names: LiveActivityCoverStore strips .3mf/.gcode itself when keying covers.
                 lastJobName = newest?.name ?? printer.jobFileName
                 finishedAt = newest?.finishedAt
+                switch newest?.outcome {
+                case .completed: lastOutcome = .completed
+                case .failed: lastOutcome = .failed
+                case .cancelled: lastOutcome = .cancelled
+                case .other, nil: lastOutcome = nil
+                }
             }
             return PrintStatusSnapshot(
                 printerID: PrintActivityAttributes.normalizedID(printer.name),
@@ -851,7 +858,8 @@ final class AppStore {
                 issueCount: state.issueCount,
                 stageDetail: state.stageDetail,
                 lastJobName: lastJobName,
-                finishedAt: finishedAt
+                finishedAt: finishedAt,
+                lastOutcome: lastOutcome
             )
         }
     }
