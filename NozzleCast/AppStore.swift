@@ -143,6 +143,8 @@ final class AppStore {
         resolvePendingDeepLink()
         AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
         WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
+        PrintStatusWidgetStore.save(Self.makePrintStatusSnapshots(printers: printers, history: printHistory))
+        WidgetCenter.shared.reloadTimelines(ofKind: "PrintStatusWidget")
         if ScreenshotMocks.isActive {
             Task { await startScreenshotLiveActivities() }
         }
@@ -440,6 +442,8 @@ final class AppStore {
 
             AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
             WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
+            PrintStatusWidgetStore.save(Self.makePrintStatusSnapshots(printers: printers, history: printHistory))
+            WidgetCenter.shared.reloadTimelines(ofKind: "PrintStatusWidget")
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
@@ -808,6 +812,48 @@ final class AppStore {
         let trimmed = normalized.replacingOccurrences(of: #"(\.\d{3})\d+"#, with: "$1", options: .regularExpression)
         let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
         return (try? fractional.parse(trimmed)) ?? (try? Date.ISO8601FormatStyle().parse(trimmed))
+    }
+
+    /// One snapshot per printer for the Print Status widget. The content-state fields come from the same
+    /// derivation the Live Activity uses, so the widget and the Lock Screen agree.
+    static func makePrintStatusSnapshots(printers: [Printer], history: [PrintRecord]) -> [PrintStatusSnapshot] {
+        printers.map { printer in
+            let state = PrintLiveActivityManager.contentState(for: printer, coverImage: nil)
+            // Same rule the Live Activity uses to keep an activity alive: a job is loaded (printing or
+            // paused). Without a `jobPhase` it falls back to the printer's state: demo printers only
+            // set that, and a real printer with no reading is offline, so it still counts as idle.
+            let isActive = printer.jobPhase.map(\.isActive) ?? [.printing, .paused].contains(printer.state)
+            var lastJobName: String?
+            var finishedAt: Date?
+            if !isActive {
+                let newest = history
+                    .filter { $0.printerID == printer.id || $0.printerName == printer.name }
+                    .max { ($0.finishedAt ?? $0.startedAt ?? .distantPast) < ($1.finishedAt ?? $1.startedAt ?? .distantPast) }
+                // Raw names: LiveActivityCoverStore strips .3mf/.gcode itself when keying covers.
+                lastJobName = newest?.name ?? printer.jobFileName
+                finishedAt = newest?.finishedAt
+            }
+            return PrintStatusSnapshot(
+                printerID: PrintActivityAttributes.normalizedID(printer.name),
+                printerName: printer.name,
+                stateLabel: state.stateLabel,
+                isActive: isActive,
+                progress: state.progress,
+                jobName: state.jobName,
+                startedAt: state.startedAt,
+                estimatedEndAt: state.estimatedEndAt,
+                currentLayer: state.currentLayer,
+                totalLayers: state.totalLayers,
+                nozzleTempC: state.nozzleTempC,
+                rightNozzleTempC: state.rightNozzleTempC,
+                bedTempC: state.bedTempC,
+                issueSeverity: state.issueSeverity,
+                issueCount: state.issueCount,
+                stageDetail: state.stageDetail,
+                lastJobName: lastJobName,
+                finishedAt: finishedAt
+            )
+        }
     }
 
     static func makeAMSSnapshots(printers: [Printer], spools: [Spool]) -> [PrinterAMSSnapshot] {

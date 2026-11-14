@@ -28,12 +28,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             MainActor.assumeIsolated { self?.appDidBecomeActive() }
         }
 
-        // Must be registered before launch finishes. Checks Bambuddy's notification log when no
-        // Firebase config delivers alerts as pushes — see BambuddyAlertFeed.
+        // Must be registered before launch finishes. Runs a full printer refresh, which also checks for
+        // alerts (the relay's feed or Bambuddy's notification log; see BambuddyAlertFeed) and rewrites
+        // the widget snapshots, so Home Screen widgets stay current while the app is closed.
         BGTaskScheduler.shared.register(forTaskWithIdentifier: BambuddyAlertFeed.backgroundTaskIdentifier, using: nil) { [store] task in
             Task { @MainActor in
                 BambuddyAlertFeed.scheduleBackgroundCheck()
-                let work = Task { _ = await store.checkBambuddyAlerts() }
+                let work = Task {
+                    let before = store.lastSuccessfulRefreshAt
+                    await store.refresh()
+                    // A refresh checks alerts only when it succeeds; if it didn't, still check them.
+                    if store.lastSuccessfulRefreshAt == before { _ = await store.checkBambuddyAlerts() }
+                }
                 task.expirationHandler = { work.cancel() }
                 await work.value
                 task.setTaskCompleted(success: !work.isCancelled)
