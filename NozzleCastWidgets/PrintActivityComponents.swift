@@ -262,25 +262,27 @@ func countdownEnd(_ state: PrintActivityAttributes.ContentState) -> Date? {
 ///
 /// `compact` (the Dynamic Island's compact trailing slot) keeps the text short. iOS narrows that
 /// slot when a second app's Live Activity is running, and an h:mm:ss timer clipped to "3:25:"
-/// (issue #110): timer text doesn't honour `minimumScaleFactor`. So while an hour or more
-/// remains it shows "3h 25m", which can shrink to fit but only changes on the next push (a print
-/// pushes every percent or so), and in the last hour the ticking m:ss timer ("24:59"). A timer
-/// can't tick as a short h:mm: with fewer fields or minute precision it spells the time out
-/// ("1 hour, 11 minutes").
+/// (issue #110): timer text doesn't honour `minimumScaleFactor`. With a phone call in the island
+/// the slot leaves ours about 20 pt, which clipped even the last hour's m:ss timer to "2:5". So it
+/// never ticks: "3h 25m", "25m", "1m", which can shrink to fit and change on each push (a print
+/// pushes every percent or so). A timer can't tick as short text: with fewer fields or minute
+/// precision it spells the time out ("1 hour, 11 minutes").
 struct Countdown: View {
     var state: PrintActivityAttributes.ContentState
     var compact = false
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
-        if let end = countdownEnd(state), compact, end.timeIntervalSinceNow >= 3600 {
+        if let end = countdownEnd(state), compact {
+            // Whole minutes, rounded up so the last minute reads "1m" rather than "0m".
+            let minutes = (end.timeIntervalSinceNow / 60).rounded(.up)
             Text(
-                Duration.seconds(end.timeIntervalSinceNow)
+                Duration.seconds(minutes * 60)
                     .formatted(.units(allowed: [.hours, .minutes], width: .narrow))
             )
             .monospacedDigit()
             .lineLimit(1)
-            .minimumScaleFactor(0.6)
+            .minimumScaleFactor(0.5)
         } else if let end = countdownEnd(state) {
             Text(
                 .currentDate,

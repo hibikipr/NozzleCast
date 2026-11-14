@@ -97,14 +97,14 @@ struct PrintActivityWidget: Widget {
                     // Countdown while printing, the percentage otherwise (a paused or finished
                     // print has no remaining time worth showing in this little space).
                     if countdownEnd(context.state) != nil {
-                        // Sized for the short text `compact` keeps to ("3h 25m", "24:59"). The
-                        // old 60 pt frame was wider than the slot iOS leaves beside another
-                        // app's Live Activity.
+                        // At most 42 pt, and narrower when iOS gives the slot less (beside a
+                        // phone call it's about 20): the short text `compact` keeps to ("3h 25m",
+                        // "25m") shrinks to fit rather than clipping.
                         Countdown(state: context.state, compact: true)
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white)
                             .multilineTextAlignment(.trailing)
-                            .frame(width: 42, alignment: .trailing)
+                            .frame(maxWidth: 42, alignment: .trailing)
                     } else {
                         LiveProgressText(state: context.state)
                             .font(.caption2)
