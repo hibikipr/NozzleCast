@@ -964,12 +964,17 @@ struct BambuddyAPIClient {
         }
     }
 
+    /// Sends what Bambuddy's own SpoolBuddy Quick Add sends for the same values: no colour name
+    /// rather than an empty one (a tag whose colour the catalog doesn't know), and in Spoolman mode
+    /// no core weight — Bambuddy writes a sent one to the Spoolman spool's own `spool_weight`, which
+    /// stops it inheriting its filament's (Bambuddy #2908), so its kiosk leaves it out.
     @discardableResult
     func createSpool(material: String, colorName: String, rgba: String, brand: String, labelWeight: Int, extras: SpoolCreateExtras = SpoolCreateExtras()) async throws -> BambuddySpoolDTO {
+        let spoolman = inventory == .spoolman
         let body = try encoder.encode(SpoolCreateBody(
-            material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: labelWeight,
+            material: material, colorName: colorName.isEmpty ? nil : colorName, rgba: rgba, brand: brand, labelWeight: labelWeight,
             subtype: extras.subtype, extraColors: extras.extraColors, effectType: extras.effectType,
-            coreWeight: extras.coreWeight, coreWeightCatalogId: extras.coreWeightCatalogId,
+            coreWeight: spoolman ? nil : extras.coreWeight, coreWeightCatalogId: spoolman ? nil : extras.coreWeightCatalogId,
             slicerFilament: extras.slicerFilament, slicerFilamentName: extras.slicerFilamentName,
             nozzleTempMin: extras.nozzleTempMin, nozzleTempMax: extras.nozzleTempMax
         ))
@@ -1025,6 +1030,18 @@ struct BambuddySpoolBuddyDeviceDTO: Codable, Equatable {
 private struct SpoolTagLinkBody: Codable {
     var tagUid: String
     var trayUuid: String?
+    // Built-in inventory only, labelled as Bambuddy's SpoolBuddy kiosk labels its own links.
+    var tagType: String?
+    var dataOrigin: String?
+}
+
+/// Why a tag is being linked, recorded as the spool's `data_origin` the way Bambuddy's SpoolBuddy
+/// kiosk records it.
+enum TagLinkOrigin: String {
+    /// A new spool added for the tag (the kiosk's Quick Add).
+    case newSpool = "spoolbuddy"
+    /// The tag linked to a spool already in the inventory.
+    case existingSpool = "nfc_link"
 }
 
 extension BambuddyAPIClient {
@@ -1054,12 +1071,22 @@ extension BambuddyAPIClient {
     /// Stores an NFC tag on a spool, so the next scan of that tag finds it. The two inventories
     /// name the route differently; a Bambu spool is matched by `trayUUID` (the same on both of
     /// its tags) ahead of the chip UID.
-    func linkTag(spoolID: Int, tagUID: String, trayUUID: String?) async throws {
-        let body = try encoder.encode(SpoolTagLinkBody(tagUid: tagUID, trayUuid: trayUUID))
-        let path = switch inventory {
-        case .builtIn: "\(inventory.basePath)/spools/\(spoolID)/link-tag"
-        case .spoolman: "\(inventory.basePath)/spools/\(spoolID)/tag"
+    /// In the built-in inventory the spool also gets the kiosk's `tag_type` ("bambulab" when the
+    /// tag has a tray UUID, "generic" otherwise) and `data_origin`. Spoolman's tag route takes only
+    /// the tag itself, as the kiosk sends it.
+    func linkTag(spoolID: Int, tagUID: String, trayUUID: String?, origin: TagLinkOrigin) async throws {
+        let trayUUID = trayUUID?.isEmpty == false ? trayUUID : nil
+        let path: String
+        var link = SpoolTagLinkBody(tagUid: tagUID, trayUuid: trayUUID)
+        switch inventory {
+        case .builtIn:
+            path = "\(inventory.basePath)/spools/\(spoolID)/link-tag"
+            link.tagType = trayUUID != nil ? "bambulab" : "generic"
+            link.dataOrigin = origin.rawValue
+        case .spoolman:
+            path = "\(inventory.basePath)/spools/\(spoolID)/tag"
         }
+        let body = try encoder.encode(link)
         _ = try await send(request(path, method: "PATCH", body: body))
     }
 }
