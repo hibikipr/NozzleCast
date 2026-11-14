@@ -1251,7 +1251,7 @@ final class AppStore {
         performAction(localChange: { self.spools.insert(spool, at: 0) }) { client in
             let created = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams, extras: extras)
             if let tag {
-                try await client.linkTag(spoolID: created.id, tagUID: tag.uid, trayUUID: tag.trayUUID)
+                try await client.linkTag(spoolID: created.id, tagUID: tag.uid, trayUUID: tag.trayUUID, origin: .newSpool)
             }
         }
         return spool
@@ -1273,7 +1273,7 @@ final class AppStore {
         performAction(localChange: {
             if let idx = self.spools.firstIndex(where: { $0.id == spoolID }) { self.spools[idx].hasTag = true }
         }) { client in
-            try await client.linkTag(spoolID: bbID, tagUID: uid, trayUUID: trayUUID)
+            try await client.linkTag(spoolID: bbID, tagUID: uid, trayUUID: trayUUID, origin: .existingSpool)
         }
     }
 
