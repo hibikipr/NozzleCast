@@ -236,8 +236,8 @@ private struct StatusCard: View {
                                     Text(end, style: .time)
                                 }
                             }
+                            // No layer count: like the %, it only moves when the app refreshes.
                             Spacer()
-                            layerCounter(state)
                         }
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.7))
