@@ -24,7 +24,7 @@ description: |-
   NozzleCast talks directly to your self-hosted server's API. Live Activity push updates go through a small relay you run yourself (nozzlecast-relay, open source). There is no NozzleCast account and no NozzleCast server in between — your printer data stays on your own infrastructure.
 
   Requires an existing compatible self-hosted printer management server on your network. Live Activities and Lock Screen push updates require the optional nozzlecast-relay component.
-keywords: bambu,3d printing,3d printer,filament,ams,print farm,live activity,x1c,p1s,a1,octoprint
+keywords: bambu,3d printing,filament,ams,print farm,live activity,x1c,p1s,a1,h3c,spool,queue
 promotional_text: 'New in 1.5: animated printers, four card layouts, a redesigned
   Live Activity, and spool reader scanning, all driven by your own self-hosted server.'
 marketing_url: https://nozzlecast.townsville.cc
