@@ -30,31 +30,17 @@ promotional_text: 'New in 1.5: animated printers, four card layouts, a redesigne
 marketing_url: https://nozzlecast.townsville.cc
 support_url: https://nozzlecast.townsville.cc
 whats_new: |-
-  A LIVELIER MONITOR
-  • Each printer's picture is animated to show what it's doing: printing, paused, finished, or idle.
-  • Choose from four card layouts: Classic, Twin tiles, Hero, and Picture in picture. Cards show the live camera while printing, the job's cover while paused, and the last print when idle.
-  • Adds the Bambu Lab H3C.
+  PRINT STATUS WIDGET
+  • A new Home Screen widget shows your print like the Lock Screen Live Activity: the model's cover, the printer, and a countdown that ticks on its own.
+  • Small shows one printer, medium adds the job, finish time and temperatures, and large shows two printers.
+  • Choose a printer in Edit Widget, or leave it on automatic to show the print that finishes soonest.
+  • A paused print says Paused, and an idle printer shows its last print and whether it finished, failed or was cancelled.
 
-  REDESIGNED LIVE ACTIVITY
-  • A new Lock Screen and Dynamic Island design with a sharp cover of the model, on a background that keeps it visible whatever the filament color.
-  • With nozzlecast-relay, covers also show for HTTPS-dispatched prints.
+  ALWAYS UP TO DATE
+  • Background refresh now updates your printers as well as alerts, so widgets stay current while NozzleCast is closed.
 
-  SCAN SPOOLS WITH A SPOOL READER
-  • Put a spool on a spool reader connected to your server and NozzleCast opens it, ready to edit or assign to an AMS slot.
-  • A tag that isn't linked yet can be linked to one of your spools, or added as a new spool with its material, color, and brand filled in from the tag.
+  DYNAMIC ISLAND
+  • The time remaining is no longer cut off when another app's Live Activity or a phone call shares the island. It now reads 3h 25m, 25m, or 1m.
 
-  NOTIFICATIONS
-  • Notification photos are bigger and open full screen, with pinch to zoom.
-  • Swipe left on an alert you don't need to mute it. With nozzlecast-relay, muted alerts stay off your Lock Screen too.
-  • Settings shows where your alerts come from. nozzlecast-relay can deliver them without Firebase.
-
-  PRINTS
-  • Print history shows a picture for every print, including HTTPS-dispatched ones with nozzlecast-relay.
-  • When your server holds a queued job because its filament isn't loaded or won't last, NozzleCast says why and lets you print anyway.
-  • Rate each print of a file you've printed more than once, on servers that track every print separately.
-
-  ALSO
-  • One blue accent color across the app and widgets.
-  • Translucent filaments added from a spool tag stay translucent.
-  • The time remaining on the printer screen is no longer cut off.
-  • The Scan screen fits in landscape and on iPhone Duo.
+  SPOOL READER
+  • Spools added or linked from a scanned tag are saved the same way your server saves them itself, with the tag type, empty spool weight and color name handled to match.
