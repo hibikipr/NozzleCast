@@ -16,6 +16,8 @@ struct EditSpoolSheet: View {
     @State private var extraColorsText: String
     @State private var brand: String
     @State private var subtype: String
+    /// Bambuddy's `effect_type`, "" for none.
+    @State private var effectType: String
     @State private var netWeightGrams: String
     @State private var nozzleTempMin: String
     @State private var nozzleTempMax: String
@@ -35,6 +37,7 @@ struct EditSpoolSheet: View {
         _extraColorsText = State(initialValue: spool.extraColorHexes.joined(separator: ","))
         _brand = State(initialValue: spool.brand)
         _subtype = State(initialValue: spool.subtype ?? "")
+        _effectType = State(initialValue: spool.effectType ?? "")
         _netWeightGrams = State(initialValue: String(spool.netWeightGrams))
         _nozzleTempMin = State(initialValue: spool.nozzleTempMin.map(String.init) ?? "")
         _nozzleTempMax = State(initialValue: spool.nozzleTempMax.map(String.init) ?? "")
@@ -344,23 +347,57 @@ struct EditSpoolSheet: View {
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
 
-                if !extraColorHexes.isEmpty {
-                    FilamentSwatchView(
-                        colorHex: colorHex,
-                        alpha: spool.colorAlpha,
-                        extraColorHexes: extraColorHexes,
-                        subtype: subtype.isEmpty ? nil : subtype,
-                        effectType: spool.effectType
-                    )
-                    .frame(height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-
                 Text("For a dual/multi-color or gradient-effect spool. Leave blank for a plain single color.")
                     .ncFont(size: 11, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textTertiary)
             }
+
+            effectPicker
             }
+        }
+    }
+
+    /// Bambuddy's Effect field (Color & Cost › Effect): what the swatch draws — a finish overlay,
+    /// or how extra colors split. The subtype doesn't, so this is the only way to set it here.
+    /// Same options and order as Bambuddy's `FILAMENT_EFFECT_OPTIONS`; "" is None.
+    private static let effectOptions: [(value: String, label: LocalizedStringKey)] = [
+        ("", "None"),
+        ("sparkle", "Sparkle"), ("wood", "Wood"), ("marble", "Marble"), ("glow", "Glow"), ("matte", "Matte"),
+        ("silk", "Silk"), ("galaxy", "Galaxy"), ("rainbow", "Rainbow"), ("metal", "Metal"), ("translucent", "Translucent"),
+        ("gradient", "Gradient"), ("dual-color", "Dual Color"), ("tri-color", "Tri Color"), ("multicolor", "Multicolor"),
+    ]
+
+    private var effectPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Effect")
+                .ncFont(size: 12, weight: .medium, relativeTo: .caption)
+                .foregroundStyle(NCColor.textSecondary)
+            HStack(spacing: 12) {
+                Picker("Effect", selection: $effectType) {
+                    ForEach(Self.effectOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                    // An effect a newer Bambuddy added, kept rather than silently dropped.
+                    if !effectType.isEmpty, !Self.effectOptions.contains(where: { $0.value == effectType }) {
+                        Text(effectType.capitalized).tag(effectType)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(.white)
+                Spacer()
+                FilamentSwatchView(
+                    colorHex: colorHex,
+                    alpha: spool.colorAlpha,
+                    extraColorHexes: extraColorHexes,
+                    subtype: subtype.isEmpty ? nil : subtype,
+                    effectType: effectType.isEmpty ? nil : effectType
+                )
+                .frame(width: 64, height: 28)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
         }
     }
 
@@ -478,6 +515,8 @@ struct EditSpoolSheet: View {
             extraColorHexes: extraColorHexes,
             brand: brand.trimmingCharacters(in: .whitespaces),
             subtype: subtype.trimmingCharacters(in: .whitespaces).isEmpty ? nil : subtype.trimmingCharacters(in: .whitespaces),
+            // Spoolman has no effect field, so leave it alone there.
+            effectType: isSpoolman ? nil : effectType,
             netWeightGrams: Int(netWeightGrams) ?? spool.netWeightGrams,
             nozzleTempMin: Int(nozzleTempMin),
             nozzleTempMax: Int(nozzleTempMax),

@@ -177,7 +177,7 @@ private struct LowStockSuggestionRow: View {
                 .frame(width: 30, height: 30)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(spool.brand) \(spool.materialWithEffect)")
+                Text("\(spool.brand) \(spool.materialWithSubtype)")
                     .ncFont(size: 14, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                 Text("\(spool.colorName) · \(spool.remainingGrams) g left", comment: "Low-stock spool: color and grams remaining")

@@ -314,7 +314,7 @@ struct SpoolBuddyScanPanel: View {
             .clipShape(Circle())
 
             VStack(spacing: 4) {
-                Text(spool.map { "\($0.materialWithEffect) · \($0.colorName)" } ?? [dto.material, dto.colorName].compactMap { $0 }.joined(separator: " · "))
+                Text(spool.map { "\($0.materialWithSubtype) · \($0.colorName)" } ?? [dto.material, dto.colorName].compactMap { $0 }.joined(separator: " · "))
                     .ncFont(size: 18, weight: .bold, relativeTo: .headline)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
@@ -505,7 +505,7 @@ struct LinkTagSpoolPicker: View {
                 titleVisibility: .visible,
                 presenting: pendingSpool
             ) { spool in
-                Button(String(localized: "Link to \(spool.materialWithEffect) · \(spool.colorName)", comment: "Link tag picker: confirm linking the tag to this spool")) {
+                Button(String(localized: "Link to \(spool.materialWithSubtype) · \(spool.colorName)", comment: "Link tag picker: confirm linking the tag to this spool")) {
                     onPick(spool)
                     dismiss()
                 }

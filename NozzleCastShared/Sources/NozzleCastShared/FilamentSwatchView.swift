@@ -132,23 +132,17 @@ public struct FilamentSwatchView: View {
         _ context: inout GraphicsContext, size: CGSize, colorHex: String,
         extraColorHexes: [String], subtype: String?, effectType: String?
     ) {
-        // Prefers `effectType` (Bambuddy's own finish label) but falls back to `subtype`,
-        // since a manually-entered finish like "Glow" or "Matte" often only ever lands in
-        // `subtype` — without this, swatches for those spools would show no finish overlay at
-        // all despite the spool's displayed name saying otherwise. Mirrors the same fallback
-        // `Spool.materialWithEffect` uses for the text label.
-        let resolvedEffect: String?
-        if let effectType, !effectType.isEmpty {
-            resolvedEffect = effectType.lowercased()
-        } else if let subtype, !subtype.isEmpty {
-            resolvedEffect = subtype.lowercased()
-        } else {
-            resolvedEffect = nil
-        }
-        guard let effect = resolvedEffect else { return }
+        // Only the spool's Effect field (`effect_type`) picks the overlay, as in Bambuddy's
+        // `buildFilamentBackground`: a subtype such as "Matte Dual Color" is a product name and
+        // paints nothing. NozzleCast used to let the subtype stand in for a missing effect, which
+        // drew finishes Bambuddy's own inventory doesn't.
+        guard let effect = effectType?.lowercased(), !effect.isEmpty else { return }
         switch effect {
-        case "sparkle", "galaxy":
+        case "sparkle":
             drawSparkle(&context, size: size, seed: colorHex + extraColorHexes.joined() + (subtype ?? "") + effect)
+        case "galaxy":
+            // Bambuddy draws Galaxy as a stronger version of Silk's sheen, not as sparkle.
+            drawSheen(&context, size: size, peakOpacity: 0.40)
         case "wood":
             drawWoodGrain(&context, size: size)
         case "marble":
