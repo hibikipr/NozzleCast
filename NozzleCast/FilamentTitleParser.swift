@@ -21,7 +21,7 @@ enum FilamentTitleParser {
         "Protopasta", "ColorFabb", "Overture", "Hatchbox", "Inland", "Creality",
         "Elegoo", "Anycubic", "Geeetech", "Eryone", "Amolen", "Duramic", "Sunlu",
         "eSUN", "Jayo", "Atomic", "Spectrum", "3DJake", "Comgrow", "Tinmorry",
-        "Kingroon", "Flashforge", "Ziro", "Novamaker", "GST3D", "Iemai",
+        "Kingroon", "Flashforge", "Ziro", "Novamaker", "GST3D", "Iemai", "Panchroma",
     ]
 
     // Order matters: most specific / longest token first (PETG before PET, PLA+ before PLA).

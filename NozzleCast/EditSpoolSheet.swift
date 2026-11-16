@@ -359,13 +359,7 @@ struct EditSpoolSheet: View {
 
     /// Bambuddy's Effect field (Color & Cost › Effect): what the swatch draws — a finish overlay,
     /// or how extra colors split. The subtype doesn't, so this is the only way to set it here.
-    /// Same options and order as Bambuddy's `FILAMENT_EFFECT_OPTIONS`; "" is None.
-    private static let effectOptions: [(value: String, label: LocalizedStringKey)] = [
-        ("", "None"),
-        ("sparkle", "Sparkle"), ("wood", "Wood"), ("marble", "Marble"), ("glow", "Glow"), ("matte", "Matte"),
-        ("silk", "Silk"), ("galaxy", "Galaxy"), ("rainbow", "Rainbow"), ("metal", "Metal"), ("translucent", "Translucent"),
-        ("gradient", "Gradient"), ("dual-color", "Dual Color"), ("tri-color", "Tri Color"), ("multicolor", "Multicolor"),
-    ]
+    private static let effectOptions = SpoolEffectOptions.all
 
     private var effectPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
