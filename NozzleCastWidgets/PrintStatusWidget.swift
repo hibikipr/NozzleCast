@@ -209,6 +209,11 @@ private struct StatusCard: View {
     let thumbHeight: CGFloat
     let detailed: Bool
 
+    /// Medium only: a dual-nozzle print's three temperature chips fill the row the stamp shares.
+    private var stampBesideName: Bool {
+        detailed && snapshot.isActive && snapshot.nozzleTempC != nil && snapshot.rightNozzleTempC != nil
+    }
+
     var body: some View {
         let state = snapshot.contentState
         HStack(alignment: .top, spacing: 14) {
@@ -217,10 +222,16 @@ private struct StatusCard: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(snapshot.printerName)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(snapshot.printerName)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if stampBesideName {
+                        Spacer(minLength: 0)
+                        StatusStamp(capturedAt: capturedAt, now: now)
+                    }
+                }
                 if snapshot.isActive {
                     SafeSection { JobSubtitle(state: state, font: .caption) }
                     SafeSection {
@@ -245,10 +256,14 @@ private struct StatusCard: View {
                     if detailed {
                         SafeSection {
                             HStack(spacing: 6) {
-                                // Chips never compress; the stamp gives way first.
+                                // Chips never compress. A dual-nozzle printer's three chips leave
+                                // ~20pt, which cut the stamp to "32m a…", so there it sits beside
+                                // the name instead (see `stampBesideName`).
                                 temperatureChips(state).fixedSize()
                                 Spacer(minLength: 0)
-                                StatusStamp(capturedAt: capturedAt, now: now)
+                                if !stampBesideName {
+                                    StatusStamp(capturedAt: capturedAt, now: now)
+                                }
                             }
                         }
                     }
@@ -290,7 +305,8 @@ private struct StatusStamp: View {
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.4))
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                // Short text ("32m ago"): never shrunk or cut; the layout makes room for it.
+                .fixedSize()
         }
     }
 }
