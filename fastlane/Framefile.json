@@ -17,6 +17,6 @@
     { "filter": "07-print-queue", "keyword": { "text": "SMART QUEUE" }, "title": { "text": "Never print on the wrong filament" } },
     { "filter": "08-notifications", "keyword": { "text": "ALERTS THAT MATTER" }, "title": { "text": "Photos, and mute the noise" } },
     { "filter": "09-inventory", "keyword": { "text": "FILAMENT INVENTORY" }, "title": { "text": "Know every spool you own" } },
-    { "filter": "10-print-status-widget", "keyword": { "text": "ON YOUR HOME SCREEN" }, "title": { "text": "Every print, one glance away" } }
+    { "filter": "10-print-status-widget", "keyword": { "text": "ON YOUR HOME SCREEN" }, "title": { "text": "Prints and filament at a glance" } }
   ]
 }
