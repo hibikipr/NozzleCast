@@ -29,13 +29,36 @@ enum FilamentLabelReader {
             out.append(trimmed)
         }
 
-        let decoded = reading.barcodes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        // Amazon's stock labels (FNSKU, "X004AR68I3") are on most boxes sold there and in no
+        // filament database; skipping them saves a lookup and keeps them off the review screen.
+        let decoded = reading.barcodes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && !isAmazonStockCode($0) }
         for code in decoded where FilamentCode.classify(code).kind == .gtin { add(code) }
         if let printed = FilamentCode.extractBarcode(from: reading.text) { add(printed) }
         for code in decoded { add(code) }
         for sku in labelledSKUs(in: reading.text) { add(sku) }
-        for token in skuShapedTokens(in: reading.text) { add(token) }
+        for token in skuShapedTokens(in: reading.text) where !isAmazonStockCode(token) { add(token) }
         return out
+    }
+
+    /// Amazon's FNSKU: "X00" and seven letters or digits.
+    static func isAmazonStockCode(_ code: String) -> Bool {
+        code.trimmingCharacters(in: .whitespaces).range(of: #"^X0[0-9A-Z]{8}$"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// A database name made of the product line and the colour, split at the colour the label
+    /// names: ("PolyLite™ PLA Pro Blue", "Blue", "PLA") → ("Blue", "PolyLite Pro"). Nil when the
+    /// name doesn't end with that colour or is nothing but it.
+    static func split(productAndColor name: String, color: String, material: String) -> (color: String, productLine: String?)? {
+        let trimmedColor = color.trimmingCharacters(in: .whitespaces)
+        guard !trimmedColor.isEmpty, name.count > trimmedColor.count,
+              name.lowercased().hasSuffix(trimmedColor.lowercased()) else { return nil }
+        var product = String(name.dropLast(trimmedColor.count))
+        for mark in ["™", "®", "©"] { product = product.replacingOccurrences(of: mark, with: "") }
+        if !material.isEmpty {
+            product = product.replacingOccurrences(of: "\\b\(NSRegularExpression.escapedPattern(for: material))\\b", with: "", options: [.regularExpression, .caseInsensitive])
+        }
+        product = product.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-")))
+        return (trimmedColor, product.isEmpty ? nil : product)
     }
 
     /// Values after "SKU", "Article", "Art. No." or "Item", on the same line or the next (label
@@ -109,6 +132,9 @@ enum FilamentLabelReader {
     /// The colour as the label names it and, for a dual- or tri-colour roll, its parts.
     struct LabelColor: Equatable {
         var name: String?
+        /// The label names the colour in a field of its own ("COLOR: Blue"), not just somewhere in
+        /// the product name.
+        var isExplicit = false
         /// "RRGGBB" per part, in the order the label lists them.
         var partHexes: [String] = []
     }
@@ -118,6 +144,12 @@ enum FilamentLabelReader {
     /// Without one, a plain "Black-Gold" pair is both. Nil name when the label has no colour word.
     static func color(in text: String) -> LabelColor {
         let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        for line in lines {
+            if let match = line.range(of: #"^(?:COLOU?R|COLOU?R NAME)\s*[:：]\s*"#, options: [.regularExpression, .caseInsensitive]) {
+                let value = line[match.upperBound...].trimmingCharacters(in: .whitespaces)
+                if !value.isEmpty, value.count <= 40 { return LabelColor(name: titleCased(value), isExplicit: true) }
+            }
+        }
         for (i, line) in lines.enumerated() {
             let inner = line.trimmingCharacters(in: CharacterSet(charactersIn: "()[] "))
             guard line.hasPrefix("(") || line.hasPrefix("["), let parts = colorParts(inner), parts.count >= 2 else { continue }
