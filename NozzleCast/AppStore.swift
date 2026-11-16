@@ -1294,10 +1294,15 @@ final class AppStore {
             material: material,
             colorName: colorName,
             colorHex: colorHex,
+            extraColorHexes: Self.parseExtraColors(extras.extraColors),
             brand: brand,
             remainingPercent: 100,
             netWeightGrams: netWeightGrams,
-            location: .storage(name: nil)
+            location: .storage(name: nil),
+            // Shown until the refresh brings the real record, so it reads "PLA Glow" with its
+            // finish from the start rather than plain "PLA".
+            subtype: extras.subtype,
+            effectType: extras.effectType
         )
         let rgba = extras.rgba ?? Self.rgba(hex: colorHex, alpha: 1)
         // The pending placeholder is replaced by the real record on the follow-up refresh — or,

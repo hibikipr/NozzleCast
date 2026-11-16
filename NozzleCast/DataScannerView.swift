@@ -9,6 +9,8 @@ import AVFoundation
 final class ScannerBridge {
     var lastBarcode: String?
     var liveText: String = ""
+    /// Barcodes in view while reading a label (text mode), so the label's lookup can use them.
+    var liveBarcodes: [String] = []
     /// Set if the capture session fails or dies after starting (e.g. hardware claimed
     /// elsewhere, torn down mid-session) — surfaced by the UI instead of a silent black screen.
     var failureMessage: String?
@@ -16,6 +18,7 @@ final class ScannerBridge {
     func reset() {
         lastBarcode = nil
         liveText = ""
+        liveBarcodes = []
         failureMessage = nil
     }
 }
@@ -99,7 +102,9 @@ private struct DataScannerView: UIViewControllerRepresentable {
     var bridge: ScannerBridge
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
-        let types: Set<DataScannerViewController.RecognizedDataType> = mode == .barcode ? [.barcode()] : [.text()]
+        // A label is read for its barcodes as well as its text: a box's EAN is often only in a
+        // barcode or QR code.
+        let types: Set<DataScannerViewController.RecognizedDataType> = mode == .barcode ? [.barcode()] : [.text(), .barcode()]
         let vc = DataScannerViewController(
             recognizedDataTypes: types,
             qualityLevel: .balanced,
@@ -187,6 +192,10 @@ private struct DataScannerView: UIViewControllerRepresentable {
                     return nil
                 }
                 bridge.liveText = lines.joined(separator: "\n")
+                bridge.liveBarcodes = items.compactMap { item -> String? in
+                    if case .barcode(let barcode) = item { return barcode.payloadStringValue }
+                    return nil
+                }
             }
         }
     }

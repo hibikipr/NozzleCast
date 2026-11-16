@@ -1148,7 +1148,7 @@ struct SpoolBuddyTagDataDTO: Codable, Equatable {
     /// What the review form starts with for this roll.
     var scannedResult: ScannedResult {
         ScannedResult(
-            material: FilamentMaterial.from(bambuddyMaterial: material),
+            material: BambuddyMaterials.canonical(material),
             colorName: colorName ?? "",
             colorHex: colorHex ?? "#808080",
             brand: brand ?? "Bambu Lab",
@@ -1158,11 +1158,14 @@ struct SpoolBuddyTagDataDTO: Codable, Equatable {
         )
     }
 
-    /// The material to save: the tag's own ("PETG", "ASA") while the form still shows what it
-    /// started with — the form only offers four materials, so it can't hold every tag's — and the
-    /// form's otherwise.
+    /// The material to save: the tag's own, exactly as written, while the form still shows it, and
+    /// the form's after an edit.
     func material(for form: ScannedResult) -> String {
-        FilamentMaterial.from(bambuddyMaterial: material) == form.material ? material : form.material.rawValue
+        keepsTagMaterial(form) ? material : form.material
+    }
+
+    private func keepsTagMaterial(_ form: ScannedResult) -> Bool {
+        BambuddyMaterials.canonical(material).caseInsensitiveCompare(form.material.trimmingCharacters(in: .whitespaces)) == .orderedSame
     }
 
     /// The tag's other spool fields, for the spool created from `form`. The core weight always
@@ -1172,7 +1175,7 @@ struct SpoolBuddyTagDataDTO: Codable, Equatable {
     /// while it keeps the tag's colour: after an edit they'd describe another filament.
     func createExtras(for form: ScannedResult) -> SpoolCreateExtras {
         var extras = SpoolCreateExtras(coreWeight: coreWeight, coreWeightCatalogId: coreWeightCatalogId)
-        if FilamentMaterial.from(bambuddyMaterial: material) == form.material {
+        if keepsTagMaterial(form) {
             extras.subtype = subtype
             extras.slicerFilament = slicerFilament
             extras.slicerFilamentName = slicerFilamentName

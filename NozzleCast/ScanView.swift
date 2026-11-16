@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import NozzleCastShared
 
 enum ScanMode: CaseIterable, Hashable {
     case barcode, labelPhoto, manual, spoolBuddy
@@ -18,13 +20,36 @@ enum ScanStep {
 }
 
 struct ScannedResult {
-    var material: FilamentMaterial
+    /// As Bambuddy spells it (`BambuddyMaterials.canonical`): any name, not just the form's list.
+    var material: String
     var colorName: String
     var colorHex: String
     var brand: String
     var netWeightGrams: Int
     var barcode: String?
     var alsoMatches: String?
+    /// The product line, e.g. "Dual Matte" or "Glow" — Bambuddy's spool subtype.
+    var subtype: String? = nil
+    /// Bambuddy's `effect_type` ("dual-color", "glow", "matte"…), nil for none.
+    var effectType: String? = nil
+    /// "RRGGBB" per colour of a dual- or tri-colour roll, saved as the spool's extra colours.
+    var extraColorHexes: [String] = []
+    var nozzleTempMin: Int? = nil
+    var nozzleTempMax: Int? = nil
+    /// Which code found the filament and what kind it was, shown on the review screen.
+    var matchedCode: String? = nil
+    var matchedCodeIsSKU = false
+
+    /// The spool fields beyond the form's material, colour, brand and weight.
+    var createExtras: SpoolCreateExtras {
+        var extras = SpoolCreateExtras()
+        extras.subtype = subtype.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }
+        extras.effectType = effectType.flatMap { $0.isEmpty ? nil : $0 }
+        extras.extraColors = extraColorHexes.isEmpty ? nil : extraColorHexes.joined(separator: ",")
+        extras.nozzleTempMin = nozzleTempMin
+        extras.nozzleTempMax = nozzleTempMax
+        return extras
+    }
 }
 
 struct ScanView: View {
@@ -39,7 +64,7 @@ struct ScanView: View {
 
     @State private var mode: ScanMode = .barcode
     @State private var step: ScanStep = .capture
-    @State private var result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+    @State private var result = ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
     @State private var addedSpool: Spool?
     @State private var showAssignPicker = false
     @State private var scannerBridge = ScannerBridge()
@@ -59,6 +84,8 @@ struct ScanView: View {
     @State private var assigningSpool: Spool?
     /// The unknown SpoolBuddy tag being linked to an existing spool.
     @State private var linkingTag: UnknownTag?
+    /// A label photo picked from the library, read the same way as the live camera's.
+    @State private var pickedPhoto: PhotosPickerItem?
 
     struct UnknownTag: Identifiable {
         var uid: String
@@ -111,12 +138,26 @@ struct ScanView: View {
             .onChange(of: mode) { _, newMode in
                 scannerBridge.reset()
                 if newMode == .manual {
-                    result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                    result = ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
                 }
             }
             .onChange(of: scannerBridge.lastBarcode) { _, newBarcode in
                 guard mode == .barcode, step == .capture, let newBarcode else { return }
                 runBarcodeLookup(newBarcode)
+            }
+            .onChange(of: pickedPhoto) { _, item in
+                guard let item else { return }
+                pickedPhoto = nil
+                step = .loading
+                Task {
+                    guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else {
+                        step = .capture
+                        lookupErrorMessage = String(localized: "Couldn't open that photo.")
+                        return
+                    }
+                    let reading = await LabelImageReader.read(image)
+                    runLabelRead(reading)
+                }
             }
             .alert("Enter Code Manually", isPresented: $showManualCodeEntry) {
                 TextField("Barcode or SKU", text: $manualCodeText)
@@ -218,7 +259,7 @@ struct ScanView: View {
                     // non-Bambu tag) the form starts blank; a tray UUID still says it's a genuine
                     // Bambu Lab spool.
                     result = tagData?.scannedResult
-                        ?? ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                        ?? ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
                     pendingTag = (tagUID, trayUUID)
                     pendingTagData = tagData
                     step = .review
@@ -304,7 +345,7 @@ struct ScanView: View {
         VStack(spacing: 10) {
             if mode == .labelPhoto {
                 Button {
-                    runTextParse(scannerBridge.liveText)
+                    runLabelRead(FilamentLabelReader.Reading(text: scannerBridge.liveText, barcodes: scannerBridge.liveBarcodes))
                 } label: {
                     ZStack {
                         Circle().stroke(Color.white, lineWidth: 3).frame(width: 72, height: 72)
@@ -312,8 +353,14 @@ struct ScanView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .opacity(scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
+                .disabled(!labelHasContent)
+                .opacity(labelHasContent ? 1 : 0.4)
+
+                PhotosPicker(selection: $pickedPhoto, matching: .images) {
+                    Label("Choose Photo", systemImage: "photo.on.rectangle")
+                }
+                .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
+                .foregroundStyle(NCColor.accentLight)
             } else {
                 Text("Scanning automatically…")
                     .ncFont(size: 12.5, weight: .medium, relativeTo: .caption)
@@ -377,9 +424,14 @@ struct ScanView: View {
                     .ncFont(size: 24, weight: .bold, relativeTo: .title)
 
                 VStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color(hex: result.colorHex))
+                    FilamentSwatchView(colorHex: result.colorHex, extraColorHexes: result.extraColorHexes, subtype: result.subtype, effectType: result.effectType)
                         .frame(height: 90)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    if let code = result.matchedCode {
+                        Text(result.matchedCodeIsSKU ? "Found by SKU \(code)" : "Found by barcode \(code)", comment: "Review screen: which code on the label found the filament")
+                            .ncFont(size: 11.5, relativeTo: .caption)
+                            .foregroundStyle(NCColor.textTertiary)
+                    }
                     if let also = result.alsoMatches {
                         Text("Also matches: \(also)")
                             .ncFont(size: 11.5, relativeTo: .caption)
@@ -403,13 +455,15 @@ struct ScanView: View {
 
                 VStack(spacing: 12) {
                     labeledField(String(localized: "Brand", comment: "Filament field label"), text: $result.brand)
-                    labeledField(String(localized: "Material", comment: "Filament field label"), text: Binding(
-                        get: { result.material.rawValue },
-                        set: { newValue in
-                            if let m = FilamentMaterial(rawValue: newValue) { result.material = m }
-                        }
-                    ))
+                    materialPickerField
                     labeledField(String(localized: "Color name", comment: "Filament field label"), text: $result.colorName)
+                    labeledField(String(localized: "Subtype", comment: "Filament field label: the product line, e.g. Dual Matte"), text: Binding(
+                        get: { result.subtype ?? "" },
+                        set: { result.subtype = $0.isEmpty ? nil : $0 }
+                    ))
+                    if store.inventoryBackend != .spoolman {
+                        effectField
+                    }
                     labeledField(String(localized: "Net weight (g)", comment: "Filament field label"), text: Binding(
                         get: { String(result.netWeightGrams) },
                         set: { result.netWeightGrams = Int($0) ?? result.netWeightGrams }
@@ -435,6 +489,29 @@ struct ScanView: View {
                 .padding(.top, 4)
                 .padding(.bottom, 100)
             }
+        }
+    }
+
+    /// Bambuddy's Effect, read from the label or the product name; the swatch above follows it.
+    private var effectField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Effect", comment: "Filament field label: Bambuddy's finish/effect")
+                .ncFont(size: 12, weight: .medium, relativeTo: .caption)
+                .foregroundStyle(NCColor.textSecondary)
+            Picker("Effect", selection: Binding(
+                get: { result.effectType ?? "" },
+                set: { result.effectType = $0.isEmpty ? nil : $0 }
+            )) {
+                ForEach(SpoolEffectOptions.all, id: \.value) { option in
+                    Text(option.label).tag(option.value)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(.white)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
         }
     }
 
@@ -503,28 +580,31 @@ struct ScanView: View {
         }
     }
 
+    /// Free text, as in Bambuddy, with its material list one tap away. Anything typed is saved as
+    /// typed: Bambuddy accepts any material name.
     private var materialPickerField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Material")
                 .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                 .foregroundStyle(NCColor.textSecondary)
-            Menu {
-                ForEach(FilamentMaterial.allCases) { m in
-                    Button(m.rawValue) { result.material = m }
-                }
-            } label: {
-                HStack {
-                    Text(result.material.rawValue)
-                        .ncFont(size: 15, relativeTo: .subheadline)
-                        .foregroundStyle(.white)
-                    Spacer()
+            HStack(spacing: 8) {
+                TextField("", text: $result.material)
+                    .ncFont(size: 15, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.characters)
+                Menu {
+                    ForEach(BambuddyMaterials.common, id: \.self) { m in
+                        Button(m) { result.material = m }
+                    }
+                } label: {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(NCColor.textTertiary)
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
             }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
         }
     }
 
@@ -607,26 +687,36 @@ struct ScanView: View {
         }
     }
 
-    private func runTextParse(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+    private var labelHasContent: Bool {
+        !scannerBridge.liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !scannerBridge.liveBarcodes.isEmpty
+    }
+
+    /// Looks a label up — its barcodes, then its SKU — and fills the form from the first hit or
+    /// from what the label says.
+    private func runLabelRead(_ reading: FilamentLabelReader.Reading) {
+        guard !reading.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !reading.barcodes.isEmpty else {
+            step = .capture
+            lookupErrorMessage = String(localized: "No text or barcode found in that photo.")
+            return
+        }
         step = .loading
         Task {
-            let outcome = await FilamentLookupService.parse(text: trimmed)
+            let outcome = await FilamentLookupService.analyze(reading)
             result = outcome.result
             step = .review
+            if let lookupError = outcome.lookupError { lookupErrorMessage = lookupError }
         }
     }
 
     private func addToInventory() {
         let spool = store.addSpool(
-            material: pendingTagData?.material(for: result) ?? result.material.rawValue,
+            material: BambuddyMaterials.canonical(pendingTagData?.material(for: result) ?? result.material),
             colorName: result.colorName,
             colorHex: result.colorHex,
             brand: result.brand,
             netWeightGrams: result.netWeightGrams,
             tag: pendingTag,
-            extras: pendingTagData?.createExtras(for: result) ?? SpoolCreateExtras()
+            extras: pendingTagData?.createExtras(for: result) ?? result.createExtras
         )
         addedSpool = spool
         pendingTag = nil

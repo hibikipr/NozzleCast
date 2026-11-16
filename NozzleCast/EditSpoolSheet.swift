@@ -27,7 +27,7 @@ struct EditSpoolSheet: View {
 
     /// Common Bambu-ecosystem materials, offered as suggestions — Bambuddy itself accepts any
     /// material string, this is just a starting list so the field isn't blank on first use.
-    private static let commonMaterials = ["PLA", "PETG", "ABS", "ASA", "TPU", "PC", "PA", "PA-CF", "PAHT-CF", "PVA", "HIPS", "PET-CF"]
+    private static let commonMaterials = BambuddyMaterials.common
 
     init(spool: Spool) {
         self.spool = spool
@@ -51,8 +51,10 @@ struct EditSpoolSheet: View {
     private var knownBrands: [String] {
         Array(Set(store.spools.map(\.brand).filter { !$0.isEmpty })).sorted()
     }
+    /// Bambuddy's own subtype suggestions, then any others already in the inventory.
     private var knownSubtypes: [String] {
-        Array(Set(store.spools.compactMap(\.subtype).filter { !$0.isEmpty })).sorted()
+        let inInventory = Set(store.spools.compactMap(\.subtype).filter { !$0.isEmpty })
+        return BambuddyMaterials.knownVariants + inInventory.subtracting(BambuddyMaterials.knownVariants).sorted()
     }
 
     private var extraColorHexes: [String] {
@@ -359,13 +361,7 @@ struct EditSpoolSheet: View {
 
     /// Bambuddy's Effect field (Color & Cost › Effect): what the swatch draws — a finish overlay,
     /// or how extra colors split. The subtype doesn't, so this is the only way to set it here.
-    /// Same options and order as Bambuddy's `FILAMENT_EFFECT_OPTIONS`; "" is None.
-    private static let effectOptions: [(value: String, label: LocalizedStringKey)] = [
-        ("", "None"),
-        ("sparkle", "Sparkle"), ("wood", "Wood"), ("marble", "Marble"), ("glow", "Glow"), ("matte", "Matte"),
-        ("silk", "Silk"), ("galaxy", "Galaxy"), ("rainbow", "Rainbow"), ("metal", "Metal"), ("translucent", "Translucent"),
-        ("gradient", "Gradient"), ("dual-color", "Dual Color"), ("tri-color", "Tri Color"), ("multicolor", "Multicolor"),
-    ]
+    private static let effectOptions = SpoolEffectOptions.all
 
     private var effectPicker: some View {
         VStack(alignment: .leading, spacing: 6) {

@@ -63,6 +63,7 @@ enum FilamentLookupService {
         func merge(_ fields: FilamentDBFields, src: String) {
             if merged.material == nil { merged.material = fields.material }
             if merged.brand == nil { merged.brand = fields.brand }
+            if merged.subtype == nil { merged.subtype = fields.subtype }
             if merged.colorName == nil { merged.colorName = fields.colorName }
             if merged.rgba == nil { merged.rgba = fields.rgba }
             if merged.labelWeight == nil { merged.labelWeight = fields.labelWeight }
@@ -79,54 +80,100 @@ enum FilamentLookupService {
         if let ofd { merge(ofd.fields, src: "ofd") }
         if let smdb { merge(smdb.fields, src: "spoolmandb-community") }
 
-        let result = ScannedResult(
-            material: merged.material.flatMap(FilamentMaterial.init(rawValue:)) ?? .from(bambuddyMaterial: merged.material ?? "PLA"),
+        var result = ScannedResult(
+            material: BambuddyMaterials.canonical(merged.material ?? "PLA"),
             colorName: merged.colorName ?? "",
             colorHex: merged.rgba.map { "#" + $0.prefix(6) } ?? "#808080",
             brand: merged.brand ?? "",
             netWeightGrams: merged.labelWeight ?? 1000,
-            barcode: code,
+            barcode: kind == .gtin ? code : nil,
             alsoMatches: (otherTitle?.isEmpty == false) ? otherTitle : nil
         )
+        result.subtype = merged.subtype
+        // The product line names the finish ("Dual Matte PLA", "Glow PLA"); the colour's name can
+        // too ("Galaxy Black").
+        result.effectType = FilamentLabelReader.effect(in: [merged.subtype, merged.colorName].compactMap { $0 }.joined(separator: " "))
+        result.nozzleTempMin = merged.nozzleTempMin
+        result.nozzleTempMax = merged.nozzleTempMax
+        result.matchedCode = code
+        result.matchedCodeIsSKU = kind == .sku
         return Outcome(found: true, source: source, result: result, lookupError: nil)
     }
 
-    /// Parses free text (OCR'd label or a pasted title) into best-effort fields, and — if a
-    /// barcode is embedded in the text — resolves it and lets authoritative DB data override
-    /// the heuristic guesses, the same precedence `/api/parse` uses.
+    /// Parses free text (a pasted title, or OCR'd label text with no barcodes decoded).
     static func parse(text: String) async -> Outcome {
+        await analyze(FilamentLabelReader.Reading(text: text))
+    }
+
+    /// Reads a label photo: looks up its codes in order — barcodes, then the SKU — and keeps the
+    /// first database hit, falling back to what the label itself says. Either way the label fills
+    /// what the database leaves out: the finish (`effect_type`) and a dual-colour roll's colours.
+    static func analyze(_ reading: FilamentLabelReader.Reading) async -> Outcome {
+        let text = reading.text
         let extraBrands = await OFDClient.shared.brands()
         let parsed = FilamentTitleParser.parse(title: text, extraBrands: extraBrands)
+        let labelColor = FilamentLabelReader.color(in: text)
+        let labelEffect = FilamentLabelReader.effect(in: text)
 
         var result = ScannedResult(
-            material: parsed.material.flatMap(FilamentMaterial.init(rawValue:)) ?? .pla,
-            colorName: parsed.colorName ?? "",
-            colorHex: parsed.rgba.map { "#" + $0.prefix(6) } ?? "#808080",
+            // Many boxes print no material (Panchroma's don't); PLA is the likeliest, and the form shows it.
+            material: BambuddyMaterials.canonical(parsed.material ?? "PLA"),
+            colorName: labelColor.name ?? parsed.colorName ?? "",
+            colorHex: labelColor.partHexes.first.map { "#" + $0 } ?? parsed.rgba.map { "#" + $0.prefix(6) } ?? "#808080",
             brand: parsed.brand ?? "",
             netWeightGrams: parsed.labelWeightGrams ?? 1000,
             barcode: nil,
             alsoMatches: nil
         )
-        var found = parsed.material != nil || parsed.brand != nil || parsed.colorName != nil
+        result.subtype = parsed.subtype
+        result.nozzleTempMin = parsed.nozzleTempMin
+        result.nozzleTempMax = parsed.nozzleTempMax
+        var found = parsed.material != nil || parsed.brand != nil || result.colorName.isEmpty == false
         var source = "parsed"
         var lookupError: String?
 
-        if let barcode = FilamentCode.extractBarcode(from: text) {
-            let barcodeOutcome = await lookup(barcode: barcode)
-            if barcodeOutcome.found {
-                result = barcodeOutcome.result
-                source = barcodeOutcome.source
+        // Barcodes first, then SKUs: the first code a database knows wins. A barcode no database
+        // knows (an Amazon stock label) just moves on to the next.
+        for code in FilamentLabelReader.codeCandidates(in: reading) {
+            let outcome = await lookup(barcode: code)
+            if outcome.found {
+                let hit = outcome.result
+                result.material = hit.material
+                result.brand = hit.brand.isEmpty ? result.brand : hit.brand
+                if !hit.colorName.isEmpty { result.colorName = hit.colorName }
+                if hit.colorHex != "#808080" || labelColor.partHexes.isEmpty { result.colorHex = hit.colorHex }
+                result.netWeightGrams = hit.netWeightGrams
+                result.subtype = hit.subtype ?? result.subtype
+                result.nozzleTempMin = hit.nozzleTempMin ?? result.nozzleTempMin
+                result.nozzleTempMax = hit.nozzleTempMax ?? result.nozzleTempMax
+                result.alsoMatches = hit.alsoMatches
+                result.barcode = hit.barcode
+                result.matchedCode = hit.matchedCode
+                result.matchedCodeIsSKU = hit.matchedCodeIsSKU
+                result.effectType = hit.effectType
+                source = outcome.source
                 found = true
-            } else {
-                result.barcode = barcodeOutcome.result.barcode
-                lookupError = barcodeOutcome.lookupError
+                break
             }
+            if let error = outcome.lookupError {
+                // Neither database could be reached; every other code would fail the same way.
+                lookupError = error
+                break
+            }
+            if result.barcode == nil, FilamentCode.classify(code).kind == .gtin { result.barcode = FilamentCode.classify(code).code }
+        }
+
+        // The label's own words decide the finish when the database's names don't, and a
+        // dual- or tri-colour roll gets its parts as extra colours.
+        result.effectType = result.effectType ?? labelEffect
+        if ["dual-color", "tri-color", "multicolor"].contains(result.effectType ?? ""), labelColor.partHexes.count >= 2 {
+            result.extraColorHexes = labelColor.partHexes
         }
 
         return Outcome(found: found, source: source, result: result, lookupError: lookupError)
     }
 
     private static func blankResult(barcode: String? = nil) -> ScannedResult {
-        ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: barcode, alsoMatches: nil)
+        ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: barcode, alsoMatches: nil)
     }
 }
