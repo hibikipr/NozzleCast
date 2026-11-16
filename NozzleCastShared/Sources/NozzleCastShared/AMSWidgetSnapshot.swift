@@ -7,6 +7,16 @@ public struct AMSTraySnapshot: Codable, Sendable {
     public var subtype: String?
     public var effectType: String?
     public var materialLabel: String?
+    // Optional so a snapshot saved by an earlier build still decodes (synthesized Codable skips a
+    // missing optional key).
+    /// The slot feeding the current print.
+    public var isFeeding: Bool?
+    /// The loaded inventory spool's colour name, grams left, share left (0...1) and low-stock flag;
+    /// nil for a slot without an inventory spool.
+    public var colorName: String?
+    public var remainingGrams: Int?
+    public var remainingFraction: Double?
+    public var isLow: Bool?
 
     public init(
         colorHex: String?,
@@ -14,7 +24,12 @@ public struct AMSTraySnapshot: Codable, Sendable {
         extraColorHexes: [String] = [],
         subtype: String? = nil,
         effectType: String? = nil,
-        materialLabel: String?
+        materialLabel: String?,
+        isFeeding: Bool? = nil,
+        colorName: String? = nil,
+        remainingGrams: Int? = nil,
+        remainingFraction: Double? = nil,
+        isLow: Bool? = nil
     ) {
         self.colorHex = colorHex
         self.colorAlpha = colorAlpha
@@ -22,7 +37,15 @@ public struct AMSTraySnapshot: Codable, Sendable {
         self.subtype = subtype
         self.effectType = effectType
         self.materialLabel = materialLabel
+        self.isFeeding = isFeeding
+        self.colorName = colorName
+        self.remainingGrams = remainingGrams
+        self.remainingFraction = remainingFraction
+        self.isLow = isLow
     }
+
+    /// A slot with nothing loaded.
+    public var isEmpty: Bool { colorHex == nil && materialLabel == nil }
 }
 
 public struct AMSUnitSnapshot: Codable, Sendable {
