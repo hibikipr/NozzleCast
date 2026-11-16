@@ -22,9 +22,16 @@ final class SpoolmanDBCommunityClient {
         var codes: [String]?
         var eans: [String]?
         var eans_refill: [String]?
+        var diameter: Double?
+        var color_hexes: [String]?
+        var finish: String?
+        var pattern: String?
+        var multi_color_direction: String?
+        var glow: Bool?
+        var translucent: Bool?
     }
 
-    private struct IndexEntry: Codable { var fields: FilamentDBFields; var allCodes: [FilamentCodeEntry] }
+    private struct IndexEntry: Codable { var fields: FilamentDBFields; var allCodes: [FilamentCodeEntry]; var rank: Int = 0 }
     private struct Cache: Codable {
         var version: Int
         var builtAt: Date
@@ -35,7 +42,8 @@ final class SpoolmanDBCommunityClient {
 
     private static let compiledURL = URL(string: "https://icezaza2543.github.io/SpoolmanDB-Community/filaments.json")!
     private static let ttl: TimeInterval = 24 * 3600
-    private static let cacheVersion = 1
+    // 2: fields gained the effect and multicolour hexes. 3: a code shared by several sizes picks the likeliest.
+    private static let cacheVersion = 3
 
     private var cache: Cache?
     private var loadTask: Task<Cache, Error>?
@@ -131,6 +139,12 @@ final class SpoolmanDBCommunityClient {
             fields.nozzleTempMin = nozzleMin
             fields.nozzleTempMax = nozzleMax
             fields.title = [manufacturer, entry.name].compactMap { $0 }.joined(separator: " ")
+            let hexes = (entry.color_hexes ?? []).compactMap(Self.hex6)
+            fields.extraColorHexes = hexes.count >= 2 ? hexes : nil
+            fields.effectType = Self.effect(
+                finish: entry.finish, pattern: entry.pattern, multiColorDirection: entry.multi_color_direction,
+                colorCount: hexes.count, glow: entry.glow ?? false, translucent: entry.translucent ?? false
+            )
 
             var allCodes: [FilamentCodeEntry] = []
             for ean in entry.eans ?? [] where !ean.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -145,10 +159,17 @@ final class SpoolmanDBCommunityClient {
             }
             guard !allCodes.isEmpty else { continue }
 
-            let indexEntry = IndexEntry(fields: fields, allCodes: allCodes)
+            // SpoolmanDB gives every size of a colour the same EAN and SKU (1, 3 and 5 kg, in 1.75
+            // and 2.85 mm), so a code maps to several entries. Keep the likeliest box rather than
+            // whichever came last: 1.75 mm first, then 1 kg.
+            let rank = Self.sizeRank(diameter: entry.diameter, weight: entry.weight)
+            let indexEntry = IndexEntry(fields: fields, allCodes: allCodes, rank: rank)
             for codeEntry in allCodes {
-                if codeEntry.kind == "gtin" { gtinIndex[codeEntry.code] = indexEntry }
-                else { skuIndex[codeEntry.code] = indexEntry }
+                if codeEntry.kind == "gtin" {
+                    if (gtinIndex[codeEntry.code]?.rank ?? -1) < rank { gtinIndex[codeEntry.code] = indexEntry }
+                } else if (skuIndex[codeEntry.code]?.rank ?? -1) < rank {
+                    skuIndex[codeEntry.code] = indexEntry
+                }
             }
         }
 
@@ -165,6 +186,42 @@ final class SpoolmanDBCommunityClient {
         s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: " -+"))
         return s.isEmpty ? nil : s
+    }
+
+    /// Bambuddy's `effect_type` for SpoolmanDB's finish fields. Structure first, as Bambuddy
+    /// draws it (a coaxial two-colour filament is a split however it's finished), then glow,
+    /// pattern, translucency, and matte last. Glossy is the default finish: no effect.
+    /// How likely a size is to be the box in hand when one code covers several: 1.75 mm beats
+    /// 2.85 mm, then 1 kg beats the bigger spools.
+    static func sizeRank(diameter: Double?, weight: Double?) -> Int {
+        (diameter.map { abs($0 - 1.75) < 0.01 } == true ? 2 : 0) + (weight.map { abs($0 - 1000) < 1 } == true ? 1 : 0)
+    }
+
+    static func effect(finish: String?, pattern: String?, multiColorDirection: String?, colorCount: Int, glow: Bool, translucent: Bool) -> String? {
+        switch multiColorDirection?.lowercased() {
+        case "coaxial": return colorCount == 2 ? "dual-color" : colorCount == 3 ? "tri-color" : "multicolor"
+        case "longitudinal": return "gradient"
+        default: break
+        }
+        if glow { return "glow" }
+        switch pattern?.lowercased() {
+        case "sparkle": return "sparkle"
+        case "marble": return "marble"
+        case "wood": return "wood"
+        default: break
+        }
+        if translucent { return "translucent" }
+        switch finish?.lowercased() {
+        case "matte": return "matte"
+        case "silk": return "silk"
+        default: return nil
+        }
+    }
+
+    private static func hex6(_ raw: String) -> String? {
+        let h = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
+        guard h.count >= 6, h.prefix(6).allSatisfy(\.isHexDigit) else { return nil }
+        return String(h.prefix(6)).uppercased()
     }
 
     private static func hexToRGBA(_ hex: String?) -> String? {

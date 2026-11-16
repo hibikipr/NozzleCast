@@ -23,6 +23,10 @@ struct FilamentDBFields: Codable {
     var nozzleTempMin: Int?
     var nozzleTempMax: Int?
     var title: String?
+    /// Bambuddy's `effect_type`, where the database records the finish (SpoolmanDB does).
+    var effectType: String?
+    /// "RRGGBB" per colour of a multicolour filament, where the database lists them.
+    var extraColorHexes: [String]?
 }
 
 /// One barcode/SKU sibling of a matched filament colour (other package sizes, refill code, SKU).

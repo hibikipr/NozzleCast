@@ -64,6 +64,8 @@ enum FilamentLookupService {
             if merged.material == nil { merged.material = fields.material }
             if merged.brand == nil { merged.brand = fields.brand }
             if merged.subtype == nil { merged.subtype = fields.subtype }
+            if merged.effectType == nil { merged.effectType = fields.effectType }
+            if merged.extraColorHexes == nil { merged.extraColorHexes = fields.extraColorHexes }
             if merged.colorName == nil { merged.colorName = fields.colorName }
             if merged.rgba == nil { merged.rgba = fields.rgba }
             if merged.labelWeight == nil { merged.labelWeight = fields.labelWeight }
@@ -92,7 +94,9 @@ enum FilamentLookupService {
         result.subtype = merged.subtype
         // The product line names the finish ("Dual Matte PLA", "Glow PLA"); the colour's name can
         // too ("Galaxy Black").
-        result.effectType = FilamentLabelReader.effect(in: [merged.subtype, merged.colorName].compactMap { $0 }.joined(separator: " "))
+        result.effectType = merged.effectType
+            ?? FilamentLabelReader.effect(in: [merged.subtype, merged.colorName].compactMap { $0 }.joined(separator: " "))
+        result.extraColorHexes = merged.extraColorHexes ?? []
         result.nozzleTempMin = merged.nozzleTempMin
         result.nozzleTempMax = merged.nozzleTempMax
         result.matchedCode = code
@@ -142,7 +146,8 @@ enum FilamentLookupService {
                 result.brand = hit.brand.isEmpty ? result.brand : hit.brand
                 if !hit.colorName.isEmpty { result.colorName = hit.colorName }
                 if hit.colorHex != "#808080" || labelColor.partHexes.isEmpty { result.colorHex = hit.colorHex }
-                result.netWeightGrams = hit.netWeightGrams
+                // The box's own printed weight wins: a database code can cover several sizes.
+                result.netWeightGrams = parsed.labelWeightGrams ?? hit.netWeightGrams
                 result.subtype = hit.subtype ?? result.subtype
                 result.nozzleTempMin = hit.nozzleTempMin ?? result.nozzleTempMin
                 result.nozzleTempMax = hit.nozzleTempMax ?? result.nozzleTempMax
@@ -151,6 +156,15 @@ enum FilamentLookupService {
                 result.matchedCode = hit.matchedCode
                 result.matchedCodeIsSKU = hit.matchedCodeIsSKU
                 result.effectType = hit.effectType
+                result.extraColorHexes = hit.extraColorHexes
+                // A database name that's product line + colour ("PolyLite™ PLA Pro Blue") when
+                // the label names the colour on its own ("COLOR: Blue"): the label's colour, and
+                // the rest as the product line.
+                if let labelled = labelColor.name, labelColor.isExplicit,
+                   let split = FilamentLabelReader.split(productAndColor: hit.colorName, color: labelled, material: hit.material) {
+                    result.colorName = split.color
+                    if result.subtype == nil { result.subtype = split.productLine }
+                }
                 source = outcome.source
                 found = true
                 break
@@ -166,7 +180,7 @@ enum FilamentLookupService {
         // The label's own words decide the finish when the database's names don't, and a
         // dual- or tri-colour roll gets its parts as extra colours.
         result.effectType = result.effectType ?? labelEffect
-        if ["dual-color", "tri-color", "multicolor"].contains(result.effectType ?? ""), labelColor.partHexes.count >= 2 {
+        if result.extraColorHexes.isEmpty, ["dual-color", "tri-color", "multicolor"].contains(result.effectType ?? ""), labelColor.partHexes.count >= 2 {
             result.extraColorHexes = labelColor.partHexes
         }
 
