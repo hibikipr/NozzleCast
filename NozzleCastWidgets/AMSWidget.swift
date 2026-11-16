@@ -8,17 +8,17 @@ import NozzleCastShared
 // to force their own color scheme, so the container background is pinned dark here and paired
 // with fixed light-on-dark foreground tones, matching how the rest of the app stays single-theme
 // rather than mixing in a light appearance nothing else in the product supports.
-private let widgetBG = Color(red: 0x1a / 255, green: 0x1a / 255, blue: 0x1a / 255)
+let widgetBG = Color(red: 0x1a / 255, green: 0x1a / 255, blue: 0x1a / 255)
 // Currently only referenced by the commented-out Refresh button in `AMSLargeView`. Kept so the
 // button can be restored as-is; not dead code to delete.
-private let accentBlue = Color(red: 0x4F / 255, green: 0x7F / 255, blue: 0xE0 / 255)
-private let statusPaused = Color(red: 0xF5 / 255, green: 0x9E / 255, blue: 0x0B / 255)
-private let deepLink = URL(string: "nozzlecast://monitor")!
+let accentBlue = Color(red: 0x4F / 255, green: 0x7F / 255, blue: 0xE0 / 255)
+let accentLightBlue = Color(red: 0x8F / 255, green: 0xB4 / 255, blue: 0xFF / 255)
+let lowStockOrange = Color(red: 0xF5 / 255, green: 0x9E / 255, blue: 0x0B / 255)
+let statusPaused = Color(red: 0xF5 / 255, green: 0x9E / 255, blue: 0x0B / 255)
+let amsDeepLink = URL(string: "nozzlecast://monitor")!
 
 /// A widget canvas is fixed, so content is bounded by design, never clipped by WidgetKit.
-private let maxUnitsPerPrinter = 3   // 2× AMS2 Pro + 1× AMS HT = 9 slots, the real fleet's ceiling
-private let maxPrintersShown = 2     // Medium's two columns; Large mirrors it so a third printer
-                                      // (each with up to 3 multi-slot units) can't push it past 382pt
+let maxUnitsPerPrinter = 3   // 2× AMS2 Pro + 1× AMS HT = 9 slots, the real fleet's ceiling
 
 // MARK: - Printer entity for widget configuration
 
@@ -141,13 +141,13 @@ struct AMSProvider: AppIntentTimelineProvider {
                 isPrinting: true,
                 amsUnits: [
                     AMSUnitSnapshot(displayName: "AMS 1", isHighTemp: false, trays: [
-                        AMSTraySnapshot(colorHex: "#E8622C", materialLabel: "PLA"),
-                        AMSTraySnapshot(colorHex: "#D9E4E8", colorAlpha: 0.18, effectType: "translucent", materialLabel: "PETG"),
-                        AMSTraySnapshot(colorHex: "#E8622C", extraColorHexes: ["#D9A426", "#2A5FCC", "#C22A7A"], subtype: "Multicolor", effectType: "multicolor", materialLabel: "PLA"),
-                        AMSTraySnapshot(colorHex: "#141414", effectType: "sparkle", materialLabel: "PLA"),
+                        AMSTraySnapshot(colorHex: "#E8622C", materialLabel: "PLA", isFeeding: true, colorName: "Sunset Orange", remainingGrams: 720, remainingFraction: 0.72, isLow: false),
+                        AMSTraySnapshot(colorHex: "#D9E4E8", colorAlpha: 0.18, effectType: "translucent", materialLabel: "PETG", colorName: "Clear", remainingGrams: 120, remainingFraction: 0.12, isLow: true),
+                        AMSTraySnapshot(colorHex: "#E8622C", extraColorHexes: ["#D9A426", "#2A5FCC", "#C22A7A"], subtype: "Multicolor", effectType: "multicolor", materialLabel: "PLA", colorName: "Silk Multicolor", remainingGrams: 650, remainingFraction: 0.65, isLow: false),
+                        AMSTraySnapshot(colorHex: "#141414", effectType: "sparkle", materialLabel: "PLA", colorName: "Galaxy Black", remainingGrams: 400, remainingFraction: 0.4, isLow: false),
                     ]),
                     AMSUnitSnapshot(displayName: "AMS 2", isHighTemp: false, trays: [
-                        AMSTraySnapshot(colorHex: "#2A5FCC", materialLabel: "PLA"),
+                        AMSTraySnapshot(colorHex: "#2A5FCC", materialLabel: "PLA", colorName: "Cobalt Blue", remainingGrams: 880, remainingFraction: 0.88, isLow: false),
                         // The worst case for this row deliberately: the longest real material
                         // name Bambu reports, on the lightest swatch. Exercises both the label
                         // shortening and the light-swatch contrast tone in every preview.
@@ -166,8 +166,8 @@ struct AMSProvider: AppIntentTimelineProvider {
                 isPrinting: false,
                 amsUnits: [
                     AMSUnitSnapshot(displayName: "AMS 1", isHighTemp: false, trays: [
-                        AMSTraySnapshot(colorHex: "#C22A7A", materialLabel: "PLA"),
-                        AMSTraySnapshot(colorHex: "#D9A426", materialLabel: "PLA"),
+                        AMSTraySnapshot(colorHex: "#C22A7A", materialLabel: "PLA", colorName: "Magenta", remainingGrams: 200, remainingFraction: 0.2, isLow: true),
+                        AMSTraySnapshot(colorHex: "#D9A426", materialLabel: "PLA", colorName: "Amber Gold", remainingGrams: 540, remainingFraction: 0.54, isLow: false),
                         AMSTraySnapshot(colorHex: nil, materialLabel: nil),
                         AMSTraySnapshot(colorHex: "#F2F2F2", materialLabel: "ABS"),
                     ]),
@@ -180,151 +180,51 @@ struct AMSProvider: AppIntentTimelineProvider {
     }
 }
 
-// MARK: - Tray swatch (rounded rect — matches the app's spool swatches, not a dot)
+// MARK: - Shared bits (also used by FilamentStockWidget)
 
-private struct TraySwatch: View {
-    var tray: AMSTraySnapshot
-    var accessibilityPrefix: String
-    var size: CGFloat
-    var corner: CGFloat
-    var showsMaterialLabel: Bool = false
+/// A printer's slots, every unit's in order, with what labels each.
+struct AMSSlot: Identifiable {
+    let id: Int
+    let tray: AMSTraySnapshot
+    /// "A1", "A2", "HT" — numbered among regular units only.
+    let unitTag: String
+    /// 1-based within its unit.
+    let number: Int
+    /// The first slot of a unit after the first, so a rack can draw a divider before it.
+    let startsUnit: Bool
+}
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: corner, style: .continuous) }
-
-    /// Derived from the swatch rather than fixed. This was a hardcoded 6.5pt shared by medium and
-    /// large, but the large swatch has roughly twice the area of the medium one -- same absolute
-    /// label, half the relative size, which is exactly why large read as too small while medium
-    /// looked fine.
-    private var labelFontSize: CGFloat { max(7, size * 0.30) }
-
-    private var foreground: SwatchForeground {
-        SwatchContrast.preferredForeground(
-            colorHex: tray.colorHex,
-            alpha: tray.colorAlpha,
-            extraColorHexes: tray.extraColorHexes
-        )
-    }
-
-    /// Not pure black: full black on a mid-tone pill reads harsher than the swatch deserves, and
-    /// 0.85 still clears the contrast the tone was chosen for.
-    private var labelTone: Color { foreground == .dark ? Color.black.opacity(0.85) : .white }
-
-    /// A swatch can be a gradient, a multi-colour blend, or the support filament's checkerboard --
-    /// patterns with both light and dark regions, where no single text colour works everywhere.
-    /// A 1pt shadow in the opposite tone holds the text over those without reintroducing a band:
-    /// on a flat colour it is invisible.
-    private var labelShadowTone: Color { foreground == .dark ? .white : .black }
-
-    var body: some View {
-        Group {
-            if let hex = tray.colorHex {
-                FilamentSwatchView(
-                    colorHex: hex,
-                    alpha: tray.colorAlpha,
-                    extraColorHexes: tray.extraColorHexes,
-                    subtype: tray.subtype,
-                    effectType: tray.effectType
-                )
-                // Centred on the pill with no backing band. The band used to hide the bottom
-                // quarter of a swatch whose colour is the entire point of this widget -- and on a
-                // black swatch, white over 45%-black over black was barely legible anyway. The
-                // tone is derived from the swatch instead, so the label sits on the colour with
-                // nothing between them.
-                .overlay {
-                    if showsMaterialLabel, let material = MaterialLabel.short(tray.materialLabel) {
-                        Text(material)
-                            .font(.system(size: labelFontSize, weight: .bold))
-                            .lineLimit(1)
-                            // Was 0.6, which let "Support for PLA" shrink to ~3.9pt -- rendering
-                            // the one label in the row carrying real information as the smallest
-                            // text on screen. A long name now truncates instead of dissolving.
-                            .minimumScaleFactor(0.85)
-                            .foregroundStyle(labelTone)
-                            .shadow(color: labelShadowTone.opacity(0.5), radius: 1)
-                            .padding(.horizontal, 2)
-                    }
-                }
-                .clipShape(shape)
-                .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
-            } else {
-                shape
-                    .fill(Color.white.opacity(0.05))
-                    .overlay(
-                        shape.strokeBorder(Color.white.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    )
+extension PrinterAMSSnapshot {
+    var slots: [AMSSlot] {
+        var out: [AMSSlot] = []
+        var regular = 0
+        for (u, unit) in amsUnits.prefix(maxUnitsPerPrinter).enumerated() {
+            if !unit.isHighTemp { regular += 1 }
+            let tag = unit.isHighTemp ? "HT" : "A\(regular)"
+            for (t, tray) in unit.trays.prefix(4).enumerated() {
+                out.append(AMSSlot(id: out.count, tray: tray, unitTag: tag, number: t + 1, startsUnit: u > 0 && t == 0))
             }
         }
-        .frame(height: size)
-        .accessibilityElement(children: .ignore)
-        // Deliberately the unshortened name: "Support for PLA" is clearer spoken than "PLA SUP".
-        // The shortening exists to fit a ~28-65pt box, a constraint VoiceOver does not have.
-        .accessibilityLabel("\(accessibilityPrefix), \(tray.materialLabel ?? "empty")")
+        return out
+    }
+
+    var slotCount: Int { slots.count }
+    var loadedCount: Int { slots.filter { !$0.tray.isEmpty }.count }
+    var lowCount: Int { slots.filter { $0.tray.isLow == true }.count }
+    var hasSeveralUnits: Bool { min(amsUnits.count, maxUnitsPerPrinter) > 1 }
+
+    /// "Feeding slot 2", or "Feeding A2 · 3" on a printer with more than one unit; nil when no slot
+    /// is feeding.
+    var feedingLabel: String? {
+        guard let slot = slots.first(where: { $0.tray.isFeeding == true }) else { return nil }
+        return hasSeveralUnits ? String(localized: "Feeding \(slot.unitTag) · \(slot.number)") : String(localized: "Feeding slot \(slot.number)")
     }
 }
 
-// MARK: - One AMS unit = one row (unit is the row, slot is the column)
-
-private struct UnitRow: View {
-    let unit: AMSUnitSnapshot
-    let shortTag: String
-    let longTag: String
-    let tagWidth: CGFloat
-    let useLongTag: Bool
-    let swatchSize: CGFloat
-    let corner: CGFloat
-    /// Extra trailing detail for single-slot (HT) rows, where there's leftover row width.
-    let showsHTDetail: Bool
-    var showsMaterialLabel: Bool = false
-
-    private var trays: [AMSTraySnapshot] { Array(unit.trays.prefix(4)) }
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Text(useLongTag ? longTag : shortTag)
-                .font(.system(size: 8, weight: .bold))
-                .tracking(0.4)
-                .textCase(.uppercase)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .foregroundStyle(unit.isHighTemp ? statusPaused : Color.white.opacity(0.4))
-                .frame(width: tagWidth, alignment: .leading)
-
-            if trays.count == 1 {
-                // AMS HT: keep the swatch the same size as the others and spend the leftover
-                // row width on the material name instead of stretching it into a fake AMS.
-                TraySwatch(tray: trays[0], accessibilityPrefix: "\(longTag) slot 1", size: swatchSize, corner: corner)
-                    .frame(width: swatchSize)
-                if showsHTDetail, let material = MaterialLabel.short(trays[0].materialLabel) {
-                    Text(material)
-                        .font(.caption2)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .foregroundStyle(Color.white.opacity(0.55))
-                }
-                Spacer(minLength: 0)
-            } else {
-                HStack(spacing: 5) {
-                    ForEach(Array(trays.enumerated()), id: \.offset) { index, tray in
-                        TraySwatch(
-                            tray: tray,
-                            accessibilityPrefix: "\(shortTag) slot \(index + 1)",
-                            size: swatchSize,
-                            corner: corner,
-                            showsMaterialLabel: showsMaterialLabel
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Shared bits
-
-private struct PrinterHeader: View {
+struct PrinterHeader: View {
     let printer: PrinterAMSSnapshot
     var trailing: String?
+    var trailingIsAccent = false
 
     private var dotColor: Color {
         if printer.isPrinting { return accentBlue }
@@ -343,74 +243,25 @@ private struct PrinterHeader: View {
             Spacer(minLength: 4)
             if let trailing {
                 Text(trailing)
-                    .font(.caption2)
+                    .font(.caption2.weight(trailingIsAccent ? .semibold : .regular))
                     .monospacedDigit()
                     .lineLimit(1)
-                    .foregroundStyle(Color.white.opacity(0.45))
+                    .minimumScaleFactor(0.85)
+                    .foregroundStyle(trailingIsAccent ? accentLightBlue : Color.white.opacity(0.45))
             }
         }
     }
 }
 
-private struct PrinterUnits: View {
-    let printer: PrinterAMSSnapshot
-    let swatchSize: CGFloat
-    let corner: CGFloat
-    let tagWidth: CGFloat
-    let useLongTag: Bool
-    let rowSpacing: CGFloat
-    var showsHTDetail = true
-    var showsMaterialLabel = false
-
-    private var units: [AMSUnitSnapshot] { Array(printer.amsUnits.prefix(maxUnitsPerPrinter)) }
-    private var hiddenUnits: Int { max(0, printer.amsUnits.count - maxUnitsPerPrinter) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: rowSpacing) {
-            ForEach(Array(units.enumerated()), id: \.offset) { index, unit in
-                UnitRow(
-                    unit: unit,
-                    shortTag: unit.isHighTemp ? "HT" : "A\(regularUnitNumber(upTo: index))",
-                    longTag: unit.displayName,
-                    tagWidth: tagWidth,
-                    useLongTag: useLongTag,
-                    swatchSize: swatchSize,
-                    corner: corner,
-                    showsHTDetail: showsHTDetail,
-                    showsMaterialLabel: showsMaterialLabel
-                )
-            }
-            if hiddenUnits > 0 {
-                Text("+\(hiddenUnits) AMS")
-                    .font(.caption2)
-                    .foregroundStyle(Color.white.opacity(0.4))
-            }
-        }
-    }
-
-    /// Numbering ignores HT units, so a multi-AMS printer reads A1 / A2 / HT.
-    private func regularUnitNumber(upTo index: Int) -> Int {
-        units.prefix(index + 1).filter { !$0.isHighTemp }.count
-    }
-}
-
-private struct StaleStamp: View {
+struct StaleStamp: View {
     let capturedAt: Date?
-    /// Drops the leading "Updated", for the medium footer where this shares a row with the slot
-    /// count and the full wording clipped to "Updated 10 min, 46...". "Updated" is the least
-    /// load-bearing word in the phrase -- "10 min, 46 sec ago" still reads as a staleness stamp.
+    /// Drops the leading "Updated" where space is short.
     var compact: Bool = false
 
     var body: some View {
         Group {
-            // `Text(_:style:)` interpolation only exists on `LocalizedStringKey`, so the date
-            // has to be interpolated directly into a `Text` literal rather than a plain String.
-            //
-            // `.relative` deliberately, despite being the widest option: it is the only form that
-            // keeps counting while the widget is on screen. A static format ("10 min ago") would
-            // fit trivially but freeze between timeline reloads, which are 30 minutes apart -- so
-            // a snapshot taken at reload time would still claim "0 min ago" nearly half an hour
-            // later. A staleness stamp that cannot go stale is worse than one that wraps awkwardly.
+            // `.relative` on purpose: it keeps counting between timeline reloads, which are 30
+            // minutes apart, so the stamp can't claim "0 min ago" half an hour later.
             if let capturedAt {
                 if compact {
                     Text("\(capturedAt, style: .relative) ago")
@@ -424,76 +275,146 @@ private struct StaleStamp: View {
         .font(.caption2)
         .monospacedDigit()
         .lineLimit(1)
-        // Safety net for a value wider than either wording anticipates (a print left running
-        // overnight reads "14 hr, 22 min ago"). Shrinking slightly beats clipping mid-number.
         .minimumScaleFactor(0.9)
         .foregroundStyle(Color.white.opacity(0.35))
     }
 }
 
-private extension PrinterAMSSnapshot {
-    var slotCount: Int { amsUnits.prefix(maxUnitsPerPrinter).reduce(0) { $0 + min($1.trays.count, 4) } }
-    var loadedCount: Int {
-        amsUnits.prefix(maxUnitsPerPrinter).reduce(0) { $0 + $1.trays.prefix(4).filter { $0.colorHex != nil }.count }
+/// The swatch for one slot: the spool's colour and effect, or a dashed outline when empty.
+struct SlotSwatch<S: Shape>: View {
+    var tray: AMSTraySnapshot
+    var shape: S
+
+    var body: some View {
+        if let hex = tray.colorHex {
+            FilamentSwatchView(colorHex: hex, alpha: tray.colorAlpha, extraColorHexes: tray.extraColorHexes, subtype: tray.subtype, effectType: tray.effectType)
+                .clipShape(shape)
+                .overlay(shape.stroke(Color.white.opacity(0.18), lineWidth: 0.75))
+        } else {
+            shape.fill(Color.white.opacity(0.03))
+                .overlay(shape.stroke(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3])))
+        }
     }
 }
 
-// MARK: - Small: one printer, all its units (up to 10 slots)
+// MARK: - Spool Rack
 
+/// A slot drawn as a spool seen side-on: the filament's colour (and effect) as a ring round a dark
+/// hub. The feeding slot gets a glowing outer ring.
+private struct SpoolDisc: View {
+    let tray: AMSTraySnapshot
+
+    var body: some View {
+        ZStack {
+            SlotSwatch(tray: tray, shape: Circle())
+            if !tray.isEmpty, tray.colorHex != nil {
+                GeometryReader { proxy in
+                    let hub = proxy.size.width * 0.36
+                    Circle()
+                        .fill(Color(white: 0.16))
+                        .overlay(Circle().stroke(Color.black.opacity(0.4), lineWidth: 1))
+                        .frame(width: hub, height: hub)
+                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                }
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .padding(tray.isFeeding == true ? 3 : 0)
+        .overlay {
+            if tray.isFeeding == true {
+                Circle().stroke(accentLightBlue, lineWidth: 2)
+                    .shadow(color: accentBlue.opacity(0.9), radius: 5)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tray.isEmpty ? String(localized: "Empty slot") : [tray.materialLabel, tray.colorName, tray.isFeeding == true ? String(localized: "feeding") : nil].compactMap { $0 }.joined(separator: ", "))
+    }
+}
+
+/// One printer's slots in a row, each capped at `maxDisc`, with a divider between units and,
+/// optionally, the material under each.
+private struct SpoolRow: View {
+    let printer: PrinterAMSSnapshot
+    let maxDisc: CGFloat
+    var showsMaterial = true
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            ForEach(printer.slots) { slot in
+                if slot.startsUnit {
+                    Rectangle().fill(Color.white.opacity(0.1)).frame(width: 1, height: maxDisc * 0.8)
+                }
+                VStack(spacing: 4) {
+                    SpoolDisc(tray: slot.tray)
+                        .frame(maxWidth: maxDisc, maxHeight: maxDisc)
+                    if showsMaterial {
+                        Text(slot.tray.isEmpty ? String(localized: "Empty") : (MaterialLabel.short(slot.tray.materialLabel) ?? "—"))
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundStyle(Color.white.opacity(slot.tray.isEmpty ? 0.35 : 0.6))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+}
+
+/// Small: one printer, its slots as a grid of spools.
 private struct AMSSmallView: View {
     let printer: PrinterAMSSnapshot
 
+    private var columns: Int { printer.slotCount <= 4 ? 2 : 3 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 6) {
             PrinterHeader(printer: printer, trailing: "\(printer.loadedCount)/\(printer.slotCount)")
-            PrinterUnits(printer: printer, swatchSize: 27, corner: 7, tagWidth: 15, useLongTag: false, rowSpacing: 7)
+            Text(printer.feedingLabel ?? printer.stateLabel)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(printer.feedingLabel != nil ? accentLightBlue : Color.white.opacity(0.45))
+                .lineLimit(1)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns), spacing: 6) {
+                ForEach(printer.slots) { slot in
+                    SpoolDisc(tray: slot.tray)
+                        .frame(maxWidth: columns == 2 ? 42 : 30)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
-// MARK: - Medium: up to two printers side by side, every unit
-
+/// Medium: one printer with its materials, or two as compact rows.
 private struct AMSMediumView: View {
     let printers: [PrinterAMSSnapshot]
     let capturedAt: Date?
 
-    private var shown: [PrinterAMSSnapshot] { Array(printers.prefix(maxPrintersShown)) }
-    private var hiddenPrinters: Int { max(0, printers.count - maxPrintersShown) }
-    private var totalSlots: Int { shown.reduce(0) { $0 + $1.slotCount } }
-    private var totalLoaded: Int { shown.reduce(0) { $0 + $1.loadedCount } }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 13) {
-                ForEach(Array(shown.enumerated()), id: \.offset) { index, printer in
-                    if index > 0 {
-                        Rectangle().fill(Color.white.opacity(0.08)).frame(width: 1)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        PrinterHeader(printer: printer, trailing: printer.stateLabel)
-                        PrinterUnits(printer: printer, swatchSize: 26, corner: 7, tagWidth: 14, useLongTag: false, rowSpacing: 6, showsMaterialLabel: true)
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-            }
-
-            HStack(spacing: 8) {
-                StaleStamp(capturedAt: capturedAt, compact: true)
+            if printers.count == 1, let printer = printers.first {
+                PrinterHeader(printer: printer, trailing: printer.feedingLabel ?? printer.stateLabel, trailingIsAccent: printer.feedingLabel != nil)
                 Spacer(minLength: 0)
-                if hiddenPrinters > 0 {
-                    Text("+\(hiddenPrinters) printer\(hiddenPrinters == 1 ? "" : "s")")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.5))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                } else {
-                    Text("\(totalSlots) slots · \(totalLoaded) loaded")
-                        .font(.caption2)
-                        .monospacedDigit()
-                        .foregroundStyle(Color.white.opacity(0.5))
+                SpoolRow(printer: printer, maxDisc: 48)
+                Spacer(minLength: 0)
+                StaleStamp(capturedAt: capturedAt)
+            } else {
+                ForEach(Array(printers.prefix(2).enumerated()), id: \.offset) { index, printer in
+                    if index > 0 { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
+                    VStack(alignment: .leading, spacing: 5) {
+                        PrinterHeader(printer: printer, trailing: printer.feedingLabel ?? printer.stateLabel, trailingIsAccent: printer.feedingLabel != nil)
+                        SpoolRow(printer: printer, maxDisc: 30, showsMaterial: false)
+                    }
+                }
+                Spacer(minLength: 0)
+                HStack {
+                    StaleStamp(capturedAt: capturedAt, compact: true)
+                    Spacer()
+                    if printers.count > 2 {
+                        Text("+\(printers.count - 2) printer\(printers.count - 2 == 1 ? "" : "s")")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.white.opacity(0.5))
+                    }
                 }
             }
         }
@@ -501,17 +422,17 @@ private struct AMSMediumView: View {
     }
 }
 
-// MARK: - Large: printer cards with unit names spelled out, refresh action
-
+/// Large: up to two printers as full racks, up to two more as one-line rows.
 private struct AMSLargeView: View {
     let printers: [PrinterAMSSnapshot]
     let capturedAt: Date?
 
-    private var shown: [PrinterAMSSnapshot] { Array(printers.prefix(maxPrintersShown)) }
-    private var hiddenPrinters: Int { max(0, printers.count - maxPrintersShown) }
+    private var full: [PrinterAMSSnapshot] { Array(printers.prefix(2)) }
+    private var compact: [PrinterAMSSnapshot] { Array(printers.dropFirst(2).prefix(2)) }
+    private var hidden: Int { max(0, printers.count - 4) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 11) {
             HStack {
                 Text("AMS COLORS")
                     .font(.caption2.weight(.semibold))
@@ -520,40 +441,35 @@ private struct AMSLargeView: View {
                 Spacer()
                 StaleStamp(capturedAt: capturedAt)
             }
-
-            ForEach(Array(shown.enumerated()), id: \.offset) { _, printer in
+            ForEach(Array(full.enumerated()), id: \.offset) { index, printer in
+                if index > 0 { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
                 VStack(alignment: .leading, spacing: 8) {
-                    PrinterHeader(printer: printer, trailing: "\(printer.stateLabel) · \(printer.loadedCount)/\(printer.slotCount) loaded")
-                    PrinterUnits(printer: printer, swatchSize: 31, corner: 9, tagWidth: 46, useLongTag: true, rowSpacing: 8, showsMaterialLabel: true)
+                    PrinterHeader(printer: printer, trailing: printer.feedingLabel ?? printer.stateLabel, trailingIsAccent: printer.feedingLabel != nil)
+                    SpoolRow(printer: printer, maxDisc: 50)
                 }
-                .padding(10)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-                )
             }
-
+            ForEach(Array(compact.enumerated()), id: \.offset) { _, printer in
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                HStack(spacing: 6) {
+                    Text(printer.printerName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.white.opacity(0.75))
+                        .lineLimit(1)
+                    Text(printer.stateLabel)
+                        .font(.caption2)
+                        .foregroundStyle(Color.white.opacity(0.45))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    ForEach(printer.slots.prefix(8)) { slot in
+                        SpoolDisc(tray: slot.tray).frame(width: 20, height: 20)
+                    }
+                }
+            }
             Spacer(minLength: 0)
-
-            HStack {
-                let printerCount = "\(shown.count)\(hiddenPrinters > 0 ? "+\(hiddenPrinters)" : "") printer\(shown.count == 1 && hiddenPrinters == 0 ? "" : "s")"
-                Text("\(printerCount) · \(shown.reduce(0) { $0 + $1.slotCount }) slots")
+            if hidden > 0 {
+                Text("+\(hidden) more printer\(hidden == 1 ? "" : "s")")
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.4))
-                Spacer()
-                // TODO: restore the Refresh button once `RefreshAMSIntent` can actually fetch —
-                // see its doc comment for what that takes. Hidden rather than deleted because it
-                // did nothing at all: the extension cannot reach Bambuddy, so tapping it left the
-                // data and the "Updated N ago" stamp exactly as they were. An affordance that
-                // visibly fails to do the one thing it advertises is worse than no affordance.
-                //
-                //  Button(intent: RefreshAMSIntent()) {
-                //      Label("Refresh", systemImage: "arrow.clockwise")
-                //          .font(.caption2.weight(.semibold))
-                //  }
-                //  .buttonStyle(.plain)
-                //  .foregroundStyle(accentBlue)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -588,7 +504,7 @@ struct AMSWidgetEntryView: View {
             }
         }
         .containerBackground(widgetBG, for: .widget)
-        .widgetURL(deepLink)
+        .widgetURL(amsDeepLink)
     }
 
     private var emptyState: some View {
