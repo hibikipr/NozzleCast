@@ -414,7 +414,7 @@ struct SpoolCard: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(spool.materialWithEffect)
+                Text(spool.materialWithSubtype)
                     .ncFont(size: 12.5, weight: .semibold, relativeTo: .caption)
                     .foregroundStyle(.white)
                 Text(spool.brand)
@@ -483,7 +483,7 @@ struct SpoolListRow: View {
                 }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(spool.materialWithEffect)
+                Text(spool.materialWithSubtype)
                     .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                 Text("\(spool.colorName) · \(spool.brand) · \(spool.locationCaption(printerName: store.printerName, amsUnitName: store.amsUnitName))")

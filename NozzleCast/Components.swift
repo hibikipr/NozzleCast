@@ -360,7 +360,7 @@ struct AMSSlotCard: View {
             ZStack {
                 if let spool {
                     spool.swatch
-                    Text(spool.materialWithEffect)
+                    Text(spool.materialWithSubtype)
                         .ncFont(size: 10, weight: .bold, relativeTo: .caption2)
                         .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black : .white)
                         .multilineTextAlignment(.center)

@@ -1356,6 +1356,7 @@ final class AppStore {
         extraColorHexes: [String],
         brand: String,
         subtype: String?,
+        effectType: String?,
         netWeightGrams: Int,
         nozzleTempMin: Int?,
         nozzleTempMax: Int?,
@@ -1373,6 +1374,7 @@ final class AppStore {
             colorName: colorName,
             rgba: rgba,
             extraColors: Self.formatExtraColors(extraColorHexes),
+            effectType: effectType,
             brand: brand,
             labelWeight: netWeightGrams,
             slicerFilament: nil,
@@ -1389,6 +1391,8 @@ final class AppStore {
             self.spools[idx].extraColorHexes = extraColorHexes
             self.spools[idx].brand = brand
             self.spools[idx].subtype = subtype
+            // nil means the form left the effect alone (Spoolman mode); "" clears it.
+            if let effectType { self.spools[idx].effectType = effectType.isEmpty ? nil : effectType }
             self.spools[idx].netWeightGrams = netWeightGrams
             self.spools[idx].nozzleTempMin = nozzleTempMin
             self.spools[idx].nozzleTempMax = nozzleTempMax
