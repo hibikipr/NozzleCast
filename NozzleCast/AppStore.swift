@@ -143,6 +143,7 @@ final class AppStore {
         resolvePendingDeepLink()
         AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
         WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
+        WidgetCenter.shared.reloadTimelines(ofKind: "FilamentStockWidget")
         PrintStatusWidgetStore.save(Self.makePrintStatusSnapshots(printers: printers, history: printHistory))
         WidgetCenter.shared.reloadTimelines(ofKind: "PrintStatusWidget")
         if ScreenshotMocks.isActive {
@@ -442,6 +443,7 @@ final class AppStore {
 
             AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
             WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
+            WidgetCenter.shared.reloadTimelines(ofKind: "FilamentStockWidget")
             PrintStatusWidgetStore.save(Self.makePrintStatusSnapshots(printers: printers, history: printHistory))
             WidgetCenter.shared.reloadTimelines(ofKind: "PrintStatusWidget")
         } catch {
@@ -880,6 +882,7 @@ final class AppStore {
                     isHighTemp: unit.isHT,
                     trays: unit.trays.map { tray in
                         let key = "\(printer.id)-\(tray.amsIndex)-\(tray.trayIndex)"
+                        let isFeeding = printer.activeTrayID != nil && tray.globalID() == printer.activeTrayID
                         if let spool = spoolBySlot[key] {
                             return AMSTraySnapshot(
                                 colorHex: spool.colorHex,
@@ -887,10 +890,15 @@ final class AppStore {
                                 extraColorHexes: spool.extraColorHexes,
                                 subtype: spool.subtype,
                                 effectType: spool.effectType,
-                                materialLabel: spool.material
+                                materialLabel: spool.material,
+                                isFeeding: isFeeding,
+                                colorName: spool.colorName.isEmpty ? nil : spool.colorName,
+                                remainingGrams: spool.remainingGrams,
+                                remainingFraction: min(max(Double(spool.remainingPercent) / 100, 0), 1),
+                                isLow: spool.isLowStock
                             )
                         } else if tray.isLoaded {
-                            return AMSTraySnapshot(colorHex: tray.rawColorHex, materialLabel: tray.rawMaterialLabel)
+                            return AMSTraySnapshot(colorHex: tray.rawColorHex, materialLabel: tray.rawMaterialLabel, isFeeding: isFeeding)
                         } else {
                             return AMSTraySnapshot(colorHex: nil, materialLabel: nil)
                         }
