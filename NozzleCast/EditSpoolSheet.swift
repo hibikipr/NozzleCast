@@ -27,7 +27,7 @@ struct EditSpoolSheet: View {
 
     /// Common Bambu-ecosystem materials, offered as suggestions — Bambuddy itself accepts any
     /// material string, this is just a starting list so the field isn't blank on first use.
-    private static let commonMaterials = ["PLA", "PETG", "ABS", "ASA", "TPU", "PC", "PA", "PA-CF", "PAHT-CF", "PVA", "HIPS", "PET-CF"]
+    private static let commonMaterials = BambuddyMaterials.common
 
     init(spool: Spool) {
         self.spool = spool
@@ -51,8 +51,10 @@ struct EditSpoolSheet: View {
     private var knownBrands: [String] {
         Array(Set(store.spools.map(\.brand).filter { !$0.isEmpty })).sorted()
     }
+    /// Bambuddy's own subtype suggestions, then any others already in the inventory.
     private var knownSubtypes: [String] {
-        Array(Set(store.spools.compactMap(\.subtype).filter { !$0.isEmpty })).sorted()
+        let inInventory = Set(store.spools.compactMap(\.subtype).filter { !$0.isEmpty })
+        return BambuddyMaterials.knownVariants + inInventory.subtracting(BambuddyMaterials.knownVariants).sorted()
     }
 
     private var extraColorHexes: [String] {

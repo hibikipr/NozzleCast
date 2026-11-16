@@ -20,7 +20,8 @@ enum ScanStep {
 }
 
 struct ScannedResult {
-    var material: FilamentMaterial
+    /// As Bambuddy spells it (`BambuddyMaterials.canonical`): any name, not just the form's list.
+    var material: String
     var colorName: String
     var colorHex: String
     var brand: String
@@ -63,7 +64,7 @@ struct ScanView: View {
 
     @State private var mode: ScanMode = .barcode
     @State private var step: ScanStep = .capture
-    @State private var result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+    @State private var result = ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
     @State private var addedSpool: Spool?
     @State private var showAssignPicker = false
     @State private var scannerBridge = ScannerBridge()
@@ -137,7 +138,7 @@ struct ScanView: View {
             .onChange(of: mode) { _, newMode in
                 scannerBridge.reset()
                 if newMode == .manual {
-                    result = ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                    result = ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
                 }
             }
             .onChange(of: scannerBridge.lastBarcode) { _, newBarcode in
@@ -258,7 +259,7 @@ struct ScanView: View {
                     // non-Bambu tag) the form starts blank; a tray UUID still says it's a genuine
                     // Bambu Lab spool.
                     result = tagData?.scannedResult
-                        ?? ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                        ?? ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
                     pendingTag = (tagUID, trayUUID)
                     pendingTagData = tagData
                     step = .review
@@ -454,12 +455,7 @@ struct ScanView: View {
 
                 VStack(spacing: 12) {
                     labeledField(String(localized: "Brand", comment: "Filament field label"), text: $result.brand)
-                    labeledField(String(localized: "Material", comment: "Filament field label"), text: Binding(
-                        get: { result.material.rawValue },
-                        set: { newValue in
-                            if let m = FilamentMaterial(rawValue: newValue) { result.material = m }
-                        }
-                    ))
+                    materialPickerField
                     labeledField(String(localized: "Color name", comment: "Filament field label"), text: $result.colorName)
                     labeledField(String(localized: "Subtype", comment: "Filament field label: the product line, e.g. Dual Matte"), text: Binding(
                         get: { result.subtype ?? "" },
@@ -584,28 +580,31 @@ struct ScanView: View {
         }
     }
 
+    /// Free text, as in Bambuddy, with its material list one tap away. Anything typed is saved as
+    /// typed: Bambuddy accepts any material name.
     private var materialPickerField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Material")
                 .ncFont(size: 12, weight: .medium, relativeTo: .caption)
                 .foregroundStyle(NCColor.textSecondary)
-            Menu {
-                ForEach(FilamentMaterial.allCases) { m in
-                    Button(m.rawValue) { result.material = m }
-                }
-            } label: {
-                HStack {
-                    Text(result.material.rawValue)
-                        .ncFont(size: 15, relativeTo: .subheadline)
-                        .foregroundStyle(.white)
-                    Spacer()
+            HStack(spacing: 8) {
+                TextField("", text: $result.material)
+                    .ncFont(size: 15, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.characters)
+                Menu {
+                    ForEach(BambuddyMaterials.common, id: \.self) { m in
+                        Button(m) { result.material = m }
+                    }
+                } label: {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(NCColor.textTertiary)
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
             }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
         }
     }
 
@@ -711,7 +710,7 @@ struct ScanView: View {
 
     private func addToInventory() {
         let spool = store.addSpool(
-            material: pendingTagData?.material(for: result) ?? result.material.rawValue,
+            material: BambuddyMaterials.canonical(pendingTagData?.material(for: result) ?? result.material),
             colorName: result.colorName,
             colorHex: result.colorHex,
             brand: result.brand,

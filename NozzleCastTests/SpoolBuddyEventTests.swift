@@ -250,7 +250,7 @@ struct SpoolBuddyTagDataTests {
 
     @Test func theFormStartsFromTheTag() throws {
         let form = try cyanPLABasic().scannedResult
-        #expect(form.material == .pla)
+        #expect(form.material == "PLA")
         #expect(form.colorName == "Cyan")
         #expect(form.colorHex == "#0086D6")
         #expect(form.brand == "Bambu Lab")
@@ -278,19 +278,21 @@ struct SpoolBuddyTagDataTests {
         #expect(translucent.createExtras(for: form).rgba == nil)
     }
 
-    @Test func aTagMaterialTheFormCantShowIsKeptWhileUntouched() {
+    /// The form holds any material now, as Bambuddy does: an ASA tag reads ASA, not the closest
+    /// of four.
+    @Test func theFormShowsTheTagsOwnMaterial() {
         let asa = SpoolBuddyTagDataDTO(material: "ASA", rgba: "FFFFFFFF")
         var form = asa.scannedResult
-        #expect(form.material == .abs) // the closest of the form's four
+        #expect(form.material == "ASA")
         #expect(asa.material(for: form) == "ASA")
-        form.material = .petg
+        form.material = "PETG"
         #expect(asa.material(for: form) == "PETG")
     }
 
     @Test func aChangedMaterialDropsTheTagsProfileButKeepsTheCore() throws {
         let tag = try cyanPLABasic()
         var form = tag.scannedResult
-        form.material = .petg
+        form.material = "PETG"
         let extras = tag.createExtras(for: form)
         #expect(extras.subtype == nil)
         #expect(extras.slicerFilament == nil)
@@ -313,7 +315,7 @@ struct SpoolBuddyTagDataTests {
         let tag = SpoolBuddyTagDataDTO(material: "PETG", rgba: nil)
         #expect(tag.colorHex == nil)
         #expect(tag.scannedResult.colorHex == "#808080")
-        #expect(tag.scannedResult.material == .petg)
+        #expect(tag.scannedResult.material == "PETG")
     }
 }
 

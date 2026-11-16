@@ -127,3 +127,43 @@ struct FilamentLabelReaderTests {
         #expect(FilamentLabelReader.color(in: reading.text).name == "Foggy Orange")
     }
 }
+
+/// Materials are saved as Bambuddy's spool form spells them, and its Effect values are the only
+/// ones sent — Bambuddy rejects any other `effect_type`.
+struct BambuddyVocabularyTests {
+    @Test(arguments: [
+        ("PLA", "PLA"), ("petg", "PETG"), ("Asa", "ASA"), ("pla-cf", "PLA-CF"), ("PETG CF", "PETG-CF"),
+        ("Nylon", "PA"), ("PA6", "PA"), ("PA12-CF", "PA-CF"), ("PCTG", "PCTG"), ("  TPU ", "TPU"),
+    ])
+    func canonicalMaterials(_ raw: String, _ expected: String) {
+        #expect(BambuddyMaterials.canonical(raw) == expected)
+    }
+
+    @Test func materialListMatchesBambuddy() {
+        #expect(BambuddyMaterials.common == ["PLA", "PETG", "ABS", "TPU", "ASA", "PC", "PA", "PVA", "HIPS", "PA-CF", "PETG-CF", "PLA-CF"])
+    }
+
+    /// `ALLOWED_EFFECT_TYPES` in Bambuddy's `backend/app/schemas/spool.py`.
+    static let bambuddyEffects: Set<String> = [
+        "sparkle", "wood", "marble", "glow", "matte", "silk", "galaxy", "rainbow", "metal", "translucent",
+        "gradient", "dual-color", "tri-color", "multicolor",
+    ]
+
+    @Test func effectPickerOffersExactlyBambuddysEffects() {
+        #expect(Set(SpoolEffectOptions.all.map(\.value).filter { !$0.isEmpty }) == Self.bambuddyEffects)
+    }
+
+    @Test(arguments: [
+        "Dual Matte PLA", "Glow", "Silk Gold", "Wood", "Marble", "Galaxy Black", "Glitter", "Metallic Copper",
+        "Rainbow", "Gradient", "Tri Color", "Multicolor", "Translucent Red", "Matte Black",
+    ])
+    func readEffectsAreAllowedByBambuddy(_ text: String) throws {
+        let effect = try #require(FilamentLabelReader.effect(in: text))
+        #expect(Self.bambuddyEffects.contains(effect))
+    }
+
+    @Test(arguments: [("PLA Carbon Fiber Black", "PLA-CF"), ("PETG-CF 1kg", "PETG-CF"), ("Nylon PA12 Natural", "PA"), ("ASA White", "ASA")])
+    func parserMaterials(_ title: String, _ expected: String) {
+        #expect(FilamentTitleParser.parse(title: title).material.map(BambuddyMaterials.canonical) == expected)
+    }
+}

@@ -81,7 +81,7 @@ enum FilamentLookupService {
         if let smdb { merge(smdb.fields, src: "spoolmandb-community") }
 
         var result = ScannedResult(
-            material: merged.material.flatMap(FilamentMaterial.init(rawValue:)) ?? .from(bambuddyMaterial: merged.material ?? "PLA"),
+            material: BambuddyMaterials.canonical(merged.material ?? "PLA"),
             colorName: merged.colorName ?? "",
             colorHex: merged.rgba.map { "#" + $0.prefix(6) } ?? "#808080",
             brand: merged.brand ?? "",
@@ -116,7 +116,8 @@ enum FilamentLookupService {
         let labelEffect = FilamentLabelReader.effect(in: text)
 
         var result = ScannedResult(
-            material: parsed.material.flatMap(FilamentMaterial.init(rawValue:)) ?? .pla,
+            // Many boxes print no material (Panchroma's don't); PLA is the likeliest, and the form shows it.
+            material: BambuddyMaterials.canonical(parsed.material ?? "PLA"),
             colorName: labelColor.name ?? parsed.colorName ?? "",
             colorHex: labelColor.partHexes.first.map { "#" + $0 } ?? parsed.rgba.map { "#" + $0.prefix(6) } ?? "#808080",
             brand: parsed.brand ?? "",
@@ -173,6 +174,6 @@ enum FilamentLookupService {
     }
 
     private static func blankResult(barcode: String? = nil) -> ScannedResult {
-        ScannedResult(material: .pla, colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: barcode, alsoMatches: nil)
+        ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: barcode, alsoMatches: nil)
     }
 }

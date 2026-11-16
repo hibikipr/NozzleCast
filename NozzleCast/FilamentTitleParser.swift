@@ -30,7 +30,7 @@ enum FilamentTitleParser {
         ("PLA+", "PLA"), ("PLA PLUS", "PLA"), ("PLA", "PLA"),
         ("ABS+", "ABS"), ("ABS", "ABS"), ("ASA", "ASA"),
         ("TPU", "TPU"), ("TPE", "TPE"),
-        ("NYLON", "Nylon"), ("PA12", "Nylon"), ("PA6", "Nylon"), ("PA", "Nylon"),
+        ("NYLON", "PA"), ("PA12", "PA"), ("PA6", "PA"), ("PA", "PA"),
         ("HIPS", "HIPS"), ("PVA", "PVA"), ("PC", "PC"),
     ]
 
@@ -162,6 +162,11 @@ enum FilamentTitleParser {
         out.material = material
 
         var subtypes = findSubtypes(upper)
+        // Carbon-fibre PLA/PETG/PA is its own material in Bambuddy's list (PLA-CF, PETG-CF, PA-CF).
+        if let base = out.material, ["PLA", "PETG", "PA"].contains(base),
+           subtypes.contains("Carbon Fiber") || upper.range(of: "(?<![A-Z])CF(?![A-Z])", options: .regularExpression) != nil {
+            out.material = base + "-CF"
+        }
         if let plusSub, !subtypes.contains(plusSub) { subtypes.insert(plusSub, at: 0) }
         if !subtypes.isEmpty { out.subtype = subtypes.joined(separator: " ") }
 

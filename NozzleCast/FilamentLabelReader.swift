@@ -179,3 +179,34 @@ enum SpoolEffectOptions {
         ("gradient", "Gradient"), ("dual-color", "Dual Color"), ("tri-color", "Tri Color"), ("multicolor", "Multicolor"),
     ]
 }
+
+/// Bambuddy's spool form vocabulary (`spool-form/constants.ts`), so NozzleCast offers the same
+/// choices. Bambuddy stores any material string (1–50 characters), so these are suggestions, not a
+/// whitelist — unlike `effect_type`, which it validates against `SpoolEffectOptions`.
+enum BambuddyMaterials {
+    /// `MATERIALS`, in Bambuddy's order.
+    static let common = ["PLA", "PETG", "ABS", "TPU", "ASA", "PC", "PA", "PVA", "HIPS", "PA-CF", "PETG-CF", "PLA-CF"]
+
+    /// `KNOWN_VARIANTS`: the subtypes Bambuddy suggests.
+    static let knownVariants = [
+        "Basic", "Matte", "Silk", "Silk+", "Tough", "Tough+", "HF", "High Flow", "Engineering",
+        "CF", "GF",
+        "Galaxy", "Glow", "Marble", "Metal", "Rainbow", "Sparkle", "Wood",
+        "Translucent", "Transparent", "Clear", "Lite", "Pro", "Plus", "Max",
+        "Super", "Ultra", "Flex", "Soft", "Hard", "Strong", "Impact",
+        "Heat Resistant", "UV Resistant", "ESD", "Conductive", "Magnetic",
+        "Gradient", "Dual Color", "Tri Color", "Multicolor",
+    ]
+
+    /// A material as Bambuddy's list spells it when it's one of them ("petg" → "PETG", "Nylon" →
+    /// "PA", "PA6-CF" → "PA-CF"); anything else verbatim, trimmed — Bambuddy accepts it as is.
+    static func canonical(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let upper = trimmed.uppercased().replacingOccurrences(of: " ", with: "-")
+        if let listed = common.first(where: { $0 == upper }) { return listed }
+        let nylon = ["NYLON", "PA6", "PA12", "PA66"]
+        if nylon.contains(upper) { return "PA" }
+        if nylon.contains(where: { upper == "\($0)-CF" }) { return "PA-CF" }
+        return String(trimmed.prefix(50))
+    }
+}
