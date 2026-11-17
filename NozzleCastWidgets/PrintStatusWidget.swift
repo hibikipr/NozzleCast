@@ -148,7 +148,9 @@ private extension PrintStatusSnapshot {
             coverImage: nil,
             issueSeverity: issueSeverity,
             issueCount: issueCount,
-            stageDetail: stageDetail
+            // Never the stage ("Homing toolhead"): the widget refreshes rarely, so a stage that
+            // lasts seconds stayed on it for an hour. The job name doesn't go stale.
+            stageDetail: nil
         )
     }
 
