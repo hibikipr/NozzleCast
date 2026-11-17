@@ -41,17 +41,18 @@ enum RelayConfigStore {
         guard !trimmedSecret.isEmpty else { throw ValidationError.emptySecret }
 
         let config = Config(url: url, authSecret: trimmedSecret)
+        // The extension's copy first: if it can't be written, nothing is half-saved.
+        try PushSharedStore.saveRelayConnection(.init(url: url, authSecret: trimmedSecret))
         let data = try JSONEncoder().encode(config)
         try data.write(to: storedURL, options: .atomic)
         PushSharedStore.relayConfigured = true
-        PushSharedStore.saveRelayConnection(.init(url: url, authSecret: trimmedSecret))
         return config
     }
 
     static func clear() {
         try? FileManager.default.removeItem(at: storedURL)
         PushSharedStore.relayConfigured = false
-        PushSharedStore.saveRelayConnection(nil)
+        try? PushSharedStore.saveRelayConnection(nil)
         PushSharedStore.relayAlertsActive = false
     }
 

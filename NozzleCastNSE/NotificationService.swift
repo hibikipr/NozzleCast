@@ -102,6 +102,17 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             content.relevanceScore = 0.5
         }
 
+        // Logged before the photo: a slow download can outlast the extension's time, and the
+        // alert should still reach the in-app list and the badge.
+        PushSharedStore.appendHistory(.init(
+            id: message.id,
+            title: content.title,
+            body: content.body,
+            receivedAt: Date(),
+            isRead: false
+        ))
+        content.badge = NSNumber(value: PushSharedStore.unreadCount())
+
         if let attachmentURL = message.attachmentURL, let imageData = await Self.downloadImage(attachmentURL) {
             if let localURL = Self.writeTempFile(imageData, id: message.id),
                let attachment = try? UNNotificationAttachment(identifier: message.id, url: localURL) {
@@ -113,19 +124,6 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             PushSharedStore.saveHistoryImage(imageData, id: message.id)
         }
         await Self.updateLiveActivity(matching: message)
-
-        PushSharedStore.appendHistory(.init(
-            id: message.id,
-            title: content.title,
-            body: content.body,
-            receivedAt: Date(),
-            isRead: false
-        ))
-
-        // The app icon's badge count, so unread pushes are visible without opening the app —
-        // recomputed from the log rather than incremented, since this and the main app's own
-        // "mark all read" both write the same file and an increment could drift out of sync.
-        content.badge = NSNumber(value: PushSharedStore.unreadCount())
     }
 
     /// Muted from the app's Notifications list: no sound, no text, no history entry and no badge
@@ -179,6 +177,8 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
 
     private static func downloadImage(_ url: URL) async -> Data? {
         var request = URLRequest(url: url)
+        // Well inside the extension's ~30 s; the default 60 s would outlast it.
+        request.timeoutInterval = 15
         if let authToken = PushSharedStore.loadNtfyConfig()?.authToken {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }

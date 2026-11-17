@@ -76,7 +76,16 @@ nonisolated enum PushSharedStore {
         var coordinationError: NSError?
         var dropped: [HistoryEntry] = []
         NSFileCoordinator().coordinate(writingItemAt: historyURL, options: .forMerging, error: &coordinationError) { url in
-            var entries: [HistoryEntry] = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([HistoryEntry].self, from: $0) } ?? []
+            var entries: [HistoryEntry] = []
+            if let existing = try? Data(contentsOf: url) {
+                do {
+                    entries = try JSONDecoder().decode([HistoryEntry].self, from: existing)
+                } catch {
+                    // Starting over overwrites it; keep the unreadable file aside rather than lose it.
+                    NSLog("NCDEBUG notification history unreadable, set aside: %@", String(describing: error))
+                    try? existing.write(to: url.deletingLastPathComponent().appendingPathComponent("notification-history.unreadable.json"), options: .atomic)
+                }
+            }
             dropped = transform(&entries)
             guard let data = try? JSONEncoder().encode(entries) else { return }
             try? data.write(to: url, options: .atomic)
@@ -192,12 +201,15 @@ nonisolated enum PushSharedStore {
         return try? JSONDecoder().decode(RelayConnection.self, from: data)
     }
 
-    static func saveRelayConnection(_ connection: RelayConnection?) {
-        guard let connection, let data = try? JSONEncoder().encode(connection) else {
+    /// Throws when it can't be written: the notification extension then has no relay address
+    /// for alert photos, which the person saving it should hear about.
+    static func saveRelayConnection(_ connection: RelayConnection?) throws {
+        guard let connection else {
             try? FileManager.default.removeItem(at: relayConnectionURL)
             return
         }
-        try? data.write(to: relayConnectionURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        let data = try JSONEncoder().encode(connection)
+        try data.write(to: relayConnectionURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
     /// This device's APNs token (hex), as registered with the relay: the key its muted alerts are

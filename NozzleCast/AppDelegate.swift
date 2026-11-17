@@ -93,7 +93,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // for the notification extension, which can't read the app's own container.
         PushSharedStore.relayConfigured = RelayConfigStore.isConfigured
         // For installs whose relay was set up before the extension needed its address.
-        PushSharedStore.saveRelayConnection(RelayConfigStore.load().map { .init(url: $0.url, authSecret: $0.authSecret) })
+        do {
+            try PushSharedStore.saveRelayConnection(RelayConfigStore.load().map { .init(url: $0.url, authSecret: $0.authSecret) })
+        } catch {
+            NSLog("NCDEBUG couldn't save the relay address for the notification extension: %@", String(describing: error))
+        }
         PushNotificationManager.shared.startObservingActivityKitTokens()
         // Not forced: this runs on every return from the app switcher, and a POST each time would
         // be noise. A token that actually changed still re-registers here immediately.

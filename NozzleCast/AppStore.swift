@@ -300,7 +300,9 @@ final class AppStore {
         guard let unconfiguredClient = client else { return }
         isRefreshing = true
         defer { isRefreshing = false }
-        let backend = await unconfiguredClient.inventoryBackend()
+        let checkedBackend = await unconfiguredClient.inventoryBackend()
+        if checkedBackend == nil { NSLog("NCDEBUG inventory backend check inconclusive; keeping %@", String(describing: inventoryBackend)) }
+        let backend = checkedBackend ?? inventoryBackend
         if backend != inventoryBackend {
             NSLog("NCDEBUG inventory backend is now %@", String(describing: backend))
             inventoryBackend = backend
@@ -342,7 +344,11 @@ final class AppStore {
             if let items = await shoppingListTask { shoppingList = items.map(Self.mapShoppingListItem) }
             let lowStockThreshold = self.lowStockThreshold
 
-            let extras: [Int: PrinterExtras] = try await withThrowingTaskGroup(of: (Int, PrinterExtras).self) { group in
+            let statusFetchedAt = Date()
+            let fallbackStatuses = lastGoodStatuses
+                .filter { statusFetchedAt.timeIntervalSince($0.value.at) < Self.statusReuseWindow }
+                .mapValues(\.status)
+            let (extras, freshStatuses): ([Int: PrinterExtras], [Int: BambuddyStatusDTO]) = try await withThrowingTaskGroup(of: (Int, PrinterExtras, BambuddyStatusDTO?).self) { group in
                 for p in printerList {
                     group.addTask {
                         async let statusTask: BambuddyStatusDTO? = try? client.status(printerID: p.id)
@@ -355,14 +361,23 @@ final class AppStore {
                             }
                         }
 
-                        let extras = PrinterExtras(status: await statusTask, maintenance: await maintenanceTask, smartPlug: smartPlug)
-                        return (p.id, extras)
+                        let fresh = await statusTask
+                        if fresh == nil, fallbackStatuses[p.id] != nil {
+                            NSLog("NCDEBUG status for printer %d failed; showing its last one", p.id)
+                        }
+                        let extras = PrinterExtras(status: fresh ?? fallbackStatuses[p.id], maintenance: await maintenanceTask, smartPlug: smartPlug)
+                        return (p.id, extras, fresh)
                     }
                 }
                 var result: [Int: PrinterExtras] = [:]
-                for try await (id, extras) in group { result[id] = extras }
-                return result
+                var fresh: [Int: BambuddyStatusDTO] = [:]
+                for try await (id, extras, status) in group {
+                    result[id] = extras
+                    if let status { fresh[id] = status }
+                }
+                return (result, fresh)
             }
+            for (id, status) in freshStatuses { lastGoodStatuses[id] = (status, statusFetchedAt) }
 
             var assignmentsByPrinterSlot: [String: BambuddyAssignmentDTO] = [:]
             var assignmentsBySpoolID: [Int: BambuddyAssignmentDTO] = [:]
@@ -467,6 +482,13 @@ final class AppStore {
     }
 
     private var coverFetchFailedJobs: Set<String> = []
+
+    /// Each printer's last status that loaded, and when. One refresh's /status request failing
+    /// reuses it, so a single timeout doesn't show a printing printer as Offline with empty AMS
+    /// slots — in the app and in the widgets saved from it. Only within `statusReuseWindow`:
+    /// a printer whose status keeps failing past that does show Offline.
+    private var lastGoodStatuses: [Int: (status: BambuddyStatusDTO, at: Date)] = [:]
+    private static let statusReuseWindow: TimeInterval = 120
     private var lastConnectedUsername: String?
 
     // MARK: - Mapping
@@ -1318,10 +1340,24 @@ final class AppStore {
         performAction(localChange: { self.spools.insert(spool, at: 0) }) { client in
             let created = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams, extras: extras)
             if let tag {
-                try await client.linkTag(spoolID: created.id, tagUID: tag.uid, trayUUID: tag.trayUUID, origin: .newSpool)
+                do {
+                    try await client.linkTag(spoolID: created.id, tagUID: tag.uid, trayUUID: tag.trayUUID, origin: .newSpool)
+                } catch {
+                    throw TagLinkError(underlying: error)
+                }
             }
         }
         return spool
+    }
+
+    /// The spool was created but its NFC tag couldn't be linked. Worded so it isn't read as "the
+    /// add failed": adding it again would make a second spool.
+    struct TagLinkError: LocalizedError {
+        var underlying: Error
+        var errorDescription: String? {
+            let reason = (underlying as? LocalizedError)?.errorDescription ?? underlying.localizedDescription
+            return String(localized: "The spool was added, but its tag couldn't be linked (\(reason)). Scan the tag again and link it to that spool instead of adding it again.", comment: "Error after adding a spool whose NFC tag link failed")
+        }
     }
 
     // MARK: - SpoolBuddy

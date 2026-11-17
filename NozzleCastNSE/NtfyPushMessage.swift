@@ -81,6 +81,7 @@ enum NtfyPoller {
         guard let url = components.url else { return nil }
 
         var request = URLRequest(url: url)
+        request.timeoutInterval = 15
         if let authToken {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
