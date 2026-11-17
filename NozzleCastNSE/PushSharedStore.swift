@@ -45,7 +45,16 @@ enum PushSharedStore {
     private static func updateHistory(_ transform: (inout [HistoryEntry]) -> Void) {
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(writingItemAt: historyURL, options: .forMerging, error: &coordinationError) { url in
-            var entries: [HistoryEntry] = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([HistoryEntry].self, from: $0) } ?? []
+            var entries: [HistoryEntry] = []
+            if let existing = try? Data(contentsOf: url) {
+                do {
+                    entries = try JSONDecoder().decode([HistoryEntry].self, from: existing)
+                } catch {
+                    // Starting over overwrites it; keep the unreadable file aside rather than lose it.
+                    NSLog("NCDEBUG notification history unreadable, set aside: %@", String(describing: error))
+                    try? existing.write(to: url.deletingLastPathComponent().appendingPathComponent("notification-history.unreadable.json"), options: .atomic)
+                }
+            }
             transform(&entries)
             guard let data = try? JSONEncoder().encode(entries) else { return }
             try? data.write(to: url, options: .atomic)

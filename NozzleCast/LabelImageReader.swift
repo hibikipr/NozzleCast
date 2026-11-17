@@ -15,7 +15,12 @@ enum LabelImageReader {
             text.usesLanguageCorrection = false
             let barcodes = VNDetectBarcodesRequest()
             let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation)
-            try? handler.perform([text, barcodes])
+            do {
+                try handler.perform([text, barcodes])
+            } catch {
+                // Reads as "nothing found" to the person; the log says why.
+                NSLog("NCDEBUG label photo: Vision failed: %@", String(describing: error))
+            }
 
             // Vision's own order, which keeps a block together: a label's "SKU" heading stays next
             // to the value under it rather than beside the "Net weight" in the next column.

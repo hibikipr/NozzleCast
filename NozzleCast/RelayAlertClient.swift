@@ -31,8 +31,13 @@ enum RelayAlertClient {
             case 200?:
                 // `pushes` is new in relay v1.8.0; every older relay pushes.
                 struct Status: Decodable { var active: Bool; var pushes: Bool? }
-                let status = try? JSONDecoder().decode(Status.self, from: data)
-                return Delivery(active: status?.active ?? false, pushes: status?.pushes ?? true)
+                // A 200 that isn't the relay's JSON (a captive portal, a proxy's error page) says
+                // nothing about delivery; reading it as "inactive" would switch alerts off.
+                guard let status = try? JSONDecoder().decode(Status.self, from: data) else {
+                    NSLog("NCDEBUG relay alert status: unreadable 200 response")
+                    return nil
+                }
+                return Delivery(active: status.active, pushes: status.pushes ?? true)
             case 404?:
                 return Delivery(active: false, pushes: true)
             default:

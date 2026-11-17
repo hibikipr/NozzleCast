@@ -689,16 +689,33 @@ struct BambuddyAPIClient {
     /// `filaments:read` permission; an API key without it (401/403) falls back to checking
     /// whether the Spoolman inventory proxy answers, which needs only `inventory:read` and
     /// replies 400 "not enabled" in built-in mode. Anything inconclusive means built-in — the
-    /// default every Bambuddy has.
-    func inventoryBackend() async -> InventoryBackend {
+    /// default every Bambuddy has. Nil when the server couldn't be asked (a timeout, no network,
+    /// a 5xx): the caller keeps the inventory it already had rather than switching a Spoolman
+    /// user to the built-in one over a blip.
+    func inventoryBackend() async -> InventoryBackend? {
         do {
             let status: BambuddySpoolmanStatusDTO = try await get("/api/v1/spoolman/status")
             return status.enabled ? .spoolman : .builtIn
         } catch BambuddyAPIError.http(let code, _) where code == 401 || code == 403 {
-            let answered = (try? await send(request("/api/v1/spoolman/inventory/spools"))) != nil
-            return answered ? .spoolman : .builtIn
+            do {
+                _ = try await send(request("/api/v1/spoolman/inventory/spools"))
+                return .spoolman
+            } catch {
+                return Self.serverAnswered(error) ? .builtIn : nil
+            }
         } catch {
-            return .builtIn
+            return Self.serverAnswered(error) ? .builtIn : nil
+        }
+    }
+
+    /// Whether a failed request still told us something about the server: it answered with a
+    /// 4xx, or with a body that isn't what we expected. A timeout, a dropped connection or a 5xx
+    /// says nothing about how it's set up.
+    nonisolated static func serverAnswered(_ error: Error) -> Bool {
+        switch error {
+        case BambuddyAPIError.http(let code, _): (400..<500).contains(code)
+        case BambuddyAPIError.decoding: true
+        default: false
         }
     }
 

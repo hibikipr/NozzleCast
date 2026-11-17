@@ -65,14 +65,20 @@ enum RelayAlertFeed {
             cursor = Cursor(relay: relay, lastID: feed.latestId)
             return 0
         }
-        cursor = Cursor(relay: relay, lastID: max(saved, feed.latestId))
+        // Saved only once these are handled: a check cut short (a background wake running out of
+        // time while fetching photos) fetches them again next time instead of skipping them.
+        // History and notifications are keyed by the alert's id, so a repeat replaces, not adds.
+        let advanced = Cursor(relay: relay, lastID: max(saved, feed.latestId))
 
         // The relay already left out this device's mutes; this catches one muted since it last
         // heard from the app.
         let fresh = feed.items
             .filter { $0.id > saved && !PushSharedStore.isMuted(title: $0.title, body: $0.body) }
             .sorted { $0.id < $1.id }
-        guard !fresh.isEmpty else { return 0 }
+        guard !fresh.isEmpty else {
+            cursor = advanced
+            return 0
+        }
 
         var photos: [Int: Data] = [:]
         for alert in fresh {
@@ -89,6 +95,7 @@ enum RelayAlertFeed {
             ))
         }
         await postNotifications(for: fresh, photos: photos)
+        cursor = advanced
         return fresh.count
     }
 
