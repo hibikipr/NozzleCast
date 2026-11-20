@@ -1,0 +1,65 @@
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Diagnose toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          ls /Applications | grep -i xcode || true
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild \
+            -project NozzleCast.xcodeproj \
+            -scheme NozzleCast \
+            -resolvePackageDependencies
+
+      - name: Build unsigned .app
+        run: |
+          xcodebuild \
+            -project NozzleCast.xcodeproj \
+            -scheme NozzleCast \
+            -configuration Debug \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_REQUIRED=NO \
+            build
+
+      - name: Locate built app
+        id: locate
+        run: |
+          APP_PATH="$(find build/Build/Products -name '*.app' -maxdepth 3 | head -1)"
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_OUTPUT"
+          ls -la "$APP_PATH"
+
+      - name: Pack unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R "${{ steps.locate.outputs.APP_PATH }}" Payload/
+          zip -r -q NozzleCast-unsigned.ipa Payload
+          ls -la NozzleCast-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: NozzleCast-unsigned-ipa
+          path: NozzleCast-unsigned.ipa
+
+      - name: Upload .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: NozzleCast-unsigned-app
+          path: ${{ steps.locate.outputs.APP_PATH }}
