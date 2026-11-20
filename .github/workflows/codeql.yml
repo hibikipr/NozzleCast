@@ -1,0 +1,63 @@
+name: CodeQL
+
+# Replaces CodeQL's default setup, whose automatic Swift build crashes on this project
+# (autobuild exits 139). Swift is built here by hand; the other languages need no build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "27 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.language == 'swift' && 'macos-latest' || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: ruby
+            build-mode: none
+          - language: swift
+            build-mode: manual
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Build the app (unsigned, simulator)
+        if: matrix.language == 'swift'
+        run: |
+          xcodebuild -version
+          xcodebuild \
+            -project NozzleCast.xcodeproj \
+            -scheme NozzleCast \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
