@@ -10,6 +10,12 @@
             "state": "new",
             "value": "NozzleCast"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NozzleCast"
+          }
         }
       }
     },
@@ -20,6 +26,12 @@
         "en": {
           "stringUnit": {
             "state": "new",
+            "value": "NozzleCast"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
             "value": "NozzleCast"
           }
         }
