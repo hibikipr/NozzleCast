@@ -459,8 +459,7 @@ final class AppStore {
             AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
             WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
             WidgetCenter.shared.reloadTimelines(ofKind: "FilamentStockWidget")
-            PrintStatusWidgetStore.save(Self.makePrintStatusSnapshots(printers: printers, history: printHistory))
-            WidgetCenter.shared.reloadTimelines(ofKind: "PrintStatusWidget")
+            savePrintStatusWidget()
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
@@ -840,7 +839,21 @@ final class AppStore {
 
     /// One snapshot per printer for the Print Status widget. The content-state fields come from the same
     /// derivation the Live Activity uses, so the widget and the Lock Screen agree.
-    static func makePrintStatusSnapshots(printers: [Printer], history: [PrintRecord]) -> [PrintStatusSnapshot] {
+    /// Whether a printer's job file and a print-history name are the same print: the history
+    /// names it without the ".gcode.3mf"/".3mf" the printer reports, and case can differ.
+    static func sameJobName(_ a: String, _ b: String) -> Bool {
+        func stem(_ name: String) -> String {
+            var name = name.lowercased()
+            for suffix in [".gcode.3mf", ".3mf", ".gcode"] where name.hasSuffix(suffix) {
+                name.removeLast(suffix.count)
+                break
+            }
+            return name.trimmingCharacters(in: .whitespaces)
+        }
+        return stem(a) == stem(b)
+    }
+
+    static func makePrintStatusSnapshots(printers: [Printer], history: [PrintRecord], previous: [PrintStatusSnapshot] = []) -> [PrintStatusSnapshot] {
         printers.map { printer in
             let state = PrintLiveActivityManager.contentState(for: printer, coverImage: nil)
             // Same rule the Live Activity uses to keep an activity alive: a job is loaded (printing or
@@ -862,6 +875,16 @@ final class AppStore {
                 case .failed: lastOutcome = .failed
                 case .cancelled: lastOutcome = .cancelled
                 case .other, nil: lastOutcome = nil
+                }
+                // No history for this printer (not loaded yet): keep what the last save knew about
+                // its last print, as long as it's the same job the printer still reports.
+                if newest == nil,
+                   let earlier = previous.first(where: { $0.printerID == PrintActivityAttributes.normalizedID(printer.name) && !$0.isActive }),
+                   let earlierJob = earlier.lastJobName,
+                   printer.jobFileName.map({ Self.sameJobName($0, earlierJob) }) ?? true {
+                    lastJobName = earlierJob
+                    finishedAt = earlier.finishedAt
+                    lastOutcome = earlier.lastOutcome
                 }
             }
             return PrintStatusSnapshot(
@@ -1566,9 +1589,20 @@ final class AppStore {
             printHistoryTotal = page.total
             printsLoadError = nil
             hasLoadedPrints = true
+            // The refresh saved the widget before this history arrived (the Monitor tab loads it
+            // after each refresh), so the last prints only reach the widget from here.
+            if !printers.isEmpty { savePrintStatusWidget() }
         } catch {
             printsLoadError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    /// Saves the Print Status widget's snapshots and reloads it. The previous save fills in a
+    /// printer's last print when the history isn't loaded (a refresh before `loadPrints`, or a
+    /// background wake that never loads it), rather than the widget dropping to a bare "Idle".
+    private func savePrintStatusWidget() {
+        PrintStatusWidgetStore.save(Self.makePrintStatusSnapshots(printers: printers, history: printHistory, previous: PrintStatusWidgetStore.load()))
+        WidgetCenter.shared.reloadTimelines(ofKind: "PrintStatusWidget")
     }
 
     func loadMorePrintHistory() async {
