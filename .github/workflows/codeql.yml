@@ -44,6 +44,16 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
+      # The app uses Xcode 27 APIs; the runner's default Xcode can be older. Pick the
+      # newest Xcode 27 installed and fail clearly if there's none.
+      - name: Select Xcode 27
+        if: matrix.language == 'swift'
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then echo "::error::No Xcode 27 on this runner"; exit 1; fi
+          sudo xcode-select -s "$XCODE"
+
       - name: Build the app (unsigned, simulator)
         if: matrix.language == 'swift'
         run: |
