@@ -179,7 +179,7 @@ private struct StockList: View {
                 ForEach(entry.slots) { slot in StockRow(tray: slot.tray) }
             }
             if hidden > 0 {
-                Text("+\(hidden) more slot\(hidden == 1 ? "" : "s")")
+                Text("+^[\(hidden) more slot](inflect: true)", comment: "Filament Stock widget: slots that didn't fit")
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.4))
             }
