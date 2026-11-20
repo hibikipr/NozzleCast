@@ -411,7 +411,7 @@ private struct AMSMediumView: View {
                     StaleStamp(capturedAt: capturedAt, compact: true)
                     Spacer()
                     if printers.count > 2 {
-                        Text("+\(printers.count - 2) printer\(printers.count - 2 == 1 ? "" : "s")")
+                        Text("+^[\(printers.count - 2) printer](inflect: true)", comment: "AMS widget: printers that didn't fit")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(Color.white.opacity(0.5))
                     }
@@ -467,7 +467,7 @@ private struct AMSLargeView: View {
             }
             Spacer(minLength: 0)
             if hidden > 0 {
-                Text("+\(hidden) more printer\(hidden == 1 ? "" : "s")")
+                Text("+^[\(hidden) more printer](inflect: true)", comment: "AMS widget: printers that didn't fit")
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.4))
             }
