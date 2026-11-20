@@ -1,0 +1,226 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--bg:#0f1012;--w:#1a1a1a;--line:rgba(255,255,255,.08);--t1:#fff;--t2:rgba(255,255,255,.62);--t3:rgba(255,255,255,.4);--accent:#4F7FE0;--accentL:#8FB4FF;--warn:#F59E0B}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);font-family:-apple-system,"SF Pro Text",system-ui,sans-serif;color:var(--t1);padding:40px 44px;width:1100px}
+h1{font-size:26px;font-weight:700;margin-bottom:6px}
+.lede{color:var(--t2);font-size:14px;margin-bottom:28px}
+.opt{margin-bottom:38px}
+.opt h2{font-size:19px;font-weight:700;margin-bottom:4px}
+.opt h2 b{display:inline-block;background:var(--accent);color:#fff;border-radius:7px;padding:1px 8px;margin-right:8px;font-size:15px}
+.opt p{color:var(--t2);font-size:13px;margin-bottom:6px;max-width:980px}
+.opt .needs{color:var(--accentL);font-size:12px;margin-bottom:14px}
+.row{display:flex;gap:22px;align-items:flex-start}
+.lbl{color:var(--t3);font-size:11px;margin-top:6px;text-align:center}
+.w{background:var(--w);border-radius:22px;padding:14px;overflow:hidden;position:relative}
+.small{width:170px;height:170px}.medium{width:364px;height:170px}.large{width:364px;height:382px}
+.hs{display:flex;align-items:center}.vs{display:flex;flex-direction:column}.grow{flex:1}
+.pname{font-size:13px;font-weight:600}.state{font-size:10.5px;color:var(--t2)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block;margin-right:5px}
+.stamp{font-size:10px;color:var(--t3)}
+.f-orange{background:#E8622C}.f-black{background:#1A1A1A}.f-blue{background:#2A5FCC}.f-green{background:#2E7D3A}.f-grey{background:#555}
+.f-gold{background:#D9A426}
+.f-multi{background:conic-gradient(#2A5FCC 0 120deg,#C22A7A 120deg 240deg,#D9A426 240deg 360deg)}
+.f-sparkle{background:radial-gradient(circle at 25% 30%,#fff8dc 0 1.2px,transparent 2px),radial-gradient(circle at 70% 60%,#fff8dc 0 1.2px,transparent 2px),radial-gradient(circle at 45% 80%,#fff8dc 0 1px,transparent 1.8px),radial-gradient(circle at 80% 20%,#fff8dc 0 1px,transparent 1.8px),#151515}
+.f-clear{background:repeating-conic-gradient(#979797 0% 25%,#f5f5f5 0% 50%) 0 0/8px 8px}
+.disc{border-radius:50%;position:relative;flex:none;border:1px solid #ffffff2e}
+.disc::after{content:"";position:absolute;inset:32%;border-radius:50%;background:#2a2a2a;box-shadow:inset 0 0 0 1.5px #0005}
+.disc.empty{background:transparent;border:2px dashed rgba(255,255,255,.18)}
+.disc.empty::after{display:none}
+.disc.active{box-shadow:0 0 0 2.5px var(--w),0 0 0 4.5px var(--accentL),0 0 14px #4F7FE099}
+.mat{font-size:9.5px;font-weight:700;color:var(--t2);text-align:center;margin-top:5px;letter-spacing:.2px}
+.rack{display:flex;justify-content:space-between}
+.unitchip{font-size:9px;font-weight:700;color:var(--t3);letter-spacing:.6px}
+.feed{font-size:9.5px;color:var(--accentL);font-weight:600}
+.box{background:#101112;border-radius:14px;padding:8px;border:1px solid #ffffff12}
+.boxhead{display:flex;align-items:center;font-size:9.5px;font-weight:700;color:var(--t2);margin-bottom:6px;letter-spacing:.3px}
+.hum{font-size:9.5px;font-weight:600;color:var(--t2)}
+.hum.wet{color:var(--warn)}
+.win{flex:1;border:1px solid #ffffff24;border-radius:8px;position:relative;display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
+.win .vm{writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;font-weight:800;letter-spacing:.6px;color:#fff;text-shadow:0 1px 2px #0008;margin-bottom:7px}
+.win.lightbg .vm{color:#111;text-shadow:none}
+.win.empty{background:repeating-linear-gradient(135deg,#ffffff0d 0 6px,transparent 6px 12px);border:1px dashed #ffffff22}
+.win.active::before{content:"";position:absolute;top:5px;left:50%;transform:translateX(-50%);width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 6px 2px var(--accentL)}
+.wins{display:flex;gap:5px}
+.dry{font-size:9px;font-weight:700;color:var(--warn);background:#F59E0B22;border-radius:5px;padding:1px 5px;margin-left:6px}
+.ring{width:48px;height:48px;border-radius:50%;position:relative;display:flex;align-items:center;justify-content:center}
+.ring .in{width:34px;height:34px;border:1px solid #ffffff2e;border-radius:50%;position:relative;overflow:hidden}
+.ring .pct{position:absolute;bottom:-13px;left:0;right:0;text-align:center;font-size:9.5px;font-weight:700;color:var(--t2)}
+.trow{display:flex;align-items:center;gap:8px;height:24px}
+.tsw{width:18px;height:18px;border-radius:6px;flex:none;border:1px solid #ffffff1a}
+.tname{font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tname span{color:var(--t3);font-weight:500}
+.bar{height:5px;border-radius:3px;background:#ffffff1a;position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;border-radius:3px;background:var(--accent)}
+.bar i.low{background:var(--warn)}
+.gram{font-size:10px;color:var(--t2);font-variant-numeric:tabular-nums;width:40px;text-align:right;flex:none}
+.gram.low{color:var(--warn);font-weight:700}
+.badge{font-size:9.5px;font-weight:700;color:var(--warn);background:#F59E0B22;border-radius:6px;padding:2px 6px}
+.empty-t{font-size:11px;color:var(--t3);font-style:italic}
+</style></head><body>
+<h1>AMS widget: three redesigns</h1>
+<div class="lede">Same demo printers in each. Every option keeps the per-widget printer choice and the "updated … ago" stamp, and draws effects (sparkle, multicolor, translucent) as the app does.</div>
+
+<div class="opt">
+<h2><b>A</b>Spool Rack</h2>
+<p>Each slot is drawn as a spool seen side-on: a ring of the filament's colour around a hub, material underneath. The slot printing right now glows and says "Feeding", so you can see which colour is in use. An empty slot is a dashed outline.</p>
+<div class="needs">Needs: which slot is feeding (the app has it; added to the widget's data).</div>
+<div class="row">
+ <div><div class="w small vs" style="gap:9px">
+   <div class="hs"><div class="pname grow"><span class="dot"></span>Studio H2C</div><span class="stamp">2m</span></div>
+   <div class="feed">Feeding PLA · slot 1</div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;justify-items:center">
+     <div class="disc f-orange active" style="width:40px;height:40px"></div>
+     <div class="disc f-black" style="width:40px;height:40px"></div>
+     <div class="disc f-blue" style="width:40px;height:40px"></div>
+     <div class="disc empty" style="width:40px;height:40px"></div>
+   </div>
+ </div><div class="lbl">Small</div></div>
+ <div><div class="w medium vs" style="gap:10px">
+   <div class="hs"><div class="pname grow"><span class="dot"></span>Studio H2C <span class="state">· Printing</span></div><span class="feed">Feeding slot 1</span></div>
+   <div class="rack">
+     <div><div class="disc f-orange active" style="width:46px;height:46px"></div><div class="mat">PLA</div></div>
+     <div><div class="disc f-black" style="width:46px;height:46px"></div><div class="mat">PLA</div></div>
+     <div><div class="disc f-blue" style="width:46px;height:46px"></div><div class="mat">PETG</div></div>
+     <div><div class="disc empty" style="width:46px;height:46px"></div><div class="mat" style="color:var(--t3)">Empty</div></div>
+     <div style="width:1px;background:var(--line);margin:0 2px"></div>
+     <div><div class="disc f-clear" style="width:46px;height:46px"></div><div class="mat">PETG</div></div>
+   </div>
+   <div class="hs"><span class="unitchip grow">AMS 1 · HT</span><span class="stamp">Updated 2m ago</span></div>
+ </div><div class="lbl">Medium</div></div>
+ <div><div class="w large vs" style="gap:12px">
+   <div class="hs"><span class="unitchip grow" style="font-size:11px">AMS · 4 PRINTERS</span><span class="stamp">Updated 2m ago</span></div>
+   <div class="vs" style="gap:8px">
+     <div class="hs"><div class="pname grow"><span class="dot"></span>Studio H2C</div><span class="feed">Feeding slot 1</span></div>
+     <div class="rack">
+       <div><div class="disc f-orange active" style="width:50px;height:50px"></div><div class="mat">PLA</div></div>
+       <div><div class="disc f-black" style="width:50px;height:50px"></div><div class="mat">PLA</div></div>
+       <div><div class="disc f-blue" style="width:50px;height:50px"></div><div class="mat">PETG</div></div>
+       <div><div class="disc empty" style="width:50px;height:50px"></div><div class="mat" style="color:var(--t3)">Empty</div></div>
+     </div>
+   </div>
+   <div style="height:1px;background:var(--line)"></div>
+   <div class="vs" style="gap:8px">
+     <div class="hs"><div class="pname grow"><span class="dot"></span>Workshop X1C</div><span class="feed">Feeding slot 3</span></div>
+     <div class="rack">
+       <div><div class="disc f-green" style="width:50px;height:50px"></div><div class="mat">PLA</div></div>
+       <div><div class="disc f-grey" style="width:50px;height:50px"></div><div class="mat">PETG</div></div>
+       <div><div class="disc f-multi active" style="width:50px;height:50px"></div><div class="mat">PLA</div></div>
+       <div><div class="disc f-sparkle" style="width:50px;height:50px"></div><div class="mat">PLA</div></div>
+     </div>
+   </div>
+   <div style="height:1px;background:var(--line)"></div>
+   <div class="hs" style="gap:10px"><div class="pname grow" style="color:var(--t2)">Garage A1 <span class="state">· Idle</span></div>
+     <div class="disc f-gold" style="width:22px;height:22px"></div><div class="disc empty" style="width:22px;height:22px"></div><div class="disc empty" style="width:22px;height:22px"></div><div class="disc empty" style="width:22px;height:22px"></div></div>
+   <div style="height:1px;background:var(--line)"></div>
+   <div class="hs" style="gap:10px"><div class="pname grow" style="color:var(--t2)">Office P1S <span class="state">· Paused</span></div>
+     <div class="disc empty" style="width:22px;height:22px"></div><div class="disc empty" style="width:22px;height:22px"></div><div class="disc" style="width:22px;height:22px;background:#EDEDED"></div><div class="disc empty" style="width:22px;height:22px"></div></div>
+ </div><div class="lbl">Large</div></div>
+</div>
+</div>
+
+<div class="opt">
+<h2><b>B</b>AMS Front</h2>
+<p>Each AMS unit looks like the real box: a dark unit with four tall windows of filament, material written up the side. The unit header shows its humidity (orange when damp) and a "Drying" tag while it dries. The feeding slot has a small light, like the AMS's own.</p>
+<div class="needs">Needs: AMS humidity, drying state and the feeding slot (the app has all three; added to the widget's data).</div>
+<div class="row">
+ <div><div class="w small vs" style="gap:8px">
+   <div class="hs"><div class="pname grow">Studio H2C</div><span class="stamp">2m</span></div>
+   <div class="box vs grow" style="padding:7px">
+     <div class="boxhead"><span class="grow">AMS 1</span><span class="hum">💧 18%</span></div>
+     <div class="wins grow">
+       <div class="win f-orange active"><span class="vm">PLA</span></div><div class="win f-black"><span class="vm">PLA</span></div>
+       <div class="win f-blue"><span class="vm">PETG</span></div><div class="win empty"></div>
+     </div>
+   </div>
+ </div><div class="lbl">Small</div></div>
+ <div><div class="w medium vs" style="gap:8px">
+   <div class="hs"><div class="pname grow"><span class="dot"></span>Studio H2C <span class="state">· Printing</span></div><span class="stamp">Updated 2m ago</span></div>
+   <div class="hs grow" style="gap:8px;align-items:stretch">
+     <div class="box vs" style="flex:2">
+       <div class="boxhead"><span class="grow">AMS 1</span><span class="hum">💧 18%</span></div>
+       <div class="wins grow">
+         <div class="win f-orange active"><span class="vm">PLA</span></div><div class="win f-black"><span class="vm">PLA</span></div>
+         <div class="win f-blue"><span class="vm">PETG</span></div><div class="win empty"></div>
+       </div>
+     </div>
+     <div class="box vs" style="flex:1">
+       <div class="boxhead"><span class="grow">HT</span><span class="hum wet">💧 41%</span></div>
+       <div class="wins grow"><div class="win f-clear lightbg"><span class="vm">PETG</span></div></div>
+       <div class="dry" style="margin:6px 0 0;text-align:center">Drying</div>
+     </div>
+   </div>
+ </div><div class="lbl">Medium</div></div>
+ <div><div class="w large vs" style="gap:9px">
+   <div class="hs"><span class="unitchip grow" style="font-size:11px">AMS · 3 PRINTERS</span><span class="stamp">Updated 2m ago</span></div>
+   <div class="vs" style="gap:5px">
+     <div class="pname"><span class="dot"></span>Studio H2C</div>
+     <div class="box vs" style="height:96px">
+       <div class="boxhead"><span class="grow">AMS 1</span><span class="hum">💧 18%</span></div>
+       <div class="wins grow">
+         <div class="win f-orange active"><span class="vm">PLA</span></div><div class="win f-black"><span class="vm">PLA</span></div>
+         <div class="win f-blue"><span class="vm">PETG</span></div><div class="win empty"></div>
+       </div>
+     </div>
+   </div>
+   <div class="vs" style="gap:5px">
+     <div class="pname"><span class="dot"></span>Workshop X1C</div>
+     <div class="box vs" style="height:96px">
+       <div class="boxhead"><span class="grow">AMS 1</span><span class="hum wet">💧 39%</span><span class="dry">Drying</span></div>
+       <div class="wins grow">
+         <div class="win f-green"><span class="vm">PLA</span></div><div class="win f-grey"><span class="vm">PETG</span></div>
+         <div class="win f-multi active"><span class="vm">PLA</span></div><div class="win f-sparkle"><span class="vm">PLA</span></div>
+       </div>
+     </div>
+   </div>
+   <div class="hs" style="gap:8px">
+     <div class="pname grow" style="color:var(--t2)">Garage A1 <span class="state">· Idle</span></div>
+     <div class="box hs" style="padding:5px;gap:4px;width:110px;height:34px">
+       <div class="win f-gold" style="height:22px"></div><div class="win empty" style="height:22px"></div><div class="win empty" style="height:22px"></div><div class="win empty" style="height:22px"></div>
+     </div>
+   </div>
+ </div><div class="lbl">Large</div></div>
+</div>
+</div>
+
+<div class="opt">
+<h2><b>C</b>Stock Check</h2>
+<p>Built around "will this spool last?": each slot shows its colour name, what's left in grams, and a bar that turns orange below the low-stock level. Small shows the four slots as rings that empty as the spool does. Large adds a count of low spools at the top.</p>
+<div class="needs">Needs: each loaded spool's colour name, remaining amount and low-stock flag from your inventory (the app has them; added to the widget's data). A slot with no inventory spool shows its material only.</div>
+<div class="row">
+ <div><div class="w small vs" style="gap:6px">
+   <div class="hs"><div class="pname grow">Studio H2C</div><span class="badge">1 low</span></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px 8px;justify-items:center;margin-top:0">
+     <div class="ring" style="background:conic-gradient(var(--accent) 0 72%,#ffffff1a 72% 100%)"><div class="in f-orange"></div><div class="pct">720g</div></div>
+     <div class="ring" style="background:conic-gradient(var(--warn) 0 12%,#ffffff1a 12% 100%)"><div class="in f-black"></div><div class="pct" style="color:var(--warn)">120g</div></div>
+     <div class="ring" style="background:conic-gradient(var(--accent) 0 88%,#ffffff1a 88% 100%)"><div class="in f-blue"></div><div class="pct">880g</div></div>
+     <div class="ring" style="border:2px dashed #ffffff22"><div class="pct">Empty</div></div>
+   </div>
+ </div><div class="lbl">Small</div></div>
+ <div><div class="w medium vs" style="gap:5px">
+   <div class="hs" style="margin-bottom:2px"><div class="pname grow"><span class="dot"></span>Studio H2C <span class="state">· AMS 1</span></div><span class="stamp">Updated 2m ago</span></div>
+   <div class="trow"><div class="tsw f-orange"></div><div class="tname" style="width:128px">PLA <span>Sunset Orange</span></div><div class="bar grow"><i style="width:72%"></i></div><div class="gram">720g</div></div>
+   <div class="trow"><div class="tsw f-black"></div><div class="tname" style="width:128px">PLA <span>Onyx Black</span></div><div class="bar grow"><i class="low" style="width:12%"></i></div><div class="gram low">120g</div></div>
+   <div class="trow"><div class="tsw f-blue"></div><div class="tname" style="width:128px">PETG <span>Cobalt Blue</span></div><div class="bar grow"><i style="width:88%"></i></div><div class="gram">880g</div></div>
+   <div class="trow"><div class="tsw" style="border:1.5px dashed #ffffff33"></div><div class="empty-t">Empty slot</div></div>
+ </div><div class="lbl">Medium</div></div>
+ <div><div class="w large vs" style="gap:5px">
+   <div class="hs" style="margin-bottom:4px"><span class="unitchip grow" style="font-size:11px">FILAMENT IN AMS</span><span class="badge">2 low</span></div>
+   <div class="pname" style="margin-bottom:1px"><span class="dot"></span>Studio H2C</div>
+   <div class="trow"><div class="tsw f-orange"></div><div class="tname" style="width:128px">PLA <span>Sunset Orange</span></div><div class="bar grow"><i style="width:72%"></i></div><div class="gram">720g</div></div>
+   <div class="trow"><div class="tsw f-black"></div><div class="tname" style="width:128px">PLA <span>Onyx Black</span></div><div class="bar grow"><i class="low" style="width:12%"></i></div><div class="gram low">120g</div></div>
+   <div class="trow"><div class="tsw f-blue"></div><div class="tname" style="width:128px">PETG <span>Cobalt Blue</span></div><div class="bar grow"><i style="width:88%"></i></div><div class="gram">880g</div></div>
+   <div class="trow"><div class="tsw" style="border:1.5px dashed #ffffff33"></div><div class="empty-t">Empty slot</div></div>
+   <div style="height:1px;background:var(--line);margin:4px 0"></div>
+   <div class="pname" style="margin-bottom:1px"><span class="dot"></span>Workshop X1C</div>
+   <div class="trow"><div class="tsw f-green"></div><div class="tname" style="width:128px">PLA <span>Forest Green</span></div><div class="bar grow"><i style="width:100%"></i></div><div class="gram">1000g</div></div>
+   <div class="trow"><div class="tsw f-grey"></div><div class="tname" style="width:128px">PETG <span>Charcoal Grey</span></div><div class="bar grow"><i class="low" style="width:20%"></i></div><div class="gram low">200g</div></div>
+   <div class="trow"><div class="tsw f-multi"></div><div class="tname" style="width:128px">PLA <span>Silk Multicolor</span></div><div class="bar grow"><i style="width:65%"></i></div><div class="gram">650g</div></div>
+   <div class="trow"><div class="tsw f-sparkle"></div><div class="tname" style="width:128px">PLA <span>Galaxy Black</span></div><div class="bar grow"><i style="width:40%"></i></div><div class="gram">400g</div></div>
+   <div class="grow"></div>
+   <div class="stamp" style="text-align:right">Updated 2m ago</div>
+ </div><div class="lbl">Large</div></div>
+</div>
+</div>
+</body></html>
