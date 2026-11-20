@@ -16,7 +16,8 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ${{ matrix.language == 'swift' && 'macos-latest' || 'ubuntu-latest' }}
+    # Swift needs Xcode 27, which GitHub ships on its xcode-27 image (a public preview).
+    runs-on: ${{ matrix.language == 'swift' && 'xcode-27' || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: read
