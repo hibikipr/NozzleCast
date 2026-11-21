@@ -5,6 +5,9 @@ description: |-
   LIVE ACTIVITIES THAT ACTUALLY UPDATE
   Start a print and NozzleCast puts a Live Activity on your Lock Screen and in the Dynamic Island — even if the app isn't open and your phone is locked. It shows real progress (not a rough estimate), a localized finish time, live temperatures, and a sharp cover image of the model, and keeps updating for the entire print.
 
+  WIDGETS FOR YOUR HOME SCREEN
+  Not a fan of Live Activities? The Print Status widget shows your print the same way: the model's cover, the printer, and a countdown that ticks on its own. Pick a printer per widget, or let it show the print that finishes soonest. The AMS Colors widget draws each slot as a spool in its filament's color and effect, and the Filament Stock widget keeps an eye on what's loaded.
+
   KNOW WHEN SOMETHING NEEDS ATTENTION
   A color-coded badge — yellow for a warning, red for an error — appears the moment your server reports an HMS issue serious enough to matter, matching the same severity your server's own dashboard shows. No more guessing whether "Paused" means a filament runout or nothing at all. Alerts arrive with a camera photo you can open full screen, and an alert you don't need can be muted with a swipe.
 
@@ -15,32 +18,44 @@ description: |-
   NozzleCast supports iPhone Duo. With the Duo open, your printer list and the selected printer sit side by side. Partly open, the printer's live camera view stays pinned on top while the controls scroll below it. Closed, you get the familiar single-column layout.
 
   FILAMENT INVENTORY, NOT GUESSWORK
-  Track every spool — material, color, brand, remaining weight, and whether it's loaded in an AMS or sitting in storage. Scan a spool's barcode or printed label with your camera to add it in seconds, entirely on-device, or put it on a spool reader connected to your server.
+  Track every spool — material, color, brand, remaining weight, and whether it's loaded in an AMS or sitting in storage. Scan a spool's barcode or printed label with your camera to add it in seconds, entirely on-device, or put it on a spool reader connected to your server. Label scanning reads barcodes, SKUs and the label's own words, and sets the spool's finish, such as matte, silk or dual color.
 
   PRINT QUEUE AND HISTORY
   See what's queued and why, start staged jobs, and find out before a job starts on filament that won't last. Browse past prints with pictures, and mark how each one came out.
+
+  IN YOUR LANGUAGE
+  NozzleCast is available in English, Chinese (Simplified and Traditional), Dutch, French, German, Italian, Japanese, Korean, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Turkish and Ukrainian.
 
   BUILT FOR SELF-HOSTERS
   NozzleCast talks directly to your self-hosted server's API. Live Activity push updates go through a small relay you run yourself (nozzlecast-relay, open source). There is no NozzleCast account and no NozzleCast server in between — your printer data stays on your own infrastructure.
 
   Requires an existing compatible self-hosted printer management server on your network. Live Activities and Lock Screen push updates require the optional nozzlecast-relay component.
-keywords: bambu,3d printing,filament,ams,print farm,live activity,x1c,p1s,a1,h3c,spool,queue
-promotional_text: 'New in 1.5: animated printers, four card layouts, a redesigned
-  Live Activity, and spool reader scanning, all driven by your own self-hosted server.'
+keywords: bambu,3d printing,filament,ams,print farm,live activity,x1c,p1s,a1,h3c,spool,queue,widget,inventory
+promotional_text: New Home Screen widgets for print status, AMS colors and filament stock, plus 15 more languages, all driven by your own self-hosted server.
 marketing_url: https://nozzlecast.townsville.cc
 support_url: https://nozzlecast.townsville.cc
 whats_new: |-
-  PRINT STATUS WIDGET
-  • A new Home Screen widget shows your print like the Lock Screen Live Activity: the model's cover, the printer, and a countdown that ticks on its own.
-  • Small shows one printer, medium adds the job, finish time and temperatures, and large shows two printers.
+  HOME SCREEN WIDGETS
+  • New Print Status widget shows your print like the Lock Screen Live Activity: the model's cover, the printer, the job name and a countdown that ticks on its own.
+  • Small shows one printer, medium adds finish time and temperatures, and large shows two printers.
   • Choose a printer in Edit Widget, or leave it on automatic to show the print that finishes soonest.
-  • A paused print says Paused, and an idle printer shows its last print and whether it finished, failed or was cancelled.
-
-  ALWAYS UP TO DATE
+  • A paused print says Paused, and an idle printer keeps showing its last print and whether it finished, failed or was cancelled.
+  • The AMS Colors widget is redrawn as a spool rack, with each slot in its filament's color and effect, and the slot feeding the current print glows.
+  • New Filament Stock widget for your AMS slots.
   • Background refresh now updates your printers as well as alerts, so widgets stay current while NozzleCast is closed.
+
+  NEW LANGUAGES
+  • NozzleCast is now available in Chinese (Simplified and Traditional), Dutch, French, German, Italian, Japanese, Korean, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Turkish and Ukrainian.
+
+  LABEL PHOTO AND SPOOLS
+  • Label Photo reads filament boxes much better: it looks up barcodes, then the SKU, then the label's own words, and fills in color, subtype, effect and extra colors.
+  • Spools take their finish from the Effect field, as your server does, and Edit Spool has a new Effect picker with a live preview.
+  • Any material can be saved, spelled as your server spells it, so an ASA roll is no longer saved as ABS.
+  • A barcode shared by several spool sizes now picks the right weight.
+  • Spools added or linked from a scanned tag are saved the same way your server saves them itself.
 
   DYNAMIC ISLAND
   • The time remaining is no longer cut off when another app's Live Activity or a phone call shares the island. It now reads 3h 25m, 25m, or 1m.
 
-  SPOOL READER
-  • Spools added or linked from a scanned tag are saved the same way your server saves them itself, with the tag type, empty spool weight and color name handled to match.
+  RELIABILITY
+  • Printer state is kept through brief connection blips, and alerts are no longer lost quietly.
