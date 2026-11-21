@@ -10,6 +10,7 @@
   "data": [
     { "filter": "01-monitor-animated", "keyword": { "text": "ALIVE ON SCREEN" }, "title": { "text": "Watch every printer at work" } },
     { "filter": "02-card-layouts", "keyword": { "text": "YOUR LAYOUT" }, "title": { "text": "Four ways to see your farm" } },
+    { "filter": "02-open-monitor-detail", "keyword": { "text": "SPLIT VIEW" }, "title": { "text": "Pick a printer, watch it live" } },
     { "filter": "03-printer-detail", "keyword": { "text": "FULL CONTROL" }, "title": { "text": "Every detail of every print" } },
     { "filter": "04-live-activity", "keyword": { "text": "ALWAYS IN VIEW" }, "title": { "text": "Track prints from your Lock Screen" } },
     { "filter": "05-spool-reader", "keyword": { "text": "SPOOL READER" }, "title": { "text": "Drop a spool, it's in your inventory" } },

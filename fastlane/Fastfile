@@ -159,14 +159,15 @@ platform :ios do
   # lane.
   UNFRAMEABLE_DEVICE_CLASSES = ["iPad-13"].freeze
 
-  # iPhone Duo (1398x2034 closed, 2853x2007 / 2007x2853 open) has no frameit
-  # template either, but deliver uploads it from fastlane 2.241.1 on (display
-  # type APP_IPHONE_DUO, one set for every pose, 10 per locale). Its files are
-  # copied into screenshots_framed/<locale>/ unframed, as
-  # "iPhone-Duo-<file>.png", so they survive this lane's rebuild of out_dir.
+  # iPhone Duo (1398x2034 closed, 2853x2007 / 2007x2853 open) is framed like the
+  # other iPhones: frameit 2.242 added the iPhone Duo Outer and Inner devices
+  # (picked by screenshot size). deliver uploads it from fastlane 2.241.1 on
+  # (display type APP_IPHONE_DUO, one set for every pose, 10 per locale).
   # Number the files in the order App Store Connect should show them: after
   # every upload deliver re-sorts each set by file name.
-  PASSTHROUGH_DEVICE_CLASSES = ["iPhone-Duo"].freeze
+  # Device classes whose screenshots skip frameit and go to the output
+  # unframed, as "<class>-<file>.png". None today.
+  PASSTHROUGH_DEVICE_CLASSES = [].freeze
 
   # frameit's ConfigParser#change_paths_to_absolutes! (frameit/lib/frameit/config_parser.rb)
   # unconditionally rewrites any 'font'/'background' string value with
@@ -289,6 +290,22 @@ platform :ios do
       # skip) legitimately produces nothing and that's expected, not an error.
       framed_files = Dir.glob(File.join(staging_dir, "*_framed.png"))
       staged_source_count = Dir.glob(File.join(staging_dir, "*.png")).reject { |p| p.end_with?("_framed.png") }.count
+
+      # frameit logs "Couldn't find template" or "No title provided" and moves
+      # on, so a shot can be left out without the lane failing (older frames
+      # have no iPhone Duo artwork; a new shot may have no Framefile.json
+      # entry). Every staged shot must have a framed version.
+      unframed = Dir.glob(File.join(staging_dir, "*.png")).reject { |p| p.end_with?("_framed.png") }
+                    .reject { |p| File.exist?(p.sub(/\.png\z/, "_framed.png")) }
+                    .map { |p| File.basename(p) }
+      unless unframed.empty?
+        UI.user_error!(
+          "frameit left #{unframed.count} screenshot(s) unframed for locale '#{locale}': " \
+          "#{unframed.sort.join(', ')}. Run `bundle exec fastlane frameit download_frames` if " \
+          "the frames are out of date, and make sure each shot has an entry in Framefile.json. " \
+          "Leaving the existing #{out_dir} untouched."
+        )
+      end
 
       if framed_files.empty? && staged_source_count > 0
         UI.user_error!(
