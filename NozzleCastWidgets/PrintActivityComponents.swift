@@ -243,9 +243,9 @@ let stoppedStateLabels: Set<String> = [
 
 /// The end date to count down to, or nil when a ticking countdown would lie — paused (the
 /// printer's estimate stops moving but a timer wouldn't), finished, or no estimate at all.
-func countdownEnd(_ state: PrintActivityAttributes.ContentState) -> Date? {
+func countdownEnd(_ state: PrintActivityAttributes.ContentState, at referenceDate: Date = .now) -> Date? {
     guard let end = state.estimatedEndAt,
-          end > .now,
+          end > referenceDate,
           end > state.startedAt,
           state.progress < 1,
           !stoppedStateLabels.contains(state.stateLabel)
@@ -270,12 +270,13 @@ func countdownEnd(_ state: PrintActivityAttributes.ContentState) -> Date? {
 struct Countdown: View {
     var state: PrintActivityAttributes.ContentState
     var compact = false
+    var referenceDate: Date = .now
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
-        if let end = countdownEnd(state), compact {
+        if let end = countdownEnd(state, at: referenceDate), compact {
             // Whole minutes, rounded up so the last minute reads "1m" rather than "0m".
-            let minutes = (end.timeIntervalSinceNow / 60).rounded(.up)
+            let minutes = (end.timeIntervalSince(referenceDate) / 60).rounded(.up)
             Text(
                 Duration.seconds(minutes * 60)
                     .formatted(.units(allowed: [.hours, .minutes], width: .narrow))
@@ -283,7 +284,7 @@ struct Countdown: View {
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.5)
-        } else if let end = countdownEnd(state) {
+        } else if let end = countdownEnd(state, at: referenceDate) {
             Text(
                 .currentDate,
                 format: .timer(

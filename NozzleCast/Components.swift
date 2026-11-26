@@ -121,6 +121,7 @@ struct LiveCameraView: View {
     var isPaused: Bool = false
 
     @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var image: UIImage?
 
     private var error: String? { store.cameraErrors[printerID] }
@@ -149,8 +150,8 @@ struct LiveCameraView: View {
             image = nil
             isShowingLiveFrame = false
         }
-        .task(id: PollKey(printerID: printerID, isPaused: isPaused)) {
-            guard !isPaused else { return }
+        .task(id: PollKey(printerID: printerID, isPaused: isPaused, isSceneActive: scenePhase == .active)) {
+            guard !isPaused, scenePhase == .active else { return }
             while !Task.isCancelled {
                 if let frame = await store.cameraSnapshot(printerID: printerID, maxPixelSize: maxPixelSize) {
                     image = frame
@@ -167,6 +168,7 @@ struct LiveCameraView: View {
 private struct PollKey: Hashable {
     var printerID: String
     var isPaused: Bool
+    var isSceneActive: Bool
 }
 
 /// The rendered plate preview for a printer's current or most recently finished job — refetched
@@ -457,6 +459,7 @@ struct StatusDot: View {
 
 struct PulseEffect: ViewModifier {
     var active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animate = false
 
     func body(content: Content) -> some View {
@@ -465,12 +468,18 @@ struct PulseEffect: ViewModifier {
                 Circle()
                     .stroke(NCColor.statusPrinting, lineWidth: 2)
                     .scaleEffect(animate ? 2.2 : 1)
-                    .opacity(active ? (animate ? 0 : 0.6) : 0)
+                    .opacity(active && !reduceMotion ? (animate ? 0 : 0.6) : 0)
             )
-            .onAppear {
-                guard active else { return }
-                withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) {
-                    animate = true
+            .onChange(of: active && !reduceMotion, initial: true) { _, shouldPulse in
+                if shouldPulse {
+                    animate = false
+                    withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) {
+                        animate = true
+                    }
+                } else {
+                    withAnimation(.linear(duration: 0)) {
+                        animate = false
+                    }
                 }
             }
     }

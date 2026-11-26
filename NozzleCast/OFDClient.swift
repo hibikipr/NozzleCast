@@ -94,9 +94,9 @@ final class OFDClient {
             }
         }
         loadTask = task
+        defer { if loadTask == task { loadTask = nil } }
         let result = try await task.value
         cache = result
-        loadTask = nil
         return result
     }
 
@@ -119,9 +119,9 @@ final class OFDClient {
         let (data, _) = try await URLSession.shared.data(from: Self.allURL)
         let all = try JSONDecoder().decode(AllJSON.self, from: data)
 
-        let brandsByID = Dictionary(uniqueKeysWithValues: all.brands.map { ($0.id, $0) })
-        let filamentsByID = Dictionary(uniqueKeysWithValues: all.filaments.map { ($0.id, $0) })
-        let variantsByID = Dictionary(uniqueKeysWithValues: all.variants.map { ($0.id, $0) })
+        let brandsByID = Dictionary(all.brands.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let filamentsByID = Dictionary(all.filaments.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let variantsByID = Dictionary(all.variants.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         var gtinIndex: [String: IndexEntry] = [:]
         var articleIndex: [String: IndexEntry] = [:]

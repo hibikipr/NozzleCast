@@ -1038,6 +1038,7 @@ final class AppStore {
             setCameraError(nil, for: printerID)
             return image
         } catch {
+            if Self.isCancellation(error) { return nil }
             setCameraError((error as? LocalizedError)?.errorDescription ?? error.localizedDescription, for: printerID)
             return nil
         }
@@ -1341,8 +1342,8 @@ final class AppStore {
     /// `tag` is the NFC tag a SpoolBuddy read off this spool; it's linked to the new record, so
     /// the next scan of it finds the spool.
     @discardableResult
-    func addSpool(material: String, colorName: String, colorHex: String, brand: String, netWeightGrams: Int, tag: (uid: String, trayUUID: String?)? = nil, extras: SpoolCreateExtras = SpoolCreateExtras()) -> Spool {
-        let spool = Spool(
+    func addSpool(material: String, colorName: String, colorHex: String, brand: String, netWeightGrams: Int, tag: (uid: String, trayUUID: String?)? = nil, extras: SpoolCreateExtras = SpoolCreateExtras()) async -> Spool? {
+        let placeholder = Spool(
             id: isShowingDemoData ? "mock-spool-\(UUID().uuidString)" : "pending-\(UUID().uuidString)",
             material: material,
             colorName: colorName,
@@ -1357,20 +1358,52 @@ final class AppStore {
             subtype: extras.subtype,
             effectType: extras.effectType
         )
+        if isShowingDemoData {
+            spools.insert(placeholder, at: 0)
+            return placeholder
+        }
+        guard isLive, let client else {
+            actionError = String(localized: "Not connected to your server. Pull to refresh and try again.")
+            return nil
+        }
         let rgba = extras.rgba ?? Self.rgba(hex: colorHex, alpha: 1)
         // The pending placeholder is replaced by the real record on the follow-up refresh — or,
         // if creation failed, dropped by the failure path's own refresh.
-        performAction(localChange: { self.spools.insert(spool, at: 0) }) { client in
+        spools.insert(placeholder, at: 0)
+        do {
             let created = try await client.createSpool(material: material, colorName: colorName, rgba: rgba, brand: brand, labelWeight: netWeightGrams, extras: extras)
             if let tag {
                 do {
                     try await client.linkTag(spoolID: created.id, tagUID: tag.uid, trayUUID: tag.trayUUID, origin: .newSpool)
                 } catch {
-                    throw TagLinkError(underlying: error)
+                    let linkError = TagLinkError(underlying: error)
+                    actionError = linkError.errorDescription ?? linkError.localizedDescription
                 }
             }
+            await refresh()
+            if let real = spool("bb-\(created.id)") {
+                return real
+            }
+            let mapped = Self.mapSpool(
+                created,
+                assignment: nil,
+                locationNames: locationNames,
+                colorCatalog: colorCatalog,
+                lowStockThreshold: lowStockThreshold,
+                backend: inventoryBackend
+            )
+            if let idx = spools.firstIndex(where: { $0.id == placeholder.id }) {
+                spools[idx] = mapped
+            } else {
+                spools.insert(mapped, at: 0)
+            }
+            return mapped
+        } catch {
+            spools.removeAll { $0.id == placeholder.id }
+            actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            await refresh()
+            return nil
         }
-        return spool
     }
 
     /// The spool was created but its NFC tag couldn't be linked. Worded so it isn't read as "the

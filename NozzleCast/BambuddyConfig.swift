@@ -77,8 +77,9 @@ final class BambuddyConfig {
                 // First launch after the server URL moved from UserDefaults to the Keychain:
                 // carry the existing value over so the user doesn't have to re-enter it.
                 serverURLString = legacy
-                KeychainStore.set(legacy, forKey: Self.serverKeychainKey)
-                UserDefaults.standard.removeObject(forKey: Self.legacyServerDefaultsKey)
+                if KeychainStore.set(legacy, forKey: Self.serverKeychainKey) {
+                    UserDefaults.standard.removeObject(forKey: Self.legacyServerDefaultsKey)
+                }
             } else {
                 serverURLString = ""
             }
@@ -92,12 +93,21 @@ final class BambuddyConfig {
         apiKey = storedAPIKey.value ?? ""
     }
 
-    var serverURL: URL? {
-        guard !serverURLString.isEmpty else { return nil }
-        var s = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !s.contains("://") { s = "https://" + s }
+    static func normalizedServerURL(from raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var s = trimmed.contains("://") ? trimmed : "https://" + trimmed
         while s.hasSuffix("/") { s.removeLast() }
-        return URL(string: s)
+        guard let components = URLComponents(string: s),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = components.host, !host.isEmpty
+        else { return nil }
+        return components.url
+    }
+
+    var serverURL: URL? {
+        Self.normalizedServerURL(from: serverURLString)
     }
 
     var isConfigured: Bool {
@@ -110,8 +120,11 @@ final class BambuddyConfig {
     }
 
     func clear() {
+        isInitializing = true
+        defer { isInitializing = false }
         serverURLString = ""
         apiKey = ""
+        storageWasUnavailable = false
         KeychainStore.remove(Self.serverKeychainKey)
         KeychainStore.remove(Self.apiKeyKeychainKey)
     }

@@ -86,6 +86,8 @@ struct ScanView: View {
     @State private var linkingTag: UnknownTag?
     /// A label photo picked from the library, read the same way as the live camera's.
     @State private var pickedPhoto: PhotosPickerItem?
+    @State private var lookupTask: Task<Void, Never>?
+    @State private var isAddingSpool = false
 
     struct UnknownTag: Identifiable {
         var uid: String
@@ -125,7 +127,11 @@ struct ScanView: View {
             .background(NCColor.canvasBackground.ignoresSafeArea())
             .navigationBarHidden(true)
             .onAppear { isVisible = true }
-            .onDisappear { isVisible = false }
+            .onDisappear {
+                isVisible = false
+                lookupTask?.cancel()
+                lookupTask = nil
+            }
             .task(id: listensToSpoolBuddy) {
                 guard listensToSpoolBuddy else { return }
                 spoolBuddyAvailable = spoolBuddy.start(store: store)
@@ -136,6 +142,8 @@ struct ScanView: View {
                 spoolBuddy.stop()
             }
             .onChange(of: mode) { _, newMode in
+                lookupTask?.cancel()
+                lookupTask = nil
                 scannerBridge.reset()
                 if newMode == .manual {
                     result = ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
@@ -148,14 +156,20 @@ struct ScanView: View {
             .onChange(of: pickedPhoto) { _, item in
                 guard let item else { return }
                 pickedPhoto = nil
+                lookupTask?.cancel()
                 step = .loading
-                Task {
-                    guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else {
+                lookupTask = Task {
+                    guard let data = try? await item.loadTransferable(type: Data.self),
+                          !Task.isCancelled,
+                          let image = await ImageDownsampling.image(from: data, maxPixelSize: 2048) else {
+                        guard !Task.isCancelled else { return }
                         step = .capture
                         lookupErrorMessage = String(localized: "Couldn't open that photo.")
                         return
                     }
+                    guard !Task.isCancelled else { return }
                     let reading = await LabelImageReader.read(image)
+                    guard !Task.isCancelled else { return }
                     runLabelRead(reading)
                 }
             }
@@ -479,13 +493,20 @@ struct ScanView: View {
                 Button {
                     addToInventory()
                 } label: {
-                    Text("Add to Inventory")
-                        .ncFont(size: 16, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(NCColor.onAccent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NCColor.accent))
+                    HStack(spacing: 8) {
+                        if isAddingSpool {
+                            ProgressView()
+                                .tint(NCColor.onAccent)
+                        }
+                        Text("Add to Inventory")
+                    }
+                    .ncFont(size: 16, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(NCColor.onAccent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NCColor.accent))
                 }
+                .disabled(isAddingSpool)
                 .padding(.top, 4)
                 .padding(.bottom, 100)
             }
@@ -563,17 +584,23 @@ struct ScanView: View {
                 Button {
                     addToInventory()
                 } label: {
-                    Text("Add to Inventory")
-                        .ncFont(size: 16, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(canSubmitManual ? NCColor.onAccent : .white.opacity(0.6))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(canSubmitManual ? NCColor.accent : NCColor.accent.opacity(0.35))
-                        )
+                    HStack(spacing: 8) {
+                        if isAddingSpool {
+                            ProgressView()
+                                .tint(canSubmitManual ? NCColor.onAccent : .white.opacity(0.6))
+                        }
+                        Text("Add to Inventory")
+                    }
+                    .ncFont(size: 16, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(canSubmitManual ? NCColor.onAccent : .white.opacity(0.6))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(canSubmitManual ? NCColor.accent : NCColor.accent.opacity(0.35))
+                    )
                 }
-                .disabled(!canSubmitManual)
+                .disabled(!canSubmitManual || isAddingSpool)
                 .padding(.top, 4)
                 .padding(.bottom, 100)
             }
@@ -674,9 +701,11 @@ struct ScanView: View {
     }
 
     private func runBarcodeLookup(_ barcode: String, notifyIfMissing: Bool = false) {
+        lookupTask?.cancel()
         step = .loading
-        Task {
+        lookupTask = Task {
             let outcome = await FilamentLookupService.lookup(barcode: barcode)
+            guard !Task.isCancelled else { return }
             result = outcome.result
             step = .review
             if let lookupError = outcome.lookupError {
@@ -694,14 +723,16 @@ struct ScanView: View {
     /// Looks a label up — its barcodes, then its SKU — and fills the form from the first hit or
     /// from what the label says.
     private func runLabelRead(_ reading: FilamentLabelReader.Reading) {
+        lookupTask?.cancel()
         guard !reading.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !reading.barcodes.isEmpty else {
             step = .capture
             lookupErrorMessage = String(localized: "No text or barcode found in that photo.")
             return
         }
         step = .loading
-        Task {
+        lookupTask = Task {
             let outcome = await FilamentLookupService.analyze(reading)
+            guard !Task.isCancelled else { return }
             result = outcome.result
             step = .review
             if let lookupError = outcome.lookupError { lookupErrorMessage = lookupError }
@@ -709,22 +740,36 @@ struct ScanView: View {
     }
 
     private func addToInventory() {
-        let spool = store.addSpool(
-            material: BambuddyMaterials.canonical(pendingTagData?.material(for: result) ?? result.material),
-            colorName: result.colorName,
-            colorHex: result.colorHex,
-            brand: result.brand,
-            netWeightGrams: result.netWeightGrams,
-            tag: pendingTag,
-            extras: pendingTagData?.createExtras(for: result) ?? result.createExtras
-        )
-        addedSpool = spool
-        pendingTag = nil
-        pendingTagData = nil
-        step = .done
+        guard !isAddingSpool else { return }
+        isAddingSpool = true
+        let material = BambuddyMaterials.canonical(pendingTagData?.material(for: result) ?? result.material)
+        let colorName = result.colorName
+        let colorHex = result.colorHex
+        let brand = result.brand
+        let netWeightGrams = result.netWeightGrams
+        let tag = pendingTag
+        let extras = pendingTagData?.createExtras(for: result) ?? result.createExtras
+        Task {
+            defer { isAddingSpool = false }
+            guard let spool = await store.addSpool(
+                material: material,
+                colorName: colorName,
+                colorHex: colorHex,
+                brand: brand,
+                netWeightGrams: netWeightGrams,
+                tag: tag,
+                extras: extras
+            ) else { return }
+            addedSpool = spool
+            pendingTag = nil
+            pendingTagData = nil
+            step = .done
+        }
     }
 
     private func reset() {
+        lookupTask?.cancel()
+        lookupTask = nil
         step = .capture
         // SpoolBuddy mode stays put, ready for the next spool.
         if mode == .spoolBuddy {

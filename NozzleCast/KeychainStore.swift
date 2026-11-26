@@ -4,19 +4,25 @@ import Security
 enum KeychainStore {
     private static let service = "com.noozlecast.bambuddy"
 
-    static func set(_ value: String, forKey key: String) {
+    @discardableResult
+    static func set(_ value: String, forKey key: String) -> Bool {
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
-        SecItemDelete(query as CFDictionary)
-
-        var attributes = query
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(attributes as CFDictionary, nil)
+        var status = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if status == errSecItemNotFound {
+            var attributes = query
+            attributes[kSecValueData as String] = data
+            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            status = SecItemAdd(attributes as CFDictionary, nil)
+        }
+        return status == errSecSuccess
     }
 
     /// Why this exists instead of just `get` returning nil: "there is no such item" and "the item
