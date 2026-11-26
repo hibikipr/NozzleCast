@@ -521,7 +521,9 @@ final class PushNotificationManager: NSObject {
         guard isFirebaseConfigured else { return }
         subscribedTopic = topic
         let fcmTopic = PushTopicHash.firebaseTopic(baseUrl: server, topic: topic, appDefaultBaseUrl: Self.knownNtfyDefaultBaseUrl)
-        Messaging.messaging().subscribe(toTopic: fcmTopic) { error in
+        // `@Sendable` keeps the Firebase ObjC completion callback nonisolated so completing on
+        // a background queue doesn't trip Swift 6's `@MainActor` runtime assertion.
+        Messaging.messaging().subscribe(toTopic: fcmTopic) { @Sendable error in
             if let error {
                 AppLog.push.error("FCM topic subscribe failed for \(fcmTopic, privacy: .private): \(String(describing: error), privacy: .private)")
             }
@@ -544,20 +546,29 @@ extension PushNotificationManager: MessagingDelegate {
     // called before it completes, causing "No APNS token specified" and a failed subscription).
     // Re-subscribing here ensures the topic subscription actually lands even if the first attempt
     // was dropped.
-    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+    //
+    // Marked `nonisolated` because Firebase doesn't guarantee main-thread delivery for this ObjC
+    // delegate callback; hopping onto `@MainActor` explicitly avoids a Swift 6 runtime isolation
+    // trap (`EXC_BREAKPOINT`) if invoked off-main.
+    nonisolated func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         // Firebase swizzles didRegisterForRemoteNotificationsWithDeviceToken and may not call
         // through to AppDelegate's implementation, so the APNS token never reaches handleAPNsToken
         // via that path. By the time this callback fires Firebase holds both the APNS and FCM
         // tokens, so grab the APNS token here as the guaranteed fallback.
-        if let apnsToken = messaging.apnsToken {
-            AppLog.push.debug("FCM callback: APNS token available (\(apnsToken.count, privacy: .public) bytes), registering device with relay")
-            Task { await registerDeviceToken(apnsToken) }
-        } else {
-            AppLog.push.debug("FCM callback: no APNS token available yet")
-        }
+        let apnsToken = messaging.apnsToken
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let apnsToken {
+                AppLog.push.debug("FCM callback: APNS token available (\(apnsToken.count, privacy: .public) bytes), registering device with relay")
+                self.cachedAPNsToken = apnsToken
+                await self.registerDeviceToken(apnsToken)
+            } else {
+                AppLog.push.debug("FCM callback: no APNS token available yet")
+            }
 
-        guard let config = PushSharedStore.loadNtfyConfig() else { return }
-        AppLog.push.debug("FCM token received, re-subscribing to ntfy topic")
-        subscribe(server: config.server, topic: config.topic, authToken: config.authToken)
+            guard let config = PushSharedStore.loadNtfyConfig() else { return }
+            AppLog.push.debug("FCM token received, re-subscribing to ntfy topic")
+            self.subscribe(server: config.server, topic: config.topic, authToken: config.authToken)
+        }
     }
 }
