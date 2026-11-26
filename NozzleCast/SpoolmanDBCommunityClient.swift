@@ -61,7 +61,7 @@ actor SpoolmanDBCommunityClient {
     /// found" with no way to tell the user which actually happened.
     func lookup(gtin: String) async throws -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
         let cache = try await ensureLoaded()
-        guard let fields = cache.gtinIndex[Self.canonicalGTIN(gtin)] else { return nil }
+        guard let fields = cache.gtinIndex[FilamentCode.canon(gtin)] else { return nil }
         return (fields, [])
     }
 
@@ -129,10 +129,10 @@ actor SpoolmanDBCommunityClient {
 
             var gtins: [String] = []
             for ean in entry.eans ?? [] where !ean.trimmingCharacters(in: .whitespaces).isEmpty {
-                gtins.append(Self.canonicalGTIN(ean))
+                gtins.append(FilamentCode.canon(ean))
             }
             for ean in entry.eans_refill ?? [] where !ean.trimmingCharacters(in: .whitespaces).isEmpty {
-                gtins.append(Self.canonicalGTIN(ean))
+                gtins.append(FilamentCode.canon(ean))
             }
             var skus: [String] = []
             for code in entry.codes ?? [] {
@@ -142,7 +142,7 @@ actor SpoolmanDBCommunityClient {
             guard !gtins.isEmpty || !skus.isEmpty else { continue }
 
             let material = entry.material ?? ""
-            let colorName = Self.colorName(fromName: entry.name ?? "", material: material)
+            let colorName = Self.colorName(from: entry.name ?? "", material: material)
             var nozzleMin: Int?, nozzleMax: Int?
             if let range = entry.extruder_temp_range, range.count == 2 { nozzleMin = range[0]; nozzleMax = range[1] }
             else if let t = entry.extruder_temp { nozzleMin = t; nozzleMax = t }
@@ -186,12 +186,9 @@ actor SpoolmanDBCommunityClient {
         return fresh
     }
 
-    private static func colorName(fromName name: String, material: String) -> String? {
-        var s = name
-        if !material.isEmpty {
-            s = s.replacingOccurrences(of: material, with: "", options: [.caseInsensitive, .regularExpression])
-        }
-        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    nonisolated static func colorName(from name: String, material: String) -> String? {
+        let stripped = MaterialFamily.strippingMaterialToken(material, from: name)
+        let s = stripped.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: " -+"))
         return s.isEmpty ? nil : s
     }
@@ -237,12 +234,5 @@ actor SpoolmanDBCommunityClient {
         h = h.hasPrefix("#") ? String(h.dropFirst()) : h
         guard h.count == 6, h.allSatisfy(\.isHexDigit) else { return nil }
         return h.uppercased() + "FF"
-    }
-
-    /// Mirrors `FilamentCode.canon` without hopping to `@MainActor` during off-main indexing.
-    private static func canonicalGTIN(_ barcode: String) -> String {
-        let digits = barcode.filter(\.isNumber)
-        let stripped = digits.drop { $0 == "0" }
-        return stripped.isEmpty ? "0" : String(stripped)
     }
 }

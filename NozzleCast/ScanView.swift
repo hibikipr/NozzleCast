@@ -65,6 +65,7 @@ struct ScanView: View {
     @State private var mode: ScanMode = .barcode
     @State private var step: ScanStep = .capture
     @State private var result = ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+    @State private var netWeightText = "1000"
     @State private var addedSpool: Spool?
     @State private var showAssignPicker = false
     @State private var scannerBridge = ScannerBridge()
@@ -146,7 +147,7 @@ struct ScanView: View {
                 lookupTask = nil
                 scannerBridge.reset()
                 if newMode == .manual {
-                    result = ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                    applyResult(ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil))
                 }
             }
             .onChange(of: scannerBridge.lastBarcode) { _, newBarcode in
@@ -239,17 +240,22 @@ struct ScanView: View {
 
             HStack(spacing: 2) {
                 ForEach(ScanMode.allCases, id: \.self) { m in
-                    Text(m.label)
-                        .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .foregroundStyle(mode == m ? .white : NCColor.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                        .background(
-                            Capsule().fill(mode == m ? NCColor.segmentThumb : .clear)
-                        )
-                        .onTapGesture { mode = m }
+                    Button {
+                        mode = m
+                    } label: {
+                        Text(m.label)
+                            .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .foregroundStyle(mode == m ? .white : NCColor.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .background(
+                                Capsule().fill(mode == m ? NCColor.segmentThumb : .clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(mode == m ? .isSelected : [])
                 }
             }
             .padding(2)
@@ -272,8 +278,10 @@ struct ScanView: View {
                     // Without decoded tag data (an older Bambuddy or SpoolBuddy daemon, or a
                     // non-Bambu tag) the form starts blank; a tray UUID still says it's a genuine
                     // Bambu Lab spool.
-                    result = tagData?.scannedResult
-                        ?? ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                    applyResult(
+                        tagData?.scannedResult
+                            ?? ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: trayUUID != nil ? "Bambu Lab" : "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil)
+                    )
                     pendingTag = (tagUID, trayUUID)
                     pendingTagData = tagData
                     step = .review
@@ -373,6 +381,7 @@ struct ScanView: View {
                 .buttonStyle(.plain)
                 .disabled(!labelHasContent)
                 .opacity(labelHasContent ? 1 : 0.4)
+                .accessibilityLabel(Text("Capture label photo", comment: "Accessibility label for the label photo shutter button"))
 
                 PhotosPicker(selection: $pickedPhoto, matching: .images) {
                     Label("Choose Photo", systemImage: "photo.on.rectangle")
@@ -429,6 +438,7 @@ struct ScanView: View {
                     .background(Circle().fill(Color.white.opacity(0.08)))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(Text("Cancel", comment: "Accessibility label for cancelling scan lookup or review"))
             Spacer()
         }
     }
@@ -474,6 +484,7 @@ struct ScanView: View {
                 VStack(spacing: 12) {
                     labeledField(String(localized: "Brand", comment: "Filament field label"), text: $result.brand)
                     materialPickerField
+                    colorPickerField
                     labeledField(String(localized: "Color name", comment: "Filament field label"), text: $result.colorName)
                     labeledField(String(localized: "Subtype", comment: "Filament field label: the product line, e.g. Dual Matte"), text: Binding(
                         get: { result.subtype ?? "" },
@@ -482,10 +493,7 @@ struct ScanView: View {
                     if store.inventoryBackend != .spoolman {
                         effectField
                     }
-                    labeledField(String(localized: "Net weight (g)", comment: "Filament field label"), text: Binding(
-                        get: { String(result.netWeightGrams) },
-                        set: { result.netWeightGrams = Int($0) ?? result.netWeightGrams }
-                    ))
+                    netWeightField
                     if result.barcode != nil {
                         labeledField(String(localized: "Barcode", comment: "Filament field label"), text: Binding(
                             get: { result.barcode ?? "" },
@@ -500,17 +508,20 @@ struct ScanView: View {
                     HStack(spacing: 8) {
                         if isAddingSpool {
                             ProgressView()
-                                .tint(NCColor.onAccent)
+                                .tint(canSubmitReview ? NCColor.onAccent : .white.opacity(0.6))
                         }
                         Text("Add to Inventory")
                     }
                     .ncFont(size: 16, weight: .semibold, relativeTo: .body)
-                    .foregroundStyle(NCColor.onAccent)
+                    .foregroundStyle(canSubmitReview ? NCColor.onAccent : .white.opacity(0.6))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NCColor.accent))
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(canSubmitReview ? NCColor.accent : NCColor.accent.opacity(0.35))
+                    )
                 }
-                .disabled(isAddingSpool)
+                .disabled(!canSubmitReview || isAddingSpool)
                 .padding(.top, 4)
                 .padding(.bottom, 100)
             }
@@ -559,30 +570,13 @@ struct ScanView: View {
                 Text("Enter Filament Details")
                     .ncFont(size: 20, weight: .bold, relativeTo: .title3)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Filament color")
-                        .ncFont(size: 12, weight: .medium, relativeTo: .caption)
-                        .foregroundStyle(NCColor.textSecondary)
-                    HStack(spacing: 12) {
-                        ColorPicker("Filament color", selection: colorBinding, supportsOpacity: false)
-                            .labelsHidden()
-                        Text(result.colorHex.uppercased())
-                            .ncFont(size: 14, relativeTo: .subheadline)
-                            .foregroundStyle(.white)
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
-                }
+                colorPickerField
 
                 VStack(spacing: 12) {
                     labeledField(String(localized: "Brand", comment: "Filament field label"), text: $result.brand)
                     materialPickerField
                     labeledField(String(localized: "Color name", comment: "Filament field label"), text: $result.colorName)
-                    labeledField(String(localized: "Net weight (g)", comment: "Filament field label"), text: Binding(
-                        get: { String(result.netWeightGrams) },
-                        set: { result.netWeightGrams = Int($0) ?? result.netWeightGrams }
-                    ))
+                    netWeightField
                 }
 
                 Button {
@@ -639,6 +633,34 @@ struct ScanView: View {
         }
     }
 
+    private var colorPickerField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Filament color")
+                .ncFont(size: 12, weight: .medium, relativeTo: .caption)
+                .foregroundStyle(NCColor.textSecondary)
+            HStack(spacing: 12) {
+                ColorPicker("Filament color", selection: colorBinding, supportsOpacity: false)
+                    .labelsHidden()
+                Text(result.colorHex.uppercased())
+                    .ncFont(size: 14, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                Spacer()
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+        }
+    }
+
+    private var netWeightField: some View {
+        labeledField(String(localized: "Net weight (g)", comment: "Filament field label"), text: $netWeightText)
+            .keyboardType(.numberPad)
+            .onChange(of: netWeightText) { _, newValue in
+                if let grams = Int(newValue.trimmingCharacters(in: .whitespaces)), grams > 0 {
+                    result.netWeightGrams = grams
+                }
+            }
+    }
+
     private var colorBinding: Binding<Color> {
         Binding(
             get: { Color(hex: result.colorHex) },
@@ -646,10 +668,14 @@ struct ScanView: View {
         )
     }
 
-    private var canSubmitManual: Bool {
+    private var hasRequiredFilamentFields: Bool {
         !result.brand.trimmingCharacters(in: .whitespaces).isEmpty
             && !result.colorName.trimmingCharacters(in: .whitespaces).isEmpty
+            && !result.material.trimmingCharacters(in: .whitespaces).isEmpty
     }
+
+    private var canSubmitReview: Bool { hasRequiredFilamentFields }
+    private var canSubmitManual: Bool { hasRequiredFilamentFields }
 
     private var doneBody: some View {
         VStack(spacing: 20) {
@@ -704,13 +730,18 @@ struct ScanView: View {
         }
     }
 
+    private func applyResult(_ newResult: ScannedResult) {
+        result = newResult
+        netWeightText = String(newResult.netWeightGrams)
+    }
+
     private func runBarcodeLookup(_ barcode: String, notifyIfMissing: Bool = false) {
         lookupTask?.cancel()
         step = .loading
         lookupTask = Task {
             let outcome = await FilamentLookupService.lookup(barcode: barcode)
             guard !Task.isCancelled else { return }
-            result = outcome.result
+            applyResult(outcome.result)
             step = .review
             if let lookupError = outcome.lookupError {
                 lookupErrorMessage = lookupError
@@ -737,7 +768,7 @@ struct ScanView: View {
         lookupTask = Task {
             let outcome = await FilamentLookupService.analyze(reading)
             guard !Task.isCancelled else { return }
-            result = outcome.result
+            applyResult(outcome.result)
             step = .review
             if let lookupError = outcome.lookupError { lookupErrorMessage = lookupError }
         }
@@ -781,6 +812,7 @@ struct ScanView: View {
         } else {
             mode = .barcode
         }
+        applyResult(ScannedResult(material: "PLA", colorName: "", colorHex: "#808080", brand: "", netWeightGrams: 1000, barcode: nil, alsoMatches: nil))
         addedSpool = nil
         pendingTag = nil
         pendingTagData = nil

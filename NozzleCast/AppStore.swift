@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import Observation
 import WidgetKit
@@ -235,12 +236,12 @@ final class AppStore {
             // was answering fine. Put back whatever the status was before this check; the next
             // refresh settles it.
             if Self.isCancellation(error) {
-                NSLog("NCDEBUG Bambuddy connection check cancelled, restoring status %@", String(describing: statusBeforeCheck))
+                AppLog.network.debug("Bambuddy connection check cancelled, restoring status \(String(describing: statusBeforeCheck), privacy: .private)")
                 connectionStatus = statusBeforeCheck
                 return false
             }
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            NSLog("NCDEBUG Bambuddy connection failed: %@", msg)
+            AppLog.network.error("Bambuddy connection failed: \(msg, privacy: .private)")
             connectionStatus = .failed(msg)
             // Keep whatever real data is on screen (see `isShowingDemoData`). Sample data left over
             // from before a server was configured is dropped, though: it would now read as the
@@ -611,7 +612,7 @@ final class AppStore {
 
                         let fresh = await statusTask
                         if fresh == nil, fallbackStatuses[p.id] != nil {
-                            NSLog("NCDEBUG status for printer %d failed; showing its last one", p.id)
+                            AppLog.network.error("status for printer \(p.id, privacy: .public) failed; showing its last one")
                         }
                         let fetchedMaint = await maintenanceTask
                         let maintenance = reuseMaintenance ?? fetchedMaint
@@ -646,7 +647,8 @@ final class AppStore {
 
             if shouldCheckBackend {
                 if inventoryResult.checkedBackend == nil {
-                    NSLog("NCDEBUG inventory backend check inconclusive; keeping %@", String(describing: inventoryBackend))
+                    let currentBackend = String(describing: self.inventoryBackend)
+                    AppLog.network.debug("inventory backend check inconclusive; keeping \(currentBackend, privacy: .private)")
                 } else {
                     lastInventoryBackendCheckAt = now
                 }
@@ -655,7 +657,8 @@ final class AppStore {
 
             if let fetchedCatalog {
                 if !fetchedCatalog.isEmpty { colorCatalog = fetchedCatalog }
-                NSLog("NCDEBUG color catalog fetch: %d entries (cached total now %d)", fetchedCatalog.count, colorCatalog.count)
+                let cachedCount = self.colorCatalog.count
+                AppLog.network.debug("color catalog fetch: \(fetchedCatalog.count, privacy: .public) entries (cached total now \(cachedCount, privacy: .public))")
             }
 
             let resolvedLocationNames: [Int: String]
@@ -760,7 +763,7 @@ final class AppStore {
 
             // Commit all refreshed domain state cohesively before awaiting cover images or alert feeds.
             if backend != inventoryBackend {
-                NSLog("NCDEBUG inventory backend is now %@", String(describing: backend))
+                AppLog.network.debug("inventory backend is now \(String(describing: backend), privacy: .private)")
                 inventoryBackend = backend
                 // Spool ids belong to the backend they came from; an Undo for a spool archived in
                 // the other one would point at the wrong record.
@@ -853,11 +856,11 @@ final class AppStore {
             }
         } catch {
             if Self.isCancellation(error) {
-                NSLog("NCDEBUG Bambuddy refresh cancelled")
+                AppLog.network.debug("Bambuddy refresh cancelled")
                 return
             }
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
+            AppLog.network.error("Bambuddy refresh failed: \(msg, privacy: .private)")
             connectionStatus = .failed(msg)
         }
     }

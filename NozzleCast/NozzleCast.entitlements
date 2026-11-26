@@ -8,5 +8,9 @@
 	<array>
 		<string>group.com.victormanuel.NozzleCast</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.victormanuel.NozzleCast.shared</string>
+	</array>
 </dict>
 </plist>

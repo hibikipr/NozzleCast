@@ -1,3 +1,4 @@
+import os
 @preconcurrency import ActivityKit
 import Foundation
 import UIKit
@@ -45,12 +46,21 @@ final class PrintLiveActivityManager {
 
     private var lastFingerprints: [String: SyncFingerprint] = [:]
 
-    /// Per printer, when it was first seen in a confirmed-terminal state while its Live Activity
-    /// was still live — the clock `ActivityTeardown` measures its grace window against. See that
-    /// type for why teardown hangs off a positive "this job is over" signal rather than off the
-    /// absence of a "still printing" one. In-memory only: losing it on relaunch just restarts the
-    /// window, which errs toward keeping an activity alive, the safe direction.
+    /// Per Live Activity instance (`activity.id`), when its printer was first seen in a
+    /// confirmed-terminal state while that activity was still live — the clock `ActivityTeardown`
+    /// measures its grace window against. Keyed by `activity.id` rather than `printerID` so an
+    /// expired anchor from an earlier print can never carry over to a new activity for the same
+    /// printer. See `ActivityTeardown` for why teardown hangs off a positive "this job is over"
+    /// signal rather than off the absence of a "still printing" one. In-memory only: losing it on
+    /// relaunch just restarts the window, which errs toward keeping an activity alive, the safe
+    /// direction.
     private var teardownAnchors: [String: Date] = [:]
+
+    /// Per printer (`printerID -> jobFileName ?? ""`), the job most recently prompted for via
+    /// `scheduleOpenAppNotification`, so repeated background wakes don't post duplicate
+    /// sound-playing notifications for the same print job. Cleared when the printer gets an
+    /// active Live Activity or stops printing.
+    private var lastOpenAppPromptKey: [String: String] = [:]
 
     /// Serializes "does this printer already have an `Activity.request()` in flight" checks. This
     /// class isn't actor-isolated and `sync()` is called concurrently from several independent
@@ -109,7 +119,7 @@ final class PrintLiveActivityManager {
     /// once at print start and doesn't change.
     func sync(printers: [Printer], coverImages: [String: Data] = [:]) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            NSLog("NCDEBUG sync skipped: areActivitiesEnabled=false")
+            AppLog.liveActivity.debug("sync skipped: areActivitiesEnabled=false")
             return
         }
 
@@ -123,6 +133,7 @@ final class PrintLiveActivityManager {
             }
             lastFingerprints.removeAll()
             teardownAnchors.removeAll()
+            lastOpenAppPromptKey.removeAll()
             return
         }
 
@@ -138,7 +149,7 @@ final class PrintLiveActivityManager {
         // Only genuinely-printing printers get an activity *created* locally — unchanged. Keeping
         // an existing one alive is a separate, broader question answered by `jobPhase` below.
         let printingByID = byID.filter { $0.value.state == .printing }
-        NSLog("NCDEBUG sync: printingCount=%d activeActivities=%d", printingByID.count, Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }.count)
+        AppLog.liveActivity.debug("sync: printingCount=\(printingByID.count, privacy: .public) activeActivities=\(Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }.count, privacy: .public)")
 
         // Awaited rather than fired as unstructured Tasks: an un-awaited `Task { await
         // activity.update(...) }` can get cut off before it completes if the app is backgrounded
@@ -151,7 +162,9 @@ final class PrintLiveActivityManager {
         let activeActivities = Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }
 
         let now = Date()
+        var endedActivityIDs: Set<String> = []
         for activity in activeActivities {
+            let activityID = activity.id
             let id = activity.attributes.printerID
             let printer = byID[id]
 
@@ -162,11 +175,18 @@ final class PrintLiveActivityManager {
             // warning, or one failed /status fetch each killed a live print's activity outright —
             // and because it ended with a 30-minute dismissal window rather than immediately, the
             // result looked exactly like an activity that had simply stopped updating.
-            let decision = ActivityTeardown.evaluate(isActiveJob: printer?.jobPhase?.isActive, anchor: teardownAnchors[id], now: now)
-            teardownAnchors[id] = decision.anchor
+            let decision = ActivityTeardown.evaluate(isActiveJob: printer?.jobPhase?.isActive, anchor: teardownAnchors[activityID], now: now)
+            teardownAnchors[activityID] = decision.anchor
             if decision.shouldEnd {
-                NSLog("NCDEBUG sync: ending activity for printerID=%@ (Bambuddy confirmed no job for the full grace window)", id)
-                await activity.end(nil, dismissalPolicy: .after(.now.addingTimeInterval(1800)))
+                AppLog.liveActivity.debug("sync: ending activity id=\(activityID, privacy: .private) printerID=\(id, privacy: .private) (Bambuddy confirmed no job for the full grace window)")
+                var terminalState = activity.content.state
+                terminalState.stateLabel = "Stopped"
+                await activity.end(
+                    ActivityContent(state: Self.fittingBudget(terminalState), staleDate: nil),
+                    dismissalPolicy: .after(.now.addingTimeInterval(1800))
+                )
+                teardownAnchors.removeValue(forKey: activityID)
+                endedActivityIDs.insert(activityID)
                 continue
             }
 
@@ -210,11 +230,19 @@ final class PrintLiveActivityManager {
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
 
-        let activePrinterIDs = Set(activeActivities.map(\.attributes.printerID))
+        let remainingActiveActivities = activeActivities.filter { !endedActivityIDs.contains($0.id) }
+        let remainingActivityIDs = Set(remainingActiveActivities.map(\.id))
+        let activePrinterIDs = Set(remainingActiveActivities.map(\.attributes.printerID))
         // Pruned against activities that still exist, not against "is printing" — a paused print
         // keeps both its activity and the state we track for it.
         lastFingerprints = lastFingerprints.filter { activePrinterIDs.contains($0.key) }
-        teardownAnchors = teardownAnchors.filter { activePrinterIDs.contains($0.key) }
+        teardownAnchors = teardownAnchors.filter { remainingActivityIDs.contains($0.key) }
+        for id in activePrinterIDs {
+            lastOpenAppPromptKey.removeValue(forKey: id)
+        }
+        for (id, printer) in byID where printer.state != .printing && printer.jobPhase?.isActive != true {
+            lastOpenAppPromptKey.removeValue(forKey: id)
+        }
 
         let printersWithoutActivity = printingByID.filter { !activePrinterIDs.contains($0.key) }
         firstSeenPrintingWithoutActivity = firstSeenPrintingWithoutActivity.filter { printersWithoutActivity[$0.key] != nil }
@@ -226,7 +254,7 @@ final class PrintLiveActivityManager {
             guard relayConfigured, let firstSeen = firstSeenPrintingWithoutActivity[id] else { return true }
             let waited = now.timeIntervalSince(firstSeen)
             if waited < Self.relayStartGracePeriod {
-                NSLog("NCDEBUG sync: printerID=%@ printing without an activity for %.0fs -- leaving push-to-start to the relay for now", id, waited)
+                AppLog.liveActivity.debug("sync: printerID=\(id, privacy: .private) printing without an activity for \(Int((waited).rounded()), privacy: .public)s -- leaving push-to-start to the relay for now")
                 return false
             }
             return true
@@ -239,23 +267,28 @@ final class PrintLiveActivityManager {
         // be called from the foreground. When backgrounded, rely on the push-to-start token that
         // was already registered with the relay, and prompt the user to foreground as a fallback.
         guard appState == .active || appState == .inactive else {
-            NSLog("NCDEBUG sync: skipping Activity.request in background (state=%d), scheduling open-app prompt", appState.rawValue)
-            await scheduleOpenAppNotification(for: newPrinters.map(\.name))
+            AppLog.liveActivity.debug("sync: skipping Activity.request in background (state=\(appState.rawValue, privacy: .public)), scheduling open-app prompt")
+            await scheduleOpenAppNotification(for: newPrinters)
             return
         }
 
-        NSLog("NCDEBUG sync: attempting Activity.request for %d printer(s) (state=%d)", newPrinters.count, appState.rawValue)
+        AppLog.liveActivity.debug("sync: attempting Activity.request for \(newPrinters.count, privacy: .public) printer(s) (state=\(appState.rawValue, privacy: .public))")
         for printer in newPrinters {
             let id = PrintActivityAttributes.normalizedID(printer.name)
 
             guard await creationGate.beginIfNeeded(id) else {
-                NSLog("NCDEBUG sync: skipping Activity.request for printerID=%@ (already in flight from a concurrent sync)", id)
+                AppLog.liveActivity.debug("sync: skipping Activity.request for printerID=\(id, privacy: .private) (already in flight from a concurrent sync)")
+                continue
+            }
+
+            if Activity<PrintActivityAttributes>.activities.contains(where: { $0.activityState == .active && $0.attributes.printerID == id }) {
+                AppLog.liveActivity.debug("sync: skipping Activity.request for printerID=\(id, privacy: .private) (already active)")
+                await creationGate.end(id)
                 continue
             }
 
             let attributes = PrintActivityAttributes(printerID: id, printerName: printer.name)
             let state = Self.contentState(for: printer, coverImage: coverImages[id])
-            lastFingerprints[id] = Self.fingerprint(for: printer, coverImage: coverImages[id])
             let content = ActivityContent(state: state, staleDate: nil)
 
             // An activity needs a push type at creation -- per Apple's docs, one created without
@@ -269,22 +302,30 @@ final class PrintLiveActivityManager {
             // the relay has no channel or iOS rejects it -- an invalid channel id makes
             // `Activity.request` throw.
             let channelID = relayConfigured ? await PushNotificationManager.shared.broadcastChannelID(printerID: id) : nil
+            if relayConfigured, Activity<PrintActivityAttributes>.activities.contains(where: { $0.activityState == .active && $0.attributes.printerID == id }) {
+                AppLog.liveActivity.debug("sync: skipping Activity.request for printerID=\(id, privacy: .private) (became active during channel lookup)")
+                await creationGate.end(id)
+                continue
+            }
+
             do {
                 if let channelID {
                     do {
                         _ = try Activity.request(attributes: attributes, content: content, pushType: .channel(channelID))
-                        NSLog("NCDEBUG Activity.request succeeded for printerID=%@ (broadcast channel)", id)
+                        AppLog.liveActivity.debug("Activity.request succeeded for printerID=\(id, privacy: .private) (broadcast channel)")
                     } catch {
-                        NSLog("NCDEBUG Activity.request on channel failed for printerID=%@, retrying with a token: %@", id, String(describing: error))
+                        AppLog.liveActivity.error("Activity.request on channel failed for printerID=\(id, privacy: .private), retrying with a token: \(String(describing: error), privacy: .private)")
                         _ = try Activity.request(attributes: attributes, content: content, pushType: .token)
-                        NSLog("NCDEBUG Activity.request succeeded for printerID=%@ (token)", id)
+                        AppLog.liveActivity.debug("Activity.request succeeded for printerID=\(id, privacy: .private) (token)")
                     }
                 } else {
                     _ = try Activity.request(attributes: attributes, content: content, pushType: .token)
-                    NSLog("NCDEBUG Activity.request succeeded for printerID=%@ (token)", id)
+                    AppLog.liveActivity.debug("Activity.request succeeded for printerID=\(id, privacy: .private) (token)")
                 }
+                lastFingerprints[id] = Self.fingerprint(for: printer, coverImage: coverImages[id])
+                lastOpenAppPromptKey.removeValue(forKey: id)
             } catch {
-                NSLog("NCDEBUG Activity.request failed for printerID=%@: %@", id, String(describing: error))
+                AppLog.liveActivity.error("Activity.request failed for printerID=\(id, privacy: .private): \(String(describing: error), privacy: .private)")
             }
             await creationGate.end(id)
         }
@@ -293,7 +334,17 @@ final class PrintLiveActivityManager {
     /// Posts a local notification when the app is in the background and can't create a Live
     /// Activity directly (ActivityKit's `.visibility` gate). The notification prompts the user to
     /// foreground the app so the next sync can call `Activity.request()` successfully.
-    private func scheduleOpenAppNotification(for printerNames: [String]) async {
+    private func scheduleOpenAppNotification(for printers: [Printer]) async {
+        let unprompted = printers.filter { printer in
+            let id = PrintActivityAttributes.normalizedID(printer.name)
+            return lastOpenAppPromptKey[id] != (printer.jobFileName ?? "")
+        }
+        guard !unprompted.isEmpty else {
+            AppLog.liveActivity.debug("skipping duplicate open-app notification (already prompted for current job)")
+            return
+        }
+
+        let printerNames = unprompted.map(\.name)
         let content = UNMutableNotificationContent()
         content.title = printerNames.count == 1
             ? "\(printerNames[0]) started printing"
@@ -307,9 +358,13 @@ final class PrintLiveActivityManager {
         )
         do {
             try await UNUserNotificationCenter.current().add(request)
-            NSLog("NCDEBUG scheduled open-app notification for %d printer(s)", printerNames.count)
+            for printer in unprompted {
+                let id = PrintActivityAttributes.normalizedID(printer.name)
+                lastOpenAppPromptKey[id] = printer.jobFileName ?? ""
+            }
+            AppLog.liveActivity.debug("scheduled open-app notification for \(printerNames.count, privacy: .public) printer(s)")
         } catch {
-            NSLog("NCDEBUG failed to schedule open-app notification: %@", String(describing: error))
+            AppLog.liveActivity.error("failed to schedule open-app notification: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -323,7 +378,7 @@ final class PrintLiveActivityManager {
         let issue = issueInfo(for: printer)
         return SyncFingerprint(
             progress: printer.progress ?? 0,
-            stateLabel: printer.state.label,
+            stateLabel: printer.jobPhase?.liveActivityLabel ?? printer.state.label,
             jobName: printer.jobFileName,
             etaMinutesRemaining: printer.etaMinutesRemaining,
             currentLayer: printer.currentLayer,
@@ -361,7 +416,7 @@ final class PrintLiveActivityManager {
 
         let issue = issueInfo(for: printer)
 
-        return .init(
+        let rawState = PrintActivityAttributes.ContentState(
             progress: progress,
             // The job phase, not `state.label`: `mapState` collapses a qualifying HMS issue into
             // `.error` before it looks at the gcode state, so a print with a warning attached
@@ -382,5 +437,76 @@ final class PrintLiveActivityManager {
             issueCount: issue.count,
             stageDetail: printer.stageDetail
         )
+        return fittingBudget(rawState)
+    }
+
+    /// Ensures the JSON-encoded `ContentState` stays below ActivityKit's ~4 KB payload cap by
+    /// dropping embedded image data first, then truncating long string fields (`jobName`,
+    /// `stageDetail`) if still over budget.
+    static func fittingBudget(_ state: PrintActivityAttributes.ContentState, maxBytes: Int = 3800) -> PrintActivityAttributes.ContentState {
+        let encoder = JSONEncoder()
+        func encodedSize(_ candidate: PrintActivityAttributes.ContentState) -> Int? {
+            try? encoder.encode(candidate).count
+        }
+
+        var fitted = state
+        guard let initialSize = encodedSize(fitted), initialSize > maxBytes else {
+            return fitted
+        }
+
+        if fitted.coverImage != nil {
+            fitted.coverImage = nil
+            if let size = encodedSize(fitted), size <= maxBytes {
+                return fitted
+            }
+        }
+
+        if fitted.liveSnapshot != nil {
+            fitted.liveSnapshot = nil
+            if let size = encodedSize(fitted), size <= maxBytes {
+                return fitted
+            }
+        }
+
+        if let jobName = fitted.jobName, !jobName.isEmpty {
+            fitted.jobName = truncateString(jobName, toFit: maxBytes) { candidate in
+                var copy = fitted
+                copy.jobName = candidate
+                return encodedSize(copy) ?? Int.max
+            }
+            if let size = encodedSize(fitted), size <= maxBytes {
+                return fitted
+            }
+        }
+
+        if let stageDetail = fitted.stageDetail, !stageDetail.isEmpty {
+            fitted.stageDetail = truncateString(stageDetail, toFit: maxBytes) { candidate in
+                var copy = fitted
+                copy.stageDetail = candidate
+                return encodedSize(copy) ?? Int.max
+            }
+        }
+
+        return fitted
+    }
+
+    private static func truncateString(_ value: String, toFit maxBytes: Int, measure: (String?) -> Int) -> String? {
+        if measure(nil) > maxBytes { return nil }
+        if measure(value) <= maxBytes { return value }
+        let chars = Array(value)
+        var low = 1
+        var high = chars.count
+        var best: String? = nil
+        while low <= high {
+            let mid = (low + high) / 2
+            let candidate = String(chars.prefix(mid)) + "…"
+            if measure(candidate) <= maxBytes {
+                best = candidate
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return best
     }
 }

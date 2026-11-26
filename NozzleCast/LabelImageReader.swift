@@ -1,3 +1,4 @@
+import os
 import Vision
 import UIKit
 
@@ -19,7 +20,7 @@ enum LabelImageReader {
                 try handler.perform([text, barcodes])
             } catch {
                 // Reads as "nothing found" to the person; the log says why.
-                NSLog("NCDEBUG label photo: Vision failed: %@", String(describing: error))
+                AppLog.app.error("label photo: Vision failed: \(String(describing: error), privacy: .private)")
             }
 
             // Vision's own order, which keeps a block together: a label's "SKU" heading stays next

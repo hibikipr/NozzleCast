@@ -57,6 +57,9 @@ struct RelayConnectionSheet: View {
                     Section {
                         Button(role: .destructive) {
                             RelayConfigStore.clear()
+                            PushSharedStore.relayAlertsPush = false
+                            PushSharedStore.relayAlertsActive = false
+                            pushManager.clearRelayRegistrationState()
                             dismiss()
                         } label: {
                             HStack {
@@ -88,6 +91,7 @@ struct RelayConnectionSheet: View {
             // Re-arm here too: both observers no-op unless RelayConfigStore.isConfigured, which
             // it wasn't yet when this process launched.
             pushManager.startObservingActivityKitTokens()
+            Task { await pushManager.registerAllTokensForCurrentRelay() }
             dismiss()
         } catch {
             saveError = error.localizedDescription

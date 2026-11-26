@@ -216,13 +216,14 @@ struct InventoryView: View {
                             }
 
                             if filtered.isEmpty {
+                                let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
                                 Group {
-                                    if filter == .archived && searchText.isEmpty {
+                                    if filter == .archived && trimmedSearch.isEmpty {
                                         Text("No archived spools.", comment: "Empty state of the Archived inventory filter")
-                                    } else if searchText.isEmpty {
+                                    } else if trimmedSearch.isEmpty {
                                         Text("No spools match this filter.")
                                     } else {
-                                        Text("No spools match \"\(searchText)\".")
+                                        Text("No spools match \"\(trimmedSearch)\".")
                                     }
                                 }
                                 .ncFont(size: 13, relativeTo: .footnote)
@@ -272,6 +273,7 @@ struct InventoryView: View {
                         .background(Circle().fill(NCColor.accent))
                         .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
                 }
+                .accessibilityLabel(Text("Add spool", comment: "Accessibility label for the floating add spool button"))
                 .padding(.trailing, 20)
                 .padding(.bottom, 16) // this ZStack already sits above the tab bar, wherever it is
             }
@@ -374,7 +376,8 @@ struct InventoryView: View {
 
     /// Bambuddy's filament shopping list, with a count of what's still to buy or arrive.
     private var shoppingListButton: some View {
-        Button {
+        let openCount = store.openShoppingListCount
+        return Button {
             showShoppingList = true
         } label: {
             Image(systemName: "cart")
@@ -383,9 +386,8 @@ struct InventoryView: View {
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(NCColor.cardFill))
                 .overlay(alignment: .topTrailing) {
-                    let count = store.openShoppingListCount
-                    if count > 0 {
-                        Text("\(count)")
+                    if openCount > 0 {
+                        Text("\(openCount)")
                             .ncFont(size: 10, weight: .bold, relativeTo: .caption2)
                             .foregroundStyle(NCColor.onAccent)
                             .padding(.horizontal, 4)
@@ -397,6 +399,11 @@ struct InventoryView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Shopping List", comment: "Opens the filament shopping list"))
+        .accessibilityValue(
+            openCount > 0
+                ? Text("^[\(openCount) item](inflect: true)", comment: "Accessibility value for shopping list badge count")
+                : Text("")
+        )
     }
 
     private var layoutToggle: some View {
@@ -432,6 +439,7 @@ struct InventoryView: View {
                         .foregroundStyle(NCColor.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(Text("Clear search", comment: "Accessibility label for clearing the search field"))
             }
         }
         .padding(.horizontal, 12)
@@ -445,19 +453,17 @@ struct SpoolCard: View {
     var locationCaption: String
 
     var body: some View {
+        let clampedFraction = Double(min(100, max(0, spool.remainingPercent))) / 100
         VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .top) {
-                spool.swatch
-                colorNamePill
-                    .padding(.top, 8)
-                    .padding(.horizontal, 8)
-            }
-            .frame(height: 60)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .opacity(dimming)
-            .overlay(alignment: .bottomTrailing) {
-                if spool.isArchived { ArchivedBadge().padding(6) }
-            }
+            colorNamePill
+                .padding(8)
+                .frame(maxWidth: .infinity, minHeight: 60, alignment: .top)
+                .background { spool.swatch }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .opacity(dimming)
+                .overlay(alignment: .bottomTrailing) {
+                    if spool.isArchived { ArchivedBadge().padding(6) }
+                }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(spool.materialWithSubtype)
@@ -475,7 +481,7 @@ struct SpoolCard: View {
                             GeometryReader { geo in
                                 Capsule()
                                     .fill(Color(hex: spool.colorHex))
-                                    .frame(width: geo.size.width * Double(spool.remainingPercent) / 100)
+                                    .frame(width: geo.size.width * clampedFraction)
                             }
                         }
                     RemainingLabel(spool: spool, size: 9.5)
@@ -521,6 +527,7 @@ struct SpoolListRow: View {
 
     var body: some View {
         let resolvedCaption = locationCaption ?? spool.locationCaption(printerName: store.printerName, amsUnitName: store.amsUnitName)
+        let clampedFraction = Double(min(100, max(0, spool.remainingPercent))) / 100
         HStack(spacing: 12) {
             spool.swatch
                 .frame(width: 44, height: 44)
@@ -547,7 +554,7 @@ struct SpoolListRow: View {
                             GeometryReader { geo in
                                 Capsule()
                                     .fill(Color(hex: spool.colorHex))
-                                    .frame(width: geo.size.width * Double(spool.remainingPercent) / 100)
+                                    .frame(width: geo.size.width * clampedFraction)
                             }
                         }
                     RemainingLabel(spool: spool, size: 10.5)

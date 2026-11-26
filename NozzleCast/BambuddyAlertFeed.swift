@@ -1,3 +1,4 @@
+import os
 import BackgroundTasks
 import Foundation
 import UserNotifications
@@ -45,7 +46,7 @@ enum BambuddyAlertFeed {
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            NSLog("NCDEBUG alert feed: couldn't schedule background check: %@", String(describing: error))
+            AppLog.push.error("alert feed: couldn't schedule background check: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -96,37 +97,61 @@ enum BambuddyAlertFeed {
         guard let cursor, cursor.server == server else {
             // First check against this server: what's already in the log is history, not news.
             // It still fills the in-app list (already read), so it isn't empty on day one.
-            for alert in deduplicated(entries).prefix(20).reversed() {
-                await PushSharedStore.appendHistory(historyEntry(for: alert, isRead: true))
-            }
+            let historyEntries = deduplicated(entries)
+                .filter { !PushSharedStore.isMuted(title: $0.title, body: $0.message) }
+                .prefix(20)
+                .reversed()
+                .map { historyEntry(for: $0, isRead: true) }
+            await PushSharedStore.appendHistory(Array(historyEntries))
             Self.cursor = Cursor(server: server, lastLogID: newestID)
             return 0
         }
 
-        // Oldest first, so the history and the notifications come out in the order they happened.
-        let fresh = Array(deduplicated(entries.filter { $0.id > cursor.lastLogID }).reversed())
-        guard !fresh.isEmpty else { return 0 }
-        Self.cursor = Cursor(server: server, lastLogID: max(cursor.lastLogID, newestID))
-
-        for alert in fresh {
-            await PushSharedStore.appendHistory(historyEntry(for: alert, isRead: false))
+        // The server's log id started over (e.g. Bambuddy DB recreated on the same URL):
+        // continue from its newest alert rather than staying wedged forever.
+        if newestID > 0 && newestID < cursor.lastLogID {
+            Self.cursor = Cursor(server: server, lastLogID: newestID)
+            return 0
         }
+
+        let advanced = Cursor(server: server, lastLogID: max(cursor.lastLogID, newestID))
+        let unviewed = entries.filter { $0.id > cursor.lastLogID }
+        guard !unviewed.isEmpty else { return 0 }
+
+        // Oldest first, so the history and the notifications come out in the order they happened.
+        let fresh = deduplicated(unviewed)
+            .reversed()
+            .filter { !PushSharedStore.isMuted(title: $0.title, body: $0.message) }
+        guard !fresh.isEmpty else {
+            Self.cursor = advanced
+            return 0
+        }
+
+        await PushSharedStore.appendHistory(fresh.map { historyEntry(for: $0, isRead: false) })
         await postNotifications(for: fresh)
+        Self.cursor = advanced
         return fresh.count
+    }
+
+    private nonisolated struct DedupeKey: Hashable, Sendable {
+        var title: String
+        var message: String
+        var printerId: Int?
     }
 
     /// One alert sent to two providers is two log rows a moment apart — keep one of each.
     /// Returns newest first.
     private static func deduplicated(_ entries: [BambuddyNotificationLogDTO]) -> [BambuddyNotificationLogDTO] {
         var kept: [BambuddyNotificationLogDTO] = []
+        var seenDates: [DedupeKey: [Date]] = [:]
         for entry in entries.sorted(by: { $0.id > $1.id }) {
             let date = AppStore.parseBambuddyTimestamp(entry.createdAt) ?? .distantPast
-            let isDuplicate = kept.contains { other in
-                guard other.title == entry.title, other.message == entry.message, other.printerId == entry.printerId else { return false }
-                let otherDate = AppStore.parseBambuddyTimestamp(other.createdAt) ?? .distantPast
-                return abs(otherDate.timeIntervalSince(date)) < 60
+            let key = DedupeKey(title: entry.title, message: entry.message, printerId: entry.printerId)
+            let isDuplicate = seenDates[key]?.contains { abs($0.timeIntervalSince(date)) < 60 } ?? false
+            if !isDuplicate {
+                kept.append(entry)
+                seenDates[key, default: []].append(date)
             }
-            if !isDuplicate { kept.append(entry) }
         }
         return kept
     }

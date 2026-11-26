@@ -45,19 +45,28 @@ enum FilamentLabelReader {
         code.trimmingCharacters(in: .whitespaces).range(of: #"^X0[0-9A-Z]{8}$"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
+    private static let colorShadeModifiers: Set<String> = [
+        "dark", "light", "bright", "deep", "pale", "pastel", "neon", "hot",
+        "warm", "cool", "royal", "sky", "forest", "midnight", "space", "foggy",
+        "baby", "ice",
+    ]
+
     /// A database name made of the product line and the colour, split at the colour the label
     /// names: ("PolyLite™ PLA Pro Blue", "Blue", "PLA") → ("Blue", "PolyLite Pro"). Nil when the
-    /// name doesn't end with that colour or is nothing but it.
+    /// name doesn't end with that colour, is nothing but it, or only differs by a shade modifier
+    /// (e.g. "Dark Red" on "Red").
     static func split(productAndColor name: String, color: String, material: String) -> (color: String, productLine: String?)? {
         let trimmedColor = color.trimmingCharacters(in: .whitespaces)
         guard !trimmedColor.isEmpty, name.count > trimmedColor.count,
               name.lowercased().hasSuffix(trimmedColor.lowercased()) else { return nil }
         var product = String(name.dropLast(trimmedColor.count))
+        guard let lastBefore = product.last, !lastBefore.isLetter && !lastBefore.isNumber else { return nil }
         for mark in ["™", "®", "©"] { product = product.replacingOccurrences(of: mark, with: "") }
         if !material.isEmpty {
-            product = product.replacingOccurrences(of: "\\b\(NSRegularExpression.escapedPattern(for: material))\\b", with: "", options: [.regularExpression, .caseInsensitive])
+            product = MaterialFamily.strippingMaterialToken(material, from: product)
         }
         product = product.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-")))
+        if colorShadeModifiers.contains(product.lowercased()) { return nil }
         return (trimmedColor, product.isEmpty ? nil : product)
     }
 
@@ -147,7 +156,11 @@ enum FilamentLabelReader {
         for line in lines {
             if let match = line.range(of: #"^(?:COLOU?R|COLOU?R NAME)\s*[:：]\s*"#, options: [.regularExpression, .caseInsensitive]) {
                 let value = line[match.upperBound...].trimmingCharacters(in: .whitespaces)
-                if !value.isEmpty, value.count <= 40 { return LabelColor(name: titleCased(value), isExplicit: true) }
+                if !value.isEmpty, value.count <= 40 {
+                    let parts = colorParts(value)
+                    let partHexes = (parts?.count ?? 0) >= 2 ? parts!.map(\.hex) : []
+                    return LabelColor(name: titleCased(value), isExplicit: true, partHexes: partHexes)
+                }
             }
         }
         for (i, line) in lines.enumerated() {
@@ -185,7 +198,18 @@ enum FilamentLabelReader {
     }
 
     private static func titleCased(_ text: String) -> String {
-        text.lowercased().split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        var result = ""
+        var capitalizeNext = true
+        for ch in text.lowercased() {
+            if ch.isLetter {
+                result.append(capitalizeNext ? String(ch).uppercased() : String(ch))
+                capitalizeNext = false
+            } else {
+                result.append(ch)
+                capitalizeNext = ch.isWhitespace || ch == "-" || ch == "/" || ch == "(" || ch == "[" || ch == "&" || ch == "+"
+            }
+        }
+        return result
     }
 
     /// The same palette `FilamentTitleParser` uses, for the parts of a multi-colour label.

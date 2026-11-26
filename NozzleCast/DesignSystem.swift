@@ -26,8 +26,12 @@ extension Color {
 
     /// True if this color reads as light enough that black foreground text has better contrast than white.
     var isLight: Bool {
-        guard let components = UIColor(self).cgColor.components, components.count >= 3 else { return false }
-        let luminance = 0.299 * components[0] + 0.587 * components[1] + 0.114 * components[2]
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        guard UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a) else { return false }
+        let luminance = 0.299 * r + 0.587 * g + 0.114 * b
         return luminance > 0.6
     }
 

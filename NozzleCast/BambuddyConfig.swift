@@ -1,3 +1,4 @@
+import os
 import Foundation
 
 @Observable
@@ -54,7 +55,7 @@ final class BambuddyConfig {
     /// is the reliable one, since being foreground means the device is unlocked by definition.
     func reloadIfStorageWasUnavailable() {
         guard storageWasUnavailable else { return }
-        NSLog("NCDEBUG BambuddyConfig retrying a previously-blocked keychain read")
+        AppLog.storage.debug("BambuddyConfig retrying a previously-blocked keychain read")
         loadFromStorage()
     }
 

@@ -1,3 +1,4 @@
+import os
 import Foundation
 
 /// Bambuddy's alerts through the user's nozzlecast-relay (relay v1.7.0+, README "Bambuddy
@@ -24,6 +25,7 @@ enum RelayAlertClient {
         guard let config = RelayConfigStore.load() else { return Delivery(active: false, pushes: true) }
         var request = URLRequest(url: config.url.appendingPathComponent("alerts").appendingPathComponent("status"))
         request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -34,7 +36,7 @@ enum RelayAlertClient {
                 // A 200 that isn't the relay's JSON (a captive portal, a proxy's error page) says
                 // nothing about delivery; reading it as "inactive" would switch alerts off.
                 guard let status = try? JSONDecoder().decode(Status.self, from: data) else {
-                    NSLog("NCDEBUG relay alert status: unreadable 200 response")
+                    AppLog.network.error("relay alert status: unreadable 200 response")
                     return nil
                 }
                 return Delivery(active: status.active, pushes: status.pushes ?? true)
@@ -44,7 +46,7 @@ enum RelayAlertClient {
                 return nil
             }
         } catch {
-            NSLog("NCDEBUG relay alert status failed: %@", String(describing: error))
+            AppLog.network.error("relay alert status failed: \(String(describing: error), privacy: .private)")
             return nil
         }
     }
@@ -77,6 +79,7 @@ enum RelayAlertClient {
         guard let url = components?.url else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
@@ -108,13 +111,14 @@ enum RelayAlertClient {
         request.httpMethod = "PUT"
         request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
         request.httpBody = try? JSONEncoder().encode(Body(token: token, alerts: PushSharedStore.mutedAlerts))
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            if status != 200 { NSLog("NCDEBUG relay muted-alerts sync HTTP %d", status) }
+            if status != 200 { AppLog.network.debug("relay muted-alerts sync HTTP \(status, privacy: .public)") }
         } catch {
-            NSLog("NCDEBUG relay muted-alerts sync failed: %@", String(describing: error))
+            AppLog.network.error("relay muted-alerts sync failed: \(String(describing: error), privacy: .private)")
         }
     }
 }

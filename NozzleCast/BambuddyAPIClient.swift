@@ -1,3 +1,4 @@
+import os
 import Foundation
 
 // MARK: - DTOs (snake_case JSON decoded via .convertFromSnakeCase)
@@ -629,7 +630,7 @@ nonisolated struct BambuddyAPIClient: Sendable {
             // and the server (openresty/nginx) rejected it. RFC 9113 says the client SHOULD retry
             // with a fresh connection — URLSession.shared doesn't do this automatically, so we
             // open an ephemeral session that forces a new TCP+TLS handshake.
-            NSLog("NCDEBUG 421 Misdirected Request, retrying with fresh session")
+            AppLog.network.debug("421 Misdirected Request, retrying with fresh session")
             let fresh = URLSession(configuration: .ephemeral)
             defer { fresh.finishTasksAndInvalidate() }
             let (data2, response2) = try await fresh.data(for: req)

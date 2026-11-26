@@ -1,3 +1,4 @@
+import os
 import ActivityKit
 import Foundation
 import UIKit
@@ -53,11 +54,18 @@ final class PushNotificationManager: NSObject {
         set { UserDefaults.standard.set(newValue, forKey: lastRegisteredPushToStartTokenDefaultsKey) }
     }
     private var pushToStartObservationTask: Task<Void, Never>?
+    private var pushToStartObservationToken: UUID?
     private var activityDiscoveryTask: Task<Void, Never>?
+    private var activityDiscoveryToken: UUID?
     /// One push-token-observing child task per discovered activity, keyed by `Activity.id` — so a
     /// second `activityUpdates` event for the same activity (e.g. a token rotation notice) doesn't
     /// spawn a duplicate observer.
-    private var activityPushTokenTasks: [String: Task<Void, Never>] = [:]
+    private var activityPushTokenTasks: [String: (token: UUID, task: Task<Void, Never>)] = [:]
+    /// Deduplicates `/register-device` + `RelayAlertClient.syncMutes()` when both `handleAPNsToken`
+    /// and `messaging(_:didReceiveRegistrationToken:)` fire on cold launch (`"\(relayURL)|\(hexToken)"`).
+    private var lastRegisteredDeviceTokenKey: String?
+    private var inFlightDeviceTokenKey: String?
+    private var cachedAPNsToken: Data?
 
     private override init() {
         subscribedTopic = PushSharedStore.loadNtfyConfig()?.topic
@@ -110,13 +118,21 @@ final class PushNotificationManager: NSObject {
         // the actionable case -- armed too early to read the relay config -- is worth a line.
         guard pushToStartObservationTask == nil else { return }
         guard RelayConfigStore.isConfigured else {
-            NSLog("NCDEBUG push-to-start observation not started: relay config not readable yet")
+            AppLog.push.debug("push-to-start observation not started: relay config not readable yet")
             return
         }
-        NSLog("NCDEBUG push-to-start observation starting")
+        AppLog.push.debug("push-to-start observation starting")
+        let observationToken = UUID()
+        pushToStartObservationToken = observationToken
         pushToStartObservationTask = Task {
+            defer {
+                if self.pushToStartObservationToken == observationToken {
+                    self.pushToStartObservationTask = nil
+                    self.pushToStartObservationToken = nil
+                }
+            }
             for await tokenData in Activity<PrintActivityAttributes>.pushToStartTokenUpdates {
-                NSLog("NCDEBUG push-to-start token received (%d bytes), registering with relay", tokenData.count)
+                AppLog.push.debug("push-to-start token received (\(tokenData.count, privacy: .public) bytes), registering with relay")
                 await registerPushToStartToken(tokenData)
             }
         }
@@ -128,7 +144,7 @@ final class PushNotificationManager: NSObject {
     /// configuration.
     private func registerPushToStartToken(_ tokenData: Data) async {
         guard let config = RelayConfigStore.load() else {
-            NSLog("NCDEBUG push-to-start token registration skipped: no relay configured")
+            AppLog.push.debug("push-to-start token registration skipped: no relay configured")
             return
         }
         let token = tokenData.map { String(format: "%02x", $0) }.joined()
@@ -139,19 +155,20 @@ final class PushNotificationManager: NSObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
         request.httpBody = try? JSONEncoder().encode(["token": token, "environment": environment])
 
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                NSLog("NCDEBUG relay token registration failed with unexpected response: %@", String(describing: response))
+                AppLog.push.error("relay token registration failed with unexpected response: \(String(describing: response), privacy: .private)")
                 return
             }
             // The suffix, not the whole token: enough to match this device against a line in the
             // relay's tokens.json (which logs the same suffix) without putting a full push
             // credential in the device log. Identifying which stored token belongs to which
             // handset was guesswork every time it mattered today.
-            NSLog("NCDEBUG relay token registration succeeded (environment=%@, token ...%@)", environment, String(token.suffix(8)))
+            AppLog.push.debug("relay token registration succeeded (environment=\(environment, privacy: .private), token ...\(String(token.suffix(8)), privacy: .private))")
             registeredPushToStartToken = token
             Self.persistedLastRegisteredPushToStartToken = token
 
@@ -165,7 +182,7 @@ final class PushNotificationManager: NSObject {
                 await deregisterPushToStartToken(previousToken, config: config)
             }
         } catch {
-            NSLog("NCDEBUG relay token registration failed: %@", String(describing: error))
+            AppLog.push.error("relay token registration failed: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -177,14 +194,15 @@ final class PushNotificationManager: NSObject {
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
         request.httpBody = try? JSONEncoder().encode(["token": token])
 
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            NSLog("NCDEBUG stale push-to-start token deregistration HTTP %d (token ...%@)", status, String(token.suffix(8)))
+            AppLog.push.debug("stale push-to-start token deregistration HTTP \(status, privacy: .public) (token ...\(String(token.suffix(8)), privacy: .private))")
         } catch {
-            NSLog("NCDEBUG stale push-to-start token deregistration failed: %@", String(describing: error))
+            AppLog.push.error("stale push-to-start token deregistration failed: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -219,35 +237,48 @@ final class PushNotificationManager: NSObject {
         guard RelayConfigStore.isConfigured else {
             // Worth a line on its own: this is the state that used to be permanent for the life
             // of the process, and is now expected to clear on the next activation.
-            NSLog("NCDEBUG activity discovery not started: relay config not readable yet")
+            AppLog.push.debug("activity discovery not started: relay config not readable yet")
             return
         }
-        NSLog("NCDEBUG activity discovery starting")
+        AppLog.push.debug("activity discovery starting")
+        let discoveryToken = UUID()
+        activityDiscoveryToken = discoveryToken
         activityDiscoveryTask = Task {
+            defer {
+                if self.activityDiscoveryToken == discoveryToken {
+                    self.activityDiscoveryTask = nil
+                    self.activityDiscoveryToken = nil
+                }
+            }
             for await activity in Activity<PrintActivityAttributes>.activityUpdates {
-                guard activityPushTokenTasks[activity.id] == nil else { continue }
+                let activityID = activity.id
+                guard activityPushTokenTasks[activityID] == nil else { continue }
                 let printerID = activity.attributes.printerID
-                NSLog("NCDEBUG activityUpdates discovered activity id=%@ printerID=%@", activity.id, printerID)
+                AppLog.push.debug("activityUpdates discovered activity id=\(activityID, privacy: .private) printerID=\(printerID, privacy: .private)")
                 // Register the token immediately if iOS has already generated it — pushTokenUpdates
                 // may never fire if the activity ends before the async stream delivers its first value.
                 if let tokenData = activity.pushToken {
-                    NSLog("NCDEBUG activity push token immediately available for printerID=%@ (%d bytes)", printerID, tokenData.count)
+                    AppLog.push.debug("activity push token immediately available for printerID=\(printerID, privacy: .private) (\(tokenData.count, privacy: .public) bytes)")
                     await registerActivityPushToken(tokenData, printerID: printerID)
                 }
-                activityPushTokenTasks[activity.id] = Task {
+                let taskToken = UUID()
+                let task = Task {
+                    defer {
+                        if self.activityPushTokenTasks[activityID]?.token == taskToken {
+                            self.activityPushTokenTasks.removeValue(forKey: activityID)
+                        }
+                    }
                     for await tokenData in activity.pushTokenUpdates {
-                        NSLog("NCDEBUG activity push token received for printerID=%@ (%d bytes)", printerID, tokenData.count)
+                        AppLog.push.debug("activity push token received for printerID=\(printerID, privacy: .private) (\(tokenData.count, privacy: .public) bytes)")
                         await self.registerActivityPushToken(tokenData, printerID: printerID)
                     }
-                    NSLog("NCDEBUG activity pushTokenUpdates stream ended for printerID=%@", printerID)
+                    AppLog.push.debug("activity pushTokenUpdates stream ended for printerID=\(printerID, privacy: .private)")
                 }
+                activityPushTokenTasks[activityID] = (taskToken, task)
             }
-            // If this ever logs, the whole discovery mechanism is dead for the rest of the
-            // process's life — `activityDiscoveryTask` stays non-nil, so the guard above never
-            // lets it restart. `Activity<T>.activityUpdates` isn't documented to finish on its
-            // own, but there's no other way here to tell "never started" apart from "started,
-            // then silently died" without this.
-            NSLog("NCDEBUG activityUpdates stream ended — activity discovery is now dead until relaunch")
+            // Resetting `activityDiscoveryTask` in `defer` lets `startObservingActivityKitTokens()`
+            // re-arm discovery if this stream ever ends unexpectedly.
+            AppLog.push.debug("activityUpdates stream ended — resetting discovery task so it can re-arm")
         }
     }
 
@@ -263,20 +294,21 @@ final class PushNotificationManager: NSObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
         request.httpBody = try? JSONEncoder().encode(["token": token, "printerID": printerID, "environment": environment])
 
-        NSLog("NCDEBUG activity push token registration POST to %@ for printerID=%@", config.url.appendingPathComponent("register-activity").absoluteString, printerID)
+        AppLog.push.debug("activity push token registration POST to \(config.url.appendingPathComponent("register-activity").absoluteString, privacy: .private) for printerID=\(printerID, privacy: .private)")
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            NSLog("NCDEBUG activity push token registration HTTP %d for printerID=%@", status, printerID)
+            AppLog.push.debug("activity push token registration HTTP \(status, privacy: .public) for printerID=\(printerID, privacy: .private)")
             guard (200..<300).contains(status) else {
-                NSLog("NCDEBUG activity push token registration body: %@", String(data: data, encoding: .utf8) ?? "(non-UTF8)")
+                AppLog.push.debug("activity push token registration body: \(String(data: data, encoding: .utf8) ?? "(non-UTF8)", privacy: .private)")
                 return
             }
-            NSLog("NCDEBUG activity push token registration succeeded for printerID=%@", printerID)
+            AppLog.push.debug("activity push token registration succeeded for printerID=\(printerID, privacy: .private)")
         } catch {
-            NSLog("NCDEBUG activity push token registration failed: %@", String(describing: error))
+            AppLog.push.error("activity push token registration failed: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -307,15 +339,15 @@ final class PushNotificationManager: NSObject {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             guard status == 200 else {
-                NSLog("NCDEBUG channel lookup HTTP %d for printerID=%@", status, printerID)
+                AppLog.push.debug("channel lookup HTTP \(status, privacy: .public) for printerID=\(printerID, privacy: .private)")
                 return nil
             }
             let channel = try JSONDecoder().decode(Response.self, from: data).channels
                 .first { $0.environment == APNSEnvironment.current }
-            NSLog("NCDEBUG channel lookup for printerID=%@ environment=%@: %@", printerID, APNSEnvironment.current, channel == nil ? "none" : "found")
+            AppLog.push.debug("channel lookup for printerID=\(printerID, privacy: .private) environment=\(APNSEnvironment.current, privacy: .private): \(channel == nil ? "none" : "found", privacy: .private)")
             return channel?.channelId
         } catch {
-            NSLog("NCDEBUG channel lookup failed for printerID=%@: %@", printerID, String(describing: error))
+            AppLog.push.error("channel lookup failed for printerID=\(printerID, privacy: .private): \(String(describing: error), privacy: .private)")
             return nil
         }
     }
@@ -353,13 +385,13 @@ final class PushNotificationManager: NSObject {
     func recheckPushToStartToken(force: Bool = false) async {
         guard RelayConfigStore.isConfigured else { return }
         guard let tokenData = Activity<PrintActivityAttributes>.pushToStartToken else {
-            NSLog("NCDEBUG recheckPushToStartToken: iOS has not issued a push-to-start token yet")
+            AppLog.push.debug("recheckPushToStartToken: iOS has not issued a push-to-start token yet")
             return
         }
         let token = tokenData.map { String(format: "%02x", $0) }.joined()
-        guard force || token != registeredPushToStartToken else { return }
-        NSLog("NCDEBUG recheckPushToStartToken: registering ...%@ (force=%d, changed=%d)",
-              String(token.suffix(8)), force, token != registeredPushToStartToken)
+        let changed = token != registeredPushToStartToken
+        guard force || changed else { return }
+        AppLog.push.debug("recheckPushToStartToken: registering ...\(String(token.suffix(8)), privacy: .private) (force=\(force, privacy: .public), changed=\(changed, privacy: .public))")
         await registerPushToStartToken(tokenData)
     }
 
@@ -369,7 +401,7 @@ final class PushNotificationManager: NSObject {
         for activity in Activity<PrintActivityAttributes>.activities where activity.activityState == .active {
             guard let tokenData = activity.pushToken else { continue }
             let printerID = activity.attributes.printerID
-            NSLog("NCDEBUG recheckActivityTokens: token available for printerID=%@ (%d bytes)", printerID, tokenData.count)
+            AppLog.push.debug("recheckActivityTokens: token available for printerID=\(printerID, privacy: .private) (\(tokenData.count, privacy: .public) bytes)")
             await registerActivityPushToken(tokenData, printerID: printerID)
             registered += 1
         }
@@ -392,12 +424,46 @@ final class PushNotificationManager: NSObject {
     }
 
     func handleAPNsToken(_ deviceToken: Data) {
-        NSLog("NCDEBUG APNS device token received (%d bytes)", deviceToken.count)
+        AppLog.push.debug("APNS device token received (\(deviceToken.count, privacy: .public) bytes)")
+        cachedAPNsToken = deviceToken
         // Messaging traps if Firebase was never configured — and without a Firebase config, iOS
         // still delivers this token once notifications are allowed (for the relay's wake push
         // and Bambuddy's alert-log fallback).
         if isFirebaseConfigured { Messaging.messaging().apnsToken = deviceToken }
         Task { await registerDeviceToken(deviceToken) }
+    }
+
+    /// Re-registers push-to-start, active activity, and APNs device tokens (+ mutes) whenever a
+    /// relay is newly saved or its URL/secret is changed post-launch.
+    func registerAllTokensForCurrentRelay() async {
+        lastRegisteredDeviceTokenKey = nil
+        inFlightDeviceTokenKey = nil
+        await recheckPushToStartToken(force: true)
+        _ = await recheckActivityTokens()
+        if let tokenData = cachedAPNsToken {
+            await registerDeviceToken(tokenData)
+        } else if let hex = PushSharedStore.deviceToken, !hex.isEmpty {
+            await registerDeviceTokenHex(hex)
+        } else if authorizationStatus == .authorized {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    }
+
+    /// Clears relay-specific registration and observer state when the user disconnects their relay.
+    func clearRelayRegistrationState() {
+        registeredPushToStartToken = nil
+        lastRegisteredDeviceTokenKey = nil
+        inFlightDeviceTokenKey = nil
+        pushToStartObservationTask?.cancel()
+        pushToStartObservationTask = nil
+        pushToStartObservationToken = nil
+        activityDiscoveryTask?.cancel()
+        activityDiscoveryTask = nil
+        activityDiscoveryToken = nil
+        for (_, entry) in activityPushTokenTasks {
+            entry.task.cancel()
+        }
+        activityPushTokenTasks.removeAll()
     }
 
     /// POSTs the app's plain APNs device token (distinct from the ActivityKit push-to-start
@@ -409,9 +475,19 @@ final class PushNotificationManager: NSObject {
     private func registerDeviceToken(_ deviceToken: Data) async {
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         PushSharedStore.deviceToken = token
+        await registerDeviceTokenHex(token)
+    }
+
+    private func registerDeviceTokenHex(_ token: String) async {
         guard let config = RelayConfigStore.load() else {
-            NSLog("NCDEBUG device token registration skipped: no relay configured")
+            AppLog.push.debug("device token registration skipped: no relay configured")
             return
+        }
+        let dedupKey = "\(config.url.absoluteString)|\(token)"
+        guard dedupKey != lastRegisteredDeviceTokenKey, dedupKey != inFlightDeviceTokenKey else { return }
+        inFlightDeviceTokenKey = dedupKey
+        defer {
+            if inFlightDeviceTokenKey == dedupKey { inFlightDeviceTokenKey = nil }
         }
         let environment = APNSEnvironment.current
 
@@ -419,19 +495,21 @@ final class PushNotificationManager: NSObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(config.authSecret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
         request.httpBody = try? JSONEncoder().encode(["token": token, "environment": environment])
 
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                NSLog("NCDEBUG relay device token registration failed with unexpected response: %@", String(describing: response))
+                AppLog.push.error("relay device token registration failed with unexpected response: \(String(describing: response), privacy: .private)")
                 return
             }
-            NSLog("NCDEBUG relay device token registration succeeded (environment=%@)", environment)
+            lastRegisteredDeviceTokenKey = dedupKey
+            AppLog.push.debug("relay device token registration succeeded (environment=\(environment, privacy: .private))")
             // The relay keeps muted alerts by device token, so a new token needs them again.
             await RelayAlertClient.syncMutes()
         } catch {
-            NSLog("NCDEBUG relay device token registration failed: %@", String(describing: error))
+            AppLog.push.error("relay device token registration failed: \(String(describing: error), privacy: .private)")
         }
     }
 
@@ -445,7 +523,7 @@ final class PushNotificationManager: NSObject {
         let fcmTopic = PushTopicHash.firebaseTopic(baseUrl: server, topic: topic, appDefaultBaseUrl: Self.knownNtfyDefaultBaseUrl)
         Messaging.messaging().subscribe(toTopic: fcmTopic) { error in
             if let error {
-                print("NozzleCast: FCM topic subscribe failed for \(fcmTopic): \(error)")
+                AppLog.push.error("FCM topic subscribe failed for \(fcmTopic, privacy: .private): \(String(describing: error), privacy: .private)")
             }
         }
     }
@@ -472,14 +550,14 @@ extension PushNotificationManager: MessagingDelegate {
         // via that path. By the time this callback fires Firebase holds both the APNS and FCM
         // tokens, so grab the APNS token here as the guaranteed fallback.
         if let apnsToken = messaging.apnsToken {
-            NSLog("NCDEBUG FCM callback: APNS token available (%d bytes), registering device with relay", apnsToken.count)
+            AppLog.push.debug("FCM callback: APNS token available (\(apnsToken.count, privacy: .public) bytes), registering device with relay")
             Task { await registerDeviceToken(apnsToken) }
         } else {
-            NSLog("NCDEBUG FCM callback: no APNS token available yet")
+            AppLog.push.debug("FCM callback: no APNS token available yet")
         }
 
         guard let config = PushSharedStore.loadNtfyConfig() else { return }
-        NSLog("NCDEBUG FCM token received, re-subscribing to ntfy topic")
+        AppLog.push.debug("FCM token received, re-subscribing to ntfy topic")
         subscribe(server: config.server, topic: config.topic, authToken: config.authToken)
     }
 }

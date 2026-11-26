@@ -1,4 +1,6 @@
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import UserNotifications
 
 /// Bambuddy's alerts fetched from the user's relay, for a relay without Apple push keys (relay
@@ -25,6 +27,16 @@ enum RelayAlertFeed {
 
     /// The most local notifications one check posts; anything beyond is summed up in one more.
     private static let maxNotificationsPerCheck = 5
+    private static let maxConcurrentPhotoDownloads = 4
+    private static let photoFetchTimeout: Duration = .seconds(12)
+
+    private static let iso8601FractionalStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    private static let iso8601WholeStyle = Date.ISO8601FormatStyle()
+
+    private nonisolated enum PhotoFetchEvent: Sendable {
+        case photo(alertID: Int, data: Data?)
+        case timedOut
+    }
 
     /// The relay's highest feed id already handled, per relay. A different relay — or none
     /// recorded yet — starts from its current newest alert instead of replaying old ones.
@@ -80,23 +92,72 @@ enum RelayAlertFeed {
             return 0
         }
 
-        var photos: [Int: Data] = [:]
+        let photos = await fetchPhotos(for: fresh)
         for alert in fresh {
-            if let photoID = alert.photoID, let data = await RelayAlertClient.photo(id: photoID) {
-                photos[alert.id] = data
+            if let data = photos[alert.id] {
                 PushSharedStore.saveHistoryImage(data, id: historyID(alert))
             }
-            await PushSharedStore.appendHistory(PushSharedStore.HistoryEntry(
+        }
+        let historyEntries = fresh.map { alert in
+            PushSharedStore.HistoryEntry(
                 id: historyID(alert),
                 title: alert.title,
                 body: alert.body,
                 receivedAt: parseDate(alert.receivedAt) ?? Date(),
                 isRead: false
-            ))
+            )
         }
+        await PushSharedStore.appendHistory(historyEntries)
         await postNotifications(for: fresh, photos: photos)
         cursor = advanced
         return fresh.count
+    }
+
+    private static func fetchPhotos(for alerts: [RelayAlertClient.FeedItem]) async -> [Int: Data] {
+        let targets = alerts.compactMap { alert in
+            alert.photoID.map { (id: alert.id, photoID: $0) }
+        }
+        guard !targets.isEmpty else { return [:] }
+
+        return await withTaskGroup(of: PhotoFetchEvent.self) { group in
+            group.addTask {
+                try? await Task.sleep(for: photoFetchTimeout)
+                return .timedOut
+            }
+
+            var nextIndex = 0
+            func enqueueNext() {
+                guard nextIndex < targets.count else { return }
+                let target = targets[nextIndex]
+                nextIndex += 1
+                group.addTask {
+                    let data = await RelayAlertClient.photo(id: target.photoID)
+                    return .photo(alertID: target.id, data: data)
+                }
+            }
+
+            for _ in 0..<min(maxConcurrentPhotoDownloads, targets.count) {
+                enqueueNext()
+            }
+
+            var photos: [Int: Data] = [:]
+            var remaining = targets.count
+            while remaining > 0, let event = await group.next() {
+                switch event {
+                case .photo(let alertID, let data):
+                    remaining -= 1
+                    if let data {
+                        photos[alertID] = data
+                    }
+                    enqueueNext()
+                case .timedOut:
+                    group.cancelAll()
+                    return photos
+                }
+            }
+            group.cancelAll()
+            return photos
+        }
     }
 
     private static func historyID(_ alert: RelayAlertClient.FeedItem) -> String {
@@ -104,9 +165,7 @@ enum RelayAlertFeed {
     }
 
     private static func parseDate(_ value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        (try? iso8601FractionalStyle.parse(value)) ?? (try? iso8601WholeStyle.parse(value))
     }
 
     private static func postNotifications(for alerts: [RelayAlertClient.FeedItem], photos: [Int: Data]) async {
@@ -139,8 +198,33 @@ enum RelayAlertFeed {
 
     /// iOS moves an attachment's file into its own store, so each gets a fresh temporary copy.
     private static func attachment(_ data: Data, id: String) -> UNNotificationAttachment? {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(id)-\(UUID().uuidString).jpg")
-        guard (try? data.write(to: url)) != nil else { return nil }
-        return try? UNNotificationAttachment(identifier: id, url: url)
+        let ext = imageFileExtension(for: data)
+        let safeStem = String(PushSharedStore.sanitizedImageFilename(for: id).dropLast(4))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeStem)-\(UUID().uuidString).\(ext)")
+        do {
+            try data.write(to: url)
+            return try UNNotificationAttachment(identifier: id, url: url)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            return nil
+        }
+    }
+
+    private static func imageFileExtension(for data: Data) -> String {
+        if let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let uti = CGImageSourceGetType(source) as String? {
+            switch uti {
+            case UTType.jpeg.identifier: return "jpg"
+            case UTType.png.identifier: return "png"
+            case UTType.webP.identifier: return "webp"
+            case UTType.heic.identifier, UTType.heif.identifier: return "heic"
+            case UTType.gif.identifier: return "gif"
+            default:
+                if let ext = UTType(uti)?.preferredFilenameExtension {
+                    return ext
+                }
+            }
+        }
+        return "jpg"
     }
 }

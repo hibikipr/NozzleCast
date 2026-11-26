@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 
 struct MonitorView: View {
@@ -114,7 +115,7 @@ struct MonitorView: View {
         }
         .sheet(isPresented: $showNotifications, onDismiss: refreshUnreadCount) {
             NavigationStack {
-                NotificationsView()
+                NotificationsView(showsDoneButton: true)
             }
         }
         .task { await loadUnreadCount() }
@@ -139,22 +140,22 @@ struct MonitorView: View {
                 try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { break }
                 if case .connected = store.connectionStatus, !store.isRefreshing {
-                    NSLog("NCDEBUG poll: foreground refresh tick")
+                    AppLog.app.debug("poll: foreground refresh tick")
                     await store.refresh()
                 } else if case .failed = store.connectionStatus {
                     // 421 / transient network errors drop connectionStatus to .failed;
                     // rather than waiting for the next foreground event, reconnect here.
-                    NSLog("NCDEBUG poll: reconnect attempt after failed state")
+                    AppLog.app.error("poll: reconnect attempt after failed state")
                     await store.testConnectionAndRefresh()
                 }
             }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .active: NSLog("NCDEBUG scenePhase -> active (connectionStatus=%@)", String(describing: store.connectionStatus))
-            case .inactive: NSLog("NCDEBUG scenePhase -> inactive")
+            case .active: AppLog.app.debug("scenePhase -> active (connectionStatus=\(String(describing: store.connectionStatus), privacy: .private))")
+            case .inactive: AppLog.app.debug("scenePhase -> inactive")
             case .background:
-                NSLog("NCDEBUG scenePhase -> background")
+                AppLog.app.debug("scenePhase -> background")
                 BambuddyAlertFeed.scheduleBackgroundCheck()
             @unknown default: break
             }
@@ -224,9 +225,11 @@ struct MonitorView: View {
                             .foregroundStyle(.white)
                             .frame(width: 34, height: 34)
                             .background(Circle().fill(NCColor.cardFill))
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel(Text("Card layout", comment: "Accessibility label for the Monitor header's card layout menu"))
-                    .padding(.top, 10)
+                    .padding(.top, 5)
                     Button {
                         showNotifications = true
                     } label: {
@@ -235,8 +238,15 @@ struct MonitorView: View {
                             .foregroundStyle(unreadCount > 0 ? NCColor.accentLight : .white)
                             .frame(width: 34, height: 34)
                             .background(Circle().fill(NCColor.cardFill))
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
-                    .padding(.top, 10)
+                    .accessibilityLabel(
+                        unreadCount > 0
+                            ? Text("Notifications, ^[\(unreadCount) unread](inflect: true)", comment: "Accessibility label for the Monitor header's notifications button when unread alerts exist")
+                            : Text("Notifications", comment: "Accessibility label for the Monitor header's notifications button")
+                    )
+                    .padding(.top, 5)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)

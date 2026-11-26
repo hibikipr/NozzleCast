@@ -193,6 +193,7 @@ struct AMSAssignSheet: View {
                         .foregroundStyle(NCColor.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 12)

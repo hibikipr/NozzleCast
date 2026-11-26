@@ -29,6 +29,8 @@ final class SpoolBuddySession {
     private(set) var scan: Scan = .waiting
     /// The inventory spool for a `.matched` scan, once found in `AppStore.spools`.
     private(set) var matchedSpool: Spool?
+    /// True once the fallback `store.spool(bambuddyID:)` lookup for the current `.matched` scan has finished.
+    private(set) var spoolLookupFinished = false
     private(set) var weight: Reading?
     /// Keyed by SpoolBuddy device id. Nil until the device list or a presence event arrives.
     private(set) var devices: [String: Device]?
@@ -40,8 +42,23 @@ final class SpoolBuddySession {
     /// Screenshot mode with demo data: no server to listen to, so `ScreenshotMocks` plays a scan.
     @ObservationIgnored private var isPlayingMockScan = false
     var anyDeviceOnline: Bool { devices?.values.contains(where: \.online) ?? false }
-    /// The online SpoolBuddy, if any, the status line is about.
-    var onlineDevice: Device? { devices?.values.first(where: \.online) }
+    /// The online SpoolBuddy, if any, the status line is about (sorted deterministically by hostname then device id).
+    var onlineDevice: Device? {
+        guard let devices else { return nil }
+        return devices
+            .filter { $0.value.online }
+            .min { lhs, rhs in
+                let lhsName = lhs.value.hostname ?? ""
+                let rhsName = rhs.value.hostname ?? ""
+                if lhsName != rhsName {
+                    if lhsName.isEmpty { return false }
+                    if rhsName.isEmpty { return true }
+                    return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
+                }
+                return lhs.key < rhs.key
+            }?
+            .value
+    }
 
     /// How many `start` calls haven't had their `stop` yet. Leaving the Scan tab and coming back
     /// starts a new listener before the old one's `stop` runs; counting keeps that late `stop`
@@ -105,12 +122,14 @@ final class SpoolBuddySession {
         guard spool.id.hasPrefix("bb-"), let id = Int(spool.id.dropFirst(3)) else { return }
         scan = .matched(SpoolBuddyMatchedSpoolDTO(id: id, material: spool.material, colorName: spool.colorName, brand: spool.brand), tagUID: tagUID)
         matchedSpool = spool
+        spoolLookupFinished = true
     }
 
     /// Back to waiting for the next spool.
     func clearScan() {
         scan = .waiting
         matchedSpool = nil
+        spoolLookupFinished = false
     }
 
     func apply(_ event: SpoolBuddyEvent) {
@@ -119,16 +138,23 @@ final class SpoolBuddySession {
             markOnline(deviceID)
             scan = .matched(spool, tagUID: tagUID)
             matchedSpool = store?.spool("bb-\(spool.id)")
-            if matchedSpool == nil, let store {
+            if matchedSpool != nil || store == nil {
+                spoolLookupFinished = true
+            } else if let store {
+                spoolLookupFinished = false
                 Task {
                     let found = await store.spool(bambuddyID: spool.id)
-                    if case .matched(let current, _) = scan, current.id == spool.id { matchedSpool = found }
+                    if case .matched(let current, let currentTagUID) = scan, current.id == spool.id, currentTagUID == tagUID {
+                        matchedSpool = found
+                        spoolLookupFinished = true
+                    }
                 }
             }
         case .unknownTag(let deviceID, let tagUID, let trayUUID, _, let tagData):
             markOnline(deviceID)
             scan = .unknown(tagUID: tagUID, trayUUID: trayUUID, tagData: tagData)
             matchedSpool = nil
+            spoolLookupFinished = false
         case .tagRemoved(_, let tagUID):
             switch scan {
             case .matched(_, let current) where current == tagUID, .unknown(let current, _, _) where current == tagUID:
@@ -144,6 +170,7 @@ final class SpoolBuddySession {
             markOnline(deviceID)
             scan = .lookupFailed(spoolmanUnavailable: spoolmanUnavailable)
             matchedSpool = nil
+            spoolLookupFinished = false
         case .online(let deviceID, let hostname):
             var known = devices ?? [:]
             known[deviceID] = Device(hostname: hostname ?? known[deviceID]?.hostname, online: true, scaleWorks: known[deviceID]?.scaleWorks ?? true)
@@ -239,7 +266,7 @@ struct SpoolBuddyScanPanel: View {
             if devices.isEmpty {
                 return String(localized: "No SpoolBuddy registered with your server", comment: "SpoolBuddy scan mode status")
             }
-            if let online = devices.values.first(where: \.online) {
+            if let online = session.onlineDevice {
                 if let name = online.hostname, !name.isEmpty {
                     return String(localized: "\(name) is online", comment: "SpoolBuddy scan mode status; the SpoolBuddy's hostname")
                 }
@@ -301,7 +328,7 @@ struct SpoolBuddyScanPanel: View {
     }
 
     private func matchedContent(_ dto: SpoolBuddyMatchedSpoolDTO) -> some View {
-        let spool = session.matchedSpool
+        let spool = store.spool("bb-\(dto.id)") ?? session.matchedSpool
         return VStack(spacing: 14) {
             Group {
                 if let spool {
@@ -333,8 +360,13 @@ struct SpoolBuddyScanPanel: View {
                     actionButton(String(localized: "Edit", comment: "SpoolBuddy scan: edit the scanned spool"), systemImage: "pencil", prominent: false) { onEdit(spool) }
                     actionButton(String(localized: "Assign to AMS", comment: "SpoolBuddy scan: assign the scanned spool to an AMS slot"), systemImage: "tray.and.arrow.down", prominent: true) { onAssign(spool) }
                 }
-            } else {
+            } else if !session.spoolLookupFinished {
                 ProgressView().tint(NCColor.accentLight)
+            } else {
+                Text("This spool isn't in your active inventory.", comment: "SpoolBuddy scan: matched tag spool couldn't be loaded from inventory")
+                    .ncFont(size: 13, relativeTo: .footnote)
+                    .foregroundStyle(NCColor.textTertiary)
+                    .multilineTextAlignment(.center)
             }
         }
     }
@@ -468,10 +500,12 @@ struct LinkTagSpoolPicker: View {
     }
 
     var body: some View {
+        let candidates = self.candidates
+        let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
         NavigationStack {
             List {
                 if candidates.isEmpty {
-                    Text(searchText.isEmpty
+                    Text(!isSearching
                          ? String(localized: "Every spool in your inventory already has a tag.", comment: "Link tag picker: no spool without a tag")
                          : String(localized: "No spool without a tag matches.", comment: "Link tag picker: search found nothing"))
                         .ncFont(size: 14, relativeTo: .subheadline)
