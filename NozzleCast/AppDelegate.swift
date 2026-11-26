@@ -45,17 +45,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // Must be registered before launch finishes. Runs a full printer refresh, which also checks for
         // alerts (the relay's feed or Bambuddy's notification log; see BambuddyAlertFeed) and rewrites
         // the widget snapshots, so Home Screen widgets stay current while the app is closed.
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: BambuddyAlertFeed.backgroundTaskIdentifier, using: nil) { [store] task in
-            Task { @MainActor in
-                BambuddyAlertFeed.scheduleBackgroundCheck()
-                let work = Task {
-                    let before = store.lastSuccessfulRefreshAt
-                    await store.refresh()
-                    guard !Task.isCancelled else { return }
-                    // A refresh checks alerts only when it succeeds; if it didn't, still check them.
-                    if store.lastSuccessfulRefreshAt == before { _ = await store.checkBambuddyAlerts() }
-                }
-                task.expirationHandler = { work.cancel() }
+        // `using: .main` matches the closure's inherited `@MainActor` isolation — passing `nil` runs
+        // on a background queue and trips Swift's runtime actor-isolation assertion (`EXC_BREAKPOINT`).
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: BambuddyAlertFeed.backgroundTaskIdentifier, using: .main) { [store] task in
+            BambuddyAlertFeed.scheduleBackgroundCheck()
+            let work = Task {
+                let before = store.lastSuccessfulRefreshAt
+                await store.refresh()
+                guard !Task.isCancelled else { return }
+                // A refresh checks alerts only when it succeeds; if it didn't, still check them.
+                if store.lastSuccessfulRefreshAt == before { _ = await store.checkBambuddyAlerts() }
+            }
+            // `@Sendable` keeps the expiration handler nonisolated regardless of which queue invokes it.
+            task.expirationHandler = { @Sendable in work.cancel() }
+            Task {
                 await work.value
                 task.setTaskCompleted(success: !work.isCancelled)
             }
