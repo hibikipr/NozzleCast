@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -395,9 +396,15 @@ struct SettingsView: View {
 
     private func selectIcon(_ option: AppIconOption) {
         guard option != selectedIcon else { return }
-        UIApplication.shared.setAlternateIconName(option.alternateIconName) { error in
-            guard error == nil else { return }
-            Task { @MainActor in selectedIcon = option }
+        // Use the async overload rather than the ObjC completion handler, which can complete
+        // off-main and trip Swift 6's `@MainActor` runtime isolation assertion.
+        Task {
+            do {
+                try await UIApplication.shared.setAlternateIconName(option.alternateIconName)
+                selectedIcon = option
+            } catch {
+                AppLog.app.error("setAlternateIconName failed: \(String(describing: error), privacy: .private)")
+            }
         }
     }
 
