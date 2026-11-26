@@ -66,7 +66,7 @@ actor OFDClient {
     /// found" with no way to tell the user which actually happened.
     func lookup(gtin: String) async throws -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
         let cache = try await ensureLoaded()
-        guard let fields = cache.gtinIndex[Self.canonicalGTIN(gtin)] else { return nil }
+        guard let fields = cache.gtinIndex[FilamentCode.canon(gtin)] else { return nil }
         return (fields, [])
     }
 
@@ -152,7 +152,7 @@ actor OFDClient {
             fields.title = [brandName, filament.name, variant.name].compactMap { $0 }.joined(separator: " ")
 
             if let gtin = size.gtin {
-                let canonical = Self.canonicalGTIN(gtin)
+                let canonical = FilamentCode.canon(gtin)
                 gtinIndex[canonical] = fields
             }
             if let article = size.article_number {
@@ -167,12 +167,9 @@ actor OFDClient {
         return fresh
     }
 
-    private static func subtype(from filamentName: String, material: String) -> String? {
-        var s = filamentName
-        if !material.isEmpty {
-            s = s.replacingOccurrences(of: material, with: "", options: [.caseInsensitive, .regularExpression])
-        }
-        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    nonisolated static func subtype(from filamentName: String, material: String) -> String? {
+        let stripped = MaterialFamily.strippingMaterialToken(material, from: filamentName)
+        let s = stripped.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: " -+"))
         return s.isEmpty ? nil : s
     }
@@ -182,12 +179,5 @@ actor OFDClient {
         h = h.hasPrefix("#") ? String(h.dropFirst()) : h
         guard h.count == 6, h.allSatisfy(\.isHexDigit) else { return nil }
         return h.uppercased() + "FF"
-    }
-
-    /// Mirrors `FilamentCode.canon` without hopping to `@MainActor` during off-main indexing.
-    private static func canonicalGTIN(_ barcode: String) -> String {
-        let digits = barcode.filter(\.isNumber)
-        let stripped = digits.drop { $0 == "0" }
-        return stripped.isEmpty ? "0" : String(stripped)
     }
 }

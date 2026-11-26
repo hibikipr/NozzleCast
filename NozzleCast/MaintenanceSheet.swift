@@ -36,7 +36,11 @@ struct MaintenanceSheet: View {
                 .padding(16)
             }
             .background(Color(hex: "#212121").ignoresSafeArea())
-            .navigationTitle(Text("\(printer?.name ?? "") · Maintenance", comment: "Maintenance sheet title, e.g. 'Sam P1S · Maintenance'"))
+            .navigationTitle(
+                (printer?.name).flatMap { $0.isEmpty ? nil : $0 }.map {
+                    Text("\($0) · Maintenance", comment: "Maintenance sheet title, e.g. 'Sam P1S · Maintenance'")
+                } ?? Text("Maintenance", comment: "Fallback maintenance sheet title when printer is unavailable")
+            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -123,14 +127,17 @@ private struct MaintenanceTaskRow: View {
     private var statusText: String {
         let amount = abs(task.remaining)
         let rounded = Int(amount.rounded())
+        if rounded == 0 {
+            return task.isDue
+                ? String(localized: "Due now", comment: "Maintenance task is due")
+                : String(localized: "Due soon", comment: "Maintenance task due in less than 1 hour or 1 day")
+        }
         switch task.interval {
         case .printHours:
-            if task.isDue && rounded == 0 { return String(localized: "Due now", comment: "Maintenance task is due") }
             return task.remaining < 0
-                ? String(localized: "Overdue by \(rounded) print hours", comment: "Maintenance task overdue, in print hours")
-                : String(localized: "Due in \(rounded) print hours", comment: "Maintenance task due in print hours")
+                ? Self.inflected(AttributedString(localized: "Overdue by ^[\(rounded) print hour](inflect: true)", comment: "Maintenance task overdue, in print hours"))
+                : Self.inflected(AttributedString(localized: "Due in ^[\(rounded) print hour](inflect: true)", comment: "Maintenance task due in print hours"))
         case .days:
-            if task.isDue && rounded == 0 { return String(localized: "Due now", comment: "Maintenance task is due") }
             return task.remaining < 0
                 ? Self.inflected(AttributedString(localized: "Overdue by ^[\(rounded) day](inflect: true)", comment: "Maintenance task overdue, in days"))
                 : Self.inflected(AttributedString(localized: "Due in ^[\(rounded) day](inflect: true)", comment: "Maintenance task due in days"))
@@ -145,8 +152,10 @@ private struct MaintenanceTaskRow: View {
     /// "Every 50 print hours · done 2 days ago"
     private var intervalText: String {
         let every: String = switch task.interval {
-        case .printHours(let hours): String(localized: "Every \(Int(hours.rounded())) print hours", comment: "Maintenance interval in print hours")
-        case .days(let days): Self.inflected(AttributedString(localized: "Every ^[\(Int(days.rounded())) day](inflect: true)", comment: "Maintenance interval in days"))
+        case .printHours(let hours):
+            Self.inflected(AttributedString(localized: "Every ^[\(Int(hours.rounded())) print hour](inflect: true)", comment: "Maintenance interval in print hours"))
+        case .days(let days):
+            Self.inflected(AttributedString(localized: "Every ^[\(Int(days.rounded())) day](inflect: true)", comment: "Maintenance interval in days"))
         }
         guard let last = task.lastPerformedAt else { return every }
         return String(localized: "\(every) · done \(last.formatted(.relative(presentation: .named)))", comment: "Maintenance interval and when the task was last done")

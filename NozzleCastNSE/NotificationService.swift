@@ -47,7 +47,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             state.inFlightTask = nil
         }
 
-        NSLog("NCDEBUG NSE didReceive userInfo=%@", request.content.userInfo)
+        NSELog.push.debug("NSE didReceive userInfo=\(String(describing: request.content.userInfo), privacy: .private)")
 
         let boxedContent = UncheckedSendable(content)
 
@@ -167,14 +167,15 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
 
         // Logged before the photo: a slow download can outlast the extension's time, and the
         // alert should still reach the in-app list and the badge.
-        PushSharedStore.appendHistory(.init(
+        let unreadCount = await PushSharedStore.appendHistory(.init(
             id: message.id,
             title: content.title,
             body: content.body,
             receivedAt: Date(),
             isRead: false
         ))
-        content.badge = NSNumber(value: PushSharedStore.unreadCount())
+        content.badge = NSNumber(value: unreadCount)
+        guard !Task.isCancelled else { return }
 
         if let attachmentURL = message.attachmentURL, let image = await Self.downloadImage(attachmentURL) {
             guard !Task.isCancelled else { return }
@@ -218,8 +219,9 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         let id = alertID ?? UUID().uuidString
         // Logged before the photo: a slow download can outlast the extension's time, and the
         // alert should still reach the in-app list and the badge.
-        PushSharedStore.appendHistory(.init(id: id, title: content.title, body: content.body, receivedAt: Date(), isRead: false))
-        content.badge = NSNumber(value: PushSharedStore.unreadCount())
+        let unreadCount = await PushSharedStore.appendHistory(.init(id: id, title: content.title, body: content.body, receivedAt: Date(), isRead: false))
+        content.badge = NSNumber(value: unreadCount)
+        guard !Task.isCancelled else { return }
 
         if let photoID, let image = await Self.downloadRelayPhoto(photoID) {
             guard !Task.isCancelled else { return }
@@ -287,7 +289,8 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
 
     private static func writeTempFile(_ data: Data, id: String, mimeType: String?) -> URL? {
         let ext = imageFileExtension(for: data, mimeType: mimeType)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(id).\(ext)")
+        let safeStem = String(PushSharedStore.sanitizedImageFilename(for: id).dropLast(4))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeStem).\(ext)")
         guard (try? data.write(to: url)) != nil else { return nil }
         return url
     }
@@ -380,8 +383,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         let remainingMinutes = remainingMinutes(fromMessage: message.message ?? "")
 
         let allActivities = Activity<PrintActivityAttributes>.activities
-        NSLog("NCDEBUG NSE update terminalLabel=%@ allActivities=%@", terminalLabel ?? "nil",
-              allActivities.map { "id=\($0.id) printerID=\($0.attributes.printerID) state=\($0.activityState)" }.description)
+        NSELog.push.debug("NSE update terminalLabel=\(terminalLabel ?? "nil", privacy: .private) allActivities=\(allActivities.map { "id=\($0.id) printerID=\($0.attributes.printerID) state=\($0.activityState)" }.description, privacy: .private)")
 
         // Only `.active` activities count as a match — an already-ended one still lingers in
         // `.activities` through its dismissal window (up to 30 minutes), and without this a new
@@ -391,10 +393,10 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         let matchedIDs = matchingPrinterIDs(in: text, candidates: active.map(\.attributes.printerID))
         for activity in active {
             guard matchedIDs.contains(activity.attributes.printerID) else {
-                NSLog("NCDEBUG NSE no match: printerID=%@ not named in this message", activity.attributes.printerID)
+                NSELog.push.debug("NSE no match: printerID=\(activity.attributes.printerID, privacy: .private) not named in this message")
                 continue
             }
-            NSLog("NCDEBUG NSE matched activity id=%@ printerID=%@", activity.id, activity.attributes.printerID)
+            NSELog.push.debug("NSE matched activity id=\(activity.id, privacy: .private) printerID=\(activity.attributes.printerID, privacy: .private)")
             var state = activity.content.state
 
             // Awaited, not fired as an unstructured Task: the extension process is liable to be
@@ -407,7 +409,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                     state.estimatedEndAt = Date()
                 }
                 await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(.now.addingTimeInterval(1800)))
-                NSLog("NCDEBUG NSE ended activity id=%@ resultingState=%@", activity.id, String(describing: activity.activityState))
+                NSELog.push.debug("NSE ended activity id=\(activity.id, privacy: .private) resultingState=\(String(describing: activity.activityState), privacy: .private)")
             } else if let progress {
                 // Bambuddy's progress titles carry the real percentage and remaining time (e.g.
                 // "Print 70% Complete" / "...Remaining: 4m") — previously ignored entirely, which

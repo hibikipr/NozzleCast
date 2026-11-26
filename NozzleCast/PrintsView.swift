@@ -34,6 +34,13 @@ struct PrintsView: View {
     @State private var historyFilter: HistoryFilter = .all
     @State private var pendingRemoval: QueuedPrint?
     @State private var pendingStart: QueuedPrint?
+    @State private var loadMoreToken = 0
+    @State private var loadMoreFailed = false
+
+    private struct PaginationKey: Hashable {
+        var count: Int
+        var token: Int
+    }
 
     private var isFirstLoad: Bool { !store.hasLoadedPrints && store.isLoadingPrints && !store.isShowingDemoData }
 
@@ -86,8 +93,28 @@ struct PrintsView: View {
             }
             .background(NCColor.canvasBackground.ignoresSafeArea())
             .navigationBarHidden(true)
-            .refreshable { await store.loadPrints() }
+            .refreshable {
+                loadMoreFailed = false
+                loadMoreToken += 1
+                await store.loadPrints()
+            }
             .task { await store.loadPrints() }
+            .onChange(of: store.printHistory.count) {
+                loadMoreFailed = false
+            }
+            .confirmationDialog(
+                Text("Print anyway?", comment: "Title when the server held a queued print over its filament"),
+                isPresented: Binding(get: { store.filamentHold != nil }, set: { if !$0 { store.filamentHold = nil } }),
+                titleVisibility: .visible,
+                presenting: store.filamentHold
+            ) { prompt in
+                Button(String(localized: "Print Anyway", comment: "Start a queued print despite the server's filament check")) {
+                    store.startQueuedPrint(prompt.itemID, skipFilamentCheck: true)
+                }
+                Button(String(localized: "Keep Waiting", comment: "Leave a held print in the queue"), role: .cancel) {}
+            } message: { prompt in
+                Text(Self.filamentHoldMessage(prompt))
+            }
         }
     }
 
@@ -163,19 +190,6 @@ struct PrintsView: View {
                 } message: {
                     Text("Your server sends it to \(item.destination) as soon as the printer is free. Make sure the build plate is clear.", comment: "Explains what starting a staged print does")
                 }
-                .confirmationDialog(
-                    Text("Print anyway?", comment: "Title when the server held a queued print over its filament"),
-                    isPresented: Binding(get: { store.filamentHold?.itemID == item.id }, set: { if !$0 { store.filamentHold = nil } }),
-                    titleVisibility: .visible,
-                    presenting: store.filamentHold
-                ) { prompt in
-                    Button(String(localized: "Print Anyway", comment: "Start a queued print despite the server's filament check")) {
-                        store.startQueuedPrint(prompt.itemID, skipFilamentCheck: true)
-                    }
-                    Button(String(localized: "Keep Waiting", comment: "Leave a held print in the queue"), role: .cancel) {}
-                } message: { prompt in
-                    Text(Self.filamentHoldMessage(prompt))
-                }
             }
         }
     }
@@ -211,11 +225,43 @@ struct PrintsView: View {
             if store.hasMorePrintHistory {
                 // Pages in when scrolled to; a filter that matches few records still reaches older
                 // ones because this row keeps appearing at the end.
-                ProgressView()
-                    .tint(NCColor.accentLight)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .task(id: store.printHistory.count) { await store.loadMorePrintHistory() }
+                Group {
+                    if loadMoreFailed {
+                        Button {
+                            loadMoreFailed = false
+                            loadMoreToken += 1
+                        } label: {
+                            Label(
+                                String(localized: "Couldn't load more · Tap to retry", comment: "Print history pagination retry button"),
+                                systemImage: "arrow.clockwise"
+                            )
+                            .ncFont(size: 13, weight: .medium, relativeTo: .footnote)
+                            .foregroundStyle(NCColor.accentLight)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 16)
+                            .background(Capsule().fill(Color.white.opacity(0.07)))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        ProgressView()
+                            .tint(NCColor.accentLight)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .task(id: PaginationKey(count: store.printHistory.count, token: loadMoreToken)) {
+                    guard !loadMoreFailed else { return }
+                    while store.isLoadingPrints && !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(150))
+                    }
+                    guard !Task.isCancelled else { return }
+                    let countBefore = store.printHistory.count
+                    await store.loadMorePrintHistory()
+                    guard !Task.isCancelled else { return }
+                    if store.hasMorePrintHistory && store.printHistory.count == countBefore {
+                        loadMoreFailed = true
+                    }
+                }
             }
         }
     }
@@ -352,9 +398,14 @@ private struct HistoryRow: View {
                         OutcomeBadge(outcome: record.outcome)
                     }
                     Group {
+                        let printerName = record.printerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                         if let finishedAt = record.finishedAt {
-                            Text("\(record.printerName ?? "") · \(finishedAt.formatted(.relative(presentation: .named)))", comment: "Print history row: printer name · when it finished")
-                        } else if let printerName = record.printerName {
+                            if !printerName.isEmpty {
+                                Text("\(printerName) · \(finishedAt.formatted(.relative(presentation: .named)))", comment: "Print history row: printer name · when it finished")
+                            } else {
+                                Text(finishedAt.formatted(.relative(presentation: .named)))
+                            }
+                        } else if !printerName.isEmpty {
                             Text(printerName)
                         }
                     }
@@ -476,20 +527,28 @@ private struct PrintFacts: View {
     var type: String?
     var colorHex: String?
 
+    private var hasDuration: Bool { (duration ?? 0) > 0 }
+    private var trimmedType: String? {
+        guard let t = type?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        return t
+    }
+    private var hasGrams: Bool { (grams ?? 0) > 0 }
+    private var hasFilamentFacts: Bool { trimmedType != nil || hasGrams }
+
     var body: some View {
         HStack(spacing: 6) {
             if let duration, duration > 0 {
                 Text(Duration.seconds(duration).formatted(.units(allowed: [.hours, .minutes], width: .narrow)))
             }
-            if duration != nil, grams != nil || type != nil {
+            if hasDuration && hasFilamentFacts {
                 Text("·")
             }
-            if let colorHex, !colorHex.isEmpty {
+            if let colorHex, !colorHex.isEmpty, hasFilamentFacts {
                 Circle().fill(Color(hex: colorHex)).frame(width: 9, height: 9)
                     .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5))
             }
-            if let type, !type.isEmpty {
-                Text(type)
+            if let trimmedType {
+                Text(trimmedType)
             }
             if let grams, grams > 0 {
                 Text("\(grams, format: .number.precision(.fractionLength(0))) g", comment: "Filament weight in grams")

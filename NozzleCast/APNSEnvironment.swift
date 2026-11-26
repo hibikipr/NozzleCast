@@ -1,3 +1,4 @@
+import os
 import Foundation
 
 /// Which APNs environment this build's push tokens actually belong to, reported to the relay so
@@ -25,7 +26,7 @@ enum APNSEnvironment {
         case "production": return "production"
         case let other?:
             // Unknown value: prefer the compile-time guess over inventing an answer.
-            NSLog("NCDEBUG unrecognized aps-environment '%@' in provisioning profile, falling back to build configuration", other)
+            AppLog.push.debug("unrecognized aps-environment '\(other, privacy: .private)' in provisioning profile, falling back to build configuration")
             return compileTimeFallback
         case nil:
             // No embedded profile at all. App Store builds are the expected case here — Apple

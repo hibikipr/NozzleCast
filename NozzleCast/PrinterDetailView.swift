@@ -49,8 +49,18 @@ struct PrinterDetailView: View {
             // Print history feeds the "How did it come out?" card, and a print that just finished
             // isn't in the history the app has yet. Attached here rather than to the card, which
             // renders nothing until that history exists — SwiftUI never runs a task on an empty
-            // view, so the card could never load what it needs to appear.
-            .task(id: printer.state) { await store.loadPrints() }
+            // view, so the card could never load what it needs to appear. Only load on initial open
+            // if history hasn't been loaded yet, or when the printer's state transitions, so
+            // opening detail doesn't wipe extra paginated pages on the Prints tab.
+            .task {
+                if !store.hasLoadedPrints {
+                    await store.loadPrints()
+                }
+            }
+            .onChange(of: printer.state) { oldState, newState in
+                guard oldState != newState else { return }
+                Task { await store.loadPrints() }
+            }
             .fullScreenCover(isPresented: $showLiveStream) {
                 LiveCameraStreamView(printerID: printer.id, printerName: printer.name)
             }
@@ -352,6 +362,11 @@ struct PrinterVideoHeader: View {
         .overlay(alignment: .topLeading) {
             HStack {
                 GlassIconButton(systemName: backIcon) { onBack?() ?? dismiss() }
+                    .accessibilityLabel(
+                        backIcon == "sidebar.left"
+                            ? Text("Toggle printer list", comment: "Accessibility label for the split-view sidebar button")
+                            : Text("Back", comment: "Accessibility label for the back button")
+                    )
                 Spacer()
                 Menu {
                     PrinterMoreMenuItems(printerID: printerID, showLiveStream: $showLiveStream)
@@ -363,6 +378,7 @@ struct PrinterVideoHeader: View {
                         .background(Circle().fill(.black.opacity(0.45)))
                         .background(Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
                 }
+                .accessibilityLabel(Text("More", comment: "Accessibility label for printer actions menu"))
             }
             .padding(16)
         }
@@ -371,7 +387,7 @@ struct PrinterVideoHeader: View {
                 if state == .offline {
                     offlinePill
                 } else if isCameraLive {
-                    LiveBadge().scaleEffect(1.3)
+                    LiveBadge(dotSize: 6.5, fontSize: 9, horizontalPadding: 8, verticalPadding: 4)
                 }
             }
             .padding(.top, 60)
@@ -409,9 +425,12 @@ struct PrinterInfoPillRow: View {
 
     /// Bambuddy's `door_open` field defaults to false for every printer model rather than
     /// being nil when a model has no door to report on, so it can't tell us on its own whether
-    /// a "closed" reading is meaningful or just the default. The H2 series (H2C/H2D/H2S) is the
-    /// enclosed line with an actual front-door sensor Bambuddy surfaces this for.
-    private var hasDoorSensor: Bool { model.uppercased().contains("H2") }
+    /// a "closed" reading is meaningful or just the default. The H2 series (H2C/H2D/H2S) and H3C
+    /// are enclosed printers with an actual front-door sensor Bambuddy surfaces this for.
+    private var hasDoorSensor: Bool {
+        let m = model.uppercased()
+        return m.contains("H2") || m.contains("H3C")
+    }
 
     var body: some View {
         FlowLayout(spacing: 6, rowSpacing: 6) {
@@ -425,6 +444,8 @@ struct PrinterInfoPillRow: View {
                     InfoPill(icon: HMSError.Level.pillSymbol, text: "\(hmsErrorCount)", tint: (hmsWorstLevel ?? .warning).color)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(Text("^[\(hmsErrorCount) warning](inflect: true)", comment: "Accessibility label for the HMS warnings pill"))
+                .accessibilityHint(Text("Shows printer warnings", comment: "Accessibility hint on the HMS warnings pill"))
             }
             if aiDetectionEnabled {
                 Button {
@@ -568,7 +589,7 @@ struct PrinterLastPrintCard: View {
                 Button {
                     showCoverFullscreen = true
                 } label: {
-                    PrinterCoverImage(printerID: printerID, jobIdentity: printerID)
+                    PrinterCoverImage(printerID: printerID, jobIdentity: lastPrint?.name ?? printerID, fallbackRecord: lastPrint)
                         .frame(width: 56, height: 56)
                         .background(NCColor.well)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -988,8 +1009,8 @@ struct PrinterNozzleRackSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Nozzle Rack").sectionEyebrow()
             FlowLayout(spacing: 8, rowSpacing: 8) {
-                ForEach(nozzleRack) { slot in
-                    NozzleRackChip(slot: slot)
+                ForEach(Array(nozzleRack.enumerated()), id: \.element.id) { index, slot in
+                    NozzleRackChip(slot: slot, slotNumber: index + 1)
                 }
             }
         }
@@ -1019,7 +1040,7 @@ struct PrinterPowerSection: View {
                     }
                 }
                 Spacer()
-                Toggle("", isOn: Binding(
+                Toggle(String(localized: "Smart Plug", comment: "Accessibility label for smart plug power switch"), isOn: Binding(
                     get: { smartPlug.isOn },
                     set: { _ in store.toggleSmartPlug(printerID) }
                 ))

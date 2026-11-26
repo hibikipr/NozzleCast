@@ -215,7 +215,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Live Activities").foregroundStyle(.white)
                         Spacer()
-                        Toggle("", isOn: $liveActivitiesEnabled)
+                        Toggle("Live Activities", isOn: $liveActivitiesEnabled)
                             .labelsHidden()
                             .tint(NCColor.accent)
                             .onChange(of: liveActivitiesEnabled) { _, enabled in
@@ -261,6 +261,7 @@ struct SettingsView: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(selectedIcon == option ? .isSelected : [])
                         }
                     }
                     .padding(.vertical, 6)
@@ -295,7 +296,15 @@ struct SettingsView: View {
                 PrinterDetailView(printerID: id)
             }
             .refreshable { await store.testConnectionAndRefresh() }
-            .sheet(isPresented: $showRelaySheet) {
+            .sheet(isPresented: $showRelaySheet, onDismiss: {
+                relayAlertsActive = PushSharedStore.relayAlertsActive
+                alertFeedStatusRefresh += 1
+                Task {
+                    await store.updateRelayAlertDelivery()
+                    relayAlertsActive = PushSharedStore.relayAlertsActive
+                    alertFeedStatusRefresh += 1
+                }
+            }) {
                 RelayConnectionSheet()
             }
             .sheet(isPresented: $showConnectionSheet) {
@@ -402,6 +411,9 @@ struct SettingsView: View {
     }
 
     private var alertsStatus: String {
+        if pushManager.authorizationStatus == .denied {
+            return String(localized: "Disabled in Settings", comment: "Settings row value: notification permission denied in iOS Settings")
+        }
         guard pushManager.authorizationStatus == .authorized else {
             return String(localized: "Tap to enable", comment: "Settings row value: needs permission")
         }
@@ -438,6 +450,12 @@ struct SettingsView: View {
 
     /// Asks for notification permission, then sets up whatever delivers alerts here.
     private func enableAlerts() async {
+        if pushManager.authorizationStatus == .denied {
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                await UIApplication.shared.open(url)
+            }
+            return
+        }
         try? await pushManager.requestAuthorization()
         await store.updateRelayAlertDelivery()
         relayAlertsActive = PushSharedStore.relayAlertsActive

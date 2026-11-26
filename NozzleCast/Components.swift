@@ -26,8 +26,10 @@ struct FlowLayout: Layout {
         let height = rows.reduce(0) { partial, row in
             partial + (row.map { cache[$0].height }.max() ?? 0)
         } + rowSpacing * CGFloat(max(0, rows.count - 1))
-        let firstRowWidth = rows.first?.reduce(CGFloat(0)) { $0 + cache[$1].width + spacing } ?? 0
-        return CGSize(width: width.isFinite ? width : firstRowWidth, height: height)
+        let maxRowWidth = rows.map { row in
+            row.reduce(CGFloat(0)) { $0 + cache[$1].width } + spacing * CGFloat(max(0, row.count - 1))
+        }.max() ?? 0
+        return CGSize(width: width.isFinite ? width : maxRowWidth, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout [CGSize]) {
@@ -337,21 +339,26 @@ struct CoverImageViewer: View {
     @Environment(AppStore.self) private var store
     @State private var image: UIImage?
     @State private var backdrop: Color?
+    @State private var didFinishLoading = false
 
     var body: some View {
-        ZoomableImageViewer(image: image, backdrop: backdrop ?? .black)
+        ZoomableImageViewer(image: image, backdrop: backdrop ?? .black, didFinishLoading: didFinishLoading)
             .task(id: "\(printerID)-\(jobIdentity)") {
-                image = await store.printerCoverImage(printerID: printerID)
-                backdrop = if let image { await coverBackdrop(for: image) } else { nil }
+                didFinishLoading = false
+                let loaded = await store.printerCoverImage(printerID: printerID)
+                image = loaded
+                backdrop = if let loaded { await coverBackdrop(for: loaded) } else { nil }
+                didFinishLoading = true
             }
     }
 }
 
 /// A full-screen picture to pinch-zoom (up to 5x), drag while zoomed and double-tap back to fit,
-/// with a close button. A spinner until `image` arrives.
+/// with a close button. A spinner until `image` arrives, or an unavailable state if loading fails.
 struct ZoomableImageViewer: View {
     var image: UIImage?
     var backdrop: Color = .black
+    var didFinishLoading: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var scale: CGFloat = 1
@@ -398,12 +405,22 @@ struct ZoomableImageViewer: View {
                             lastOffset = .zero
                         }
                     }
+            } else if didFinishLoading {
+                VStack(spacing: 12) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.white.opacity(0.4))
+                    Text("Image unavailable", comment: "Placeholder when a cover or notification photo couldn't be loaded")
+                        .ncFont(size: 14, weight: .medium, relativeTo: .subheadline)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
             } else {
                 ProgressView().tint(.white)
             }
         }
         .overlay(alignment: .topTrailing) {
             GlassIconButton(systemName: "xmark") { dismiss() }
+                .accessibilityLabel(Text("Close"))
                 .padding(16)
                 .padding(.top, 8)
         }
@@ -428,19 +445,16 @@ struct AMSSlotCard: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            ZStack {
+            Group {
                 if let spool {
-                    spool.swatch
                     Text(spool.materialWithSubtype)
                         .ncFont(size: 10, weight: .bold, relativeTo: .caption2)
                         .foregroundStyle(Color(hex: spool.colorHex).isLight ? .black : .white)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                         .minimumScaleFactor(0.7)
-                        .padding(.horizontal, 4)
+                        .padding(4)
                 } else if needsAssignment {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(tray?.rawColorHex.map { Color(hex: $0) } ?? NCColor.well)
                     VStack(spacing: 2) {
                         Image(systemName: "questionmark.circle.fill")
                             .font(.system(size: 13, weight: .semibold))
@@ -450,15 +464,26 @@ struct AMSSlotCard: View {
                         }
                     }
                     .foregroundStyle((tray?.rawColorHex.map { Color(hex: $0).isLight } ?? false) ? .black : .white)
+                    .padding(4)
                 } else {
-                    StripePattern()
                     Text("Empty")
                         .ncFont(size: 10, weight: .semibold, relativeTo: .caption2)
                         .foregroundStyle(NCColor.textTertiary)
+                        .padding(4)
                 }
             }
-            .frame(width: fillsWidth ? nil : 62, height: 50)
-            .frame(maxWidth: fillsWidth ? .infinity : nil)
+            .frame(width: fillsWidth ? nil : 62)
+            .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 50)
+            .background {
+                if let spool {
+                    spool.swatch
+                } else if needsAssignment {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(tray?.rawColorHex.map { Color(hex: $0) } ?? NCColor.well)
+                } else {
+                    StripePattern()
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             Text(
@@ -555,18 +580,23 @@ struct PulseEffect: ViewModifier {
 }
 
 struct LiveBadge: View {
+    var dotSize: CGFloat = 5
+    var fontSize: CGFloat = 7
+    var horizontalPadding: CGFloat = 6
+    var verticalPadding: CGFloat = 3
+
     var body: some View {
         HStack(spacing: 4) {
             Circle()
                 .fill(NCColor.statusPrinting)
-                .frame(width: 5, height: 5)
+                .frame(width: dotSize, height: dotSize)
                 .modifier(PulseEffect(active: true))
             Text("LIVE")
-                .ncFont(size: 7, weight: .bold, relativeTo: .caption2)
+                .ncFont(size: fontSize, weight: .bold, relativeTo: .caption2)
                 .foregroundStyle(.white)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
         .background(Capsule().fill(Color.black.opacity(0.55)))
     }
 }
@@ -682,6 +712,9 @@ struct InfoPill: View {
 
 struct NozzleRackChip: View {
     var slot: NozzleRackSlot
+    var slotNumber: Int? = nil
+
+    private var displayNumber: Int { slotNumber ?? (slot.id + 1) }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -702,6 +735,12 @@ struct NozzleRackChip: View {
             }
             .frame(width: 40, height: 40)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            slot.isEmpty
+                ? Text("Nozzle slot \(displayNumber), empty", comment: "Accessibility label for an empty nozzle rack slot")
+                : Text("Nozzle slot \(displayNumber), \(slot.diameter)", comment: "Accessibility label for a populated nozzle rack slot")
+        )
     }
 }
 

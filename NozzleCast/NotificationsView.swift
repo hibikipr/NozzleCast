@@ -9,6 +9,8 @@ import UserNotifications
 /// verification failed" on every command it ignores); the extension then delivers those
 /// silently and keeps them out of this list, until they're unmuted from Muted Alerts.
 struct NotificationsView: View {
+    var showsDoneButton = false
+    @Environment(\.dismiss) private var dismiss
     @State private var entries: [PushSharedStore.HistoryEntry] = []
     @State private var mutedAlerts: [PushSharedStore.MutedAlert] = []
     @State private var viewingImage: ViewingImage?
@@ -76,13 +78,18 @@ struct NotificationsView: View {
         .navigationTitle("Notifications")
         .toolbar {
             if !entries.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: showsDoneButton ? .topBarLeading : .topBarTrailing) {
                     Button("Clear") {
                         Task {
                             await PushSharedStore.clearHistory()
                         }
                         entries = []
                     }
+                }
+            }
+            if showsDoneButton {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
         }
@@ -104,9 +111,10 @@ struct NotificationsView: View {
 
     private func mute(_ entry: PushSharedStore.HistoryEntry) {
         let alert = PushSharedStore.MutedAlert(title: entry.title, body: entry.body)
-        guard !mutedAlerts.contains(alert) else { return }
-        mutedAlerts.append(alert)
-        PushSharedStore.mutedAlerts = mutedAlerts
+        if !mutedAlerts.contains(alert) {
+            mutedAlerts.append(alert)
+            PushSharedStore.mutedAlerts = mutedAlerts
+        }
         withAnimation {
             entries.removeAll { $0.title == entry.title && $0.body == entry.body }
         }
@@ -205,10 +213,13 @@ private struct HistoryThumbnail: View {
 private struct NotificationImageViewer: View {
     var entryID: String
     @State private var image: UIImage?
+    @State private var didFinishLoading = false
 
     var body: some View {
-        ZoomableImageViewer(image: image)
+        ZoomableImageViewer(image: image, didFinishLoading: didFinishLoading)
             .task(id: entryID) {
+                didFinishLoading = false
+                defer { didFinishLoading = true }
                 guard let data = await loadHistoryImageData(entryID) else { return }
                 image = await ImageDownsampling.image(from: data, maxPixelSize: nil)
             }

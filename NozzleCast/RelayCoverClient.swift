@@ -1,3 +1,4 @@
+import os
 import Foundation
 import NozzleCastShared
 
@@ -79,11 +80,11 @@ enum RelayCoverClient {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             if status != 200 {
-                NSLog("NCDEBUG relay cover HTTP %d for %@", status, label)
+                AppLog.network.debug("relay cover HTTP \(status, privacy: .public) for \(label, privacy: .private)")
             }
             return (status, data)
         } catch {
-            NSLog("NCDEBUG relay cover failed for %@: %@", label, String(describing: error))
+            AppLog.network.error("relay cover failed for \(label, privacy: .private): \(String(describing: error), privacy: .private)")
             return nil
         }
     }

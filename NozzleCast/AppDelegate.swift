@@ -1,3 +1,4 @@
+import os
 import ActivityKit
 import BackgroundTasks
 import UIKit
@@ -68,7 +69,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // rotated token would silently stop the relay's wake push from ever reaching this device.
         Task {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
-            NSLog("NCDEBUG launch notification authorizationStatus=%ld", settings.authorizationStatus.rawValue)
+            AppLog.app.debug("launch notification authorizationStatus=\(settings.authorizationStatus.rawValue, privacy: .public)")
             if settings.authorizationStatus == .authorized {
                 await MainActor.run { application.registerForRemoteNotifications() }
             } else {
@@ -77,7 +78,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                 // — the plain APNs device token `/register-device` needs never gets requested
                 // again, with nothing in the logs showing why. Distinct from Live Activities
                 // itself, which has its own separate iOS permission and keeps working regardless.
-                NSLog("NCDEBUG skipping registerForRemoteNotifications: not authorized")
+                AppLog.app.debug("skipping registerForRemoteNotifications: not authorized")
             }
         }
         return true
@@ -116,7 +117,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         do {
             try PushSharedStore.saveRelayConnection(RelayConfigStore.load().map { .init(url: $0.url, authSecret: $0.authSecret) })
         } catch {
-            NSLog("NCDEBUG couldn't save the relay address for the notification extension: %@", String(describing: error))
+            AppLog.app.error("couldn't save the relay address for the notification extension: \(String(describing: error), privacy: .private)")
         }
         PushNotificationManager.shared.startObservingActivityKitTokens()
         // Not forced: this runs on every return from the app switcher, and a POST each time would
@@ -134,7 +135,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // had no logging at all, so this failure path was completely invisible — if
         // `registerForRemoteNotifications()` fails, `handleAPNsToken`/`/register-device` never
         // fires and there was no trace of why.
-        NSLog("NCDEBUG registerForRemoteNotifications failed: %@", String(describing: error))
+        AppLog.app.error("registerForRemoteNotifications failed: \(String(describing: error), privacy: .private)")
     }
 
     /// Handles the relay's `content-available` background wake push (see
@@ -148,7 +149,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        NSLog("NCDEBUG AppDelegate received remote notification, waking store to sync")
+        AppLog.app.debug("AppDelegate received remote notification, waking store to sync")
         // Required when FirebaseAppDelegateProxyEnabled = false — Firebase won't see FCM messages
         // otherwise, and the ntfy topic subscription (routed via FCM) would stop delivering.
         // Only with Firebase configured: Messaging traps otherwise, and the relay's wake push
@@ -174,7 +175,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             guard !Task.isCancelled else { return }
             coordinator.syncTask?.cancel()
             if completion.finish(.failed) {
-                NSLog("NCDEBUG AppDelegate background sync hit its 25s deadline, completing early")
+                AppLog.app.debug("AppDelegate background sync hit its 25s deadline, completing early")
             }
         }
 
@@ -191,7 +192,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             _ = await initialActivityTokens
             await backgroundRefresh
             guard !Task.isCancelled else { return }
-            NSLog("NCDEBUG AppDelegate background sync complete (printingCount=%d)", store.printers.filter { $0.state == .printing }.count)
+            let printingCount = self.store.printers.filter { $0.state == .printing }.count
+            AppLog.app.debug("AppDelegate background sync complete (printingCount=\(printingCount, privacy: .public))")
 
             // pushTokenUpdates may not fire while the app is suspended — poll the synchronous
             // pushToken property on every wakeup so we catch the token as soon as iOS generates it.
@@ -207,13 +209,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                 )
                 guard shouldRetry else { break }
                 guard Date().timeIntervalSince(wakeStartedAt) < 12 else {
-                    NSLog("NCDEBUG AppDelegate skipping token recheck retry %d: not enough background time left", attempt)
+                    AppLog.app.debug("AppDelegate skipping token recheck retry \(attempt, privacy: .public): not enough background time left")
                     break
                 }
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
                 let registered = await PushNotificationManager.shared.recheckActivityTokens()
-                NSLog("NCDEBUG AppDelegate token recheck retry %d (registered=%d)", attempt, registered)
+                AppLog.app.debug("AppDelegate token recheck retry \(attempt, privacy: .public) (registered=\(registered, privacy: .public))")
             }
             if !Task.isCancelled {
                 completion.finish(.newData)

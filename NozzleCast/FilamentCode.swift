@@ -36,11 +36,11 @@ struct FilamentCodeEntry: Codable {
     var isRefill: Bool
 }
 
-enum FilamentCode {
+nonisolated enum FilamentCode {
     /// Canonical GTIN form for matching: digits only, leading zeros stripped.
     /// Makes a UPC-A (12-digit) and its EAN-13 (leading-zero) form compare equal.
     static func canon(_ barcode: String) -> String {
-        let digits = barcode.filter(\.isNumber)
+        let digits = String(barcode.unicodeScalars.filter { (0x30...0x39).contains($0.value) })
         let stripped = digits.drop { $0 == "0" }
         return stripped.isEmpty ? "0" : String(stripped)
     }
@@ -57,30 +57,59 @@ enum FilamentCode {
         return sum % 10 == 0
     }
 
+    private static func isValidGTIN(_ digits: String) -> Bool {
+        guard (8...14).contains(digits.count) else { return false }
+        let padded = String(repeating: "0", count: 14 - digits.count) + digits
+        return gtinChecksumValid(padded)
+    }
+
     /// Classifies a scanned/typed code as a GTIN (checksummed, standard length) or a
     /// manufacturer SKU/article number. Mirrors filament_to_bambuddy's `_classify_code`.
     static func classify(_ raw: String) -> (code: String, kind: FilamentCodeKind) {
-        let canonical = canon(raw)
-        if (8...14).contains(canonical.count) {
-            let padded = String(repeating: "0", count: 14 - canonical.count) + canonical
-            if gtinChecksumValid(padded) {
-                return (canonical, .gtin)
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isDigitSeparatorOnly = !trimmed.isEmpty && trimmed.unicodeScalars.allSatisfy { scalar in
+            (0x30...0x39).contains(scalar.value) || scalar == " " || scalar == "-"
+        }
+        if isDigitSeparatorOnly {
+            let digitsOnly = String(trimmed.unicodeScalars.filter { (0x30...0x39).contains($0.value) })
+            if isValidGTIN(digitsOnly) {
+                return (canon(digitsOnly), .gtin)
             }
         }
-        return (raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(), .sku)
+        return (trimmed.uppercased(), .sku)
     }
 
+    private static let labelledBarcodeRegex = try! NSRegularExpression(
+        pattern: #"(?:EAN|UPC|GTIN|BARCODE)\s*[:#]?\s*(\d[\d\s-]{6,16}\d)"#,
+        options: .caseInsensitive
+    )
+    private static let bareBarcodeRegex = try! NSRegularExpression(
+        pattern: #"(?<!\d)(\d{8}|\d{12,14})(?!\d)"#
+    )
+
     /// Pulls a barcode (UPC/EAN/GTIN) out of free text, e.g. label OCR.
-    /// Prefers a labelled number ("EAN: 6938936716785"); falls back to any bare 8–14 digit run.
+    /// Prefers a labelled number ("EAN: 6938936716785") and valid GTIN checksums; falls back to
+    /// any bare 8- or 12–14-digit run.
     static func extractBarcode(from text: String) -> String? {
-        if let match = text.range(of: #"(?:EAN|UPC|GTIN|BARCODE)\s*[:#]?\s*(\d[\d\s]{6,16}\d)"#, options: [.regularExpression, .caseInsensitive]) {
-            let digits = String(text[match]).filter(\.isNumber)
-            if (8...14).contains(digits.count) { return digits }
+        let ns = text as NSString
+        let fullRange = NSRange(location: 0, length: ns.length)
+
+        var labelledFallback: String?
+        for match in labelledBarcodeRegex.matches(in: text, range: fullRange) {
+            let raw = ns.substring(with: match.range(at: 1))
+            let digits = String(raw.unicodeScalars.filter { (0x30...0x39).contains($0.value) })
+            guard (8...14).contains(digits.count) else { continue }
+            if isValidGTIN(digits) { return digits }
+            if labelledFallback == nil { labelledFallback = digits }
         }
-        if let match = text.range(of: #"(?<!\d)(\d{12,14})(?!\d)"#, options: .regularExpression) {
-            let digits = String(text[match])
-            if (8...14).contains(digits.count) { return digits }
+
+        var bareFallback: String?
+        for match in bareBarcodeRegex.matches(in: text, range: fullRange) {
+            let digits = ns.substring(with: match.range(at: 1))
+            if isValidGTIN(digits) { return digits }
+            if bareFallback == nil { bareFallback = digits }
         }
-        return nil
+
+        return labelledFallback ?? bareFallback
     }
 }

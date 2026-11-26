@@ -52,7 +52,23 @@ enum FilamentLookupService {
             )
         }
 
-        guard ofd != nil || smdb != nil else {
+        if ofd == nil, smdb == nil {
+            if ofdFailed {
+                return Outcome(
+                    found: false,
+                    source: "partial-error",
+                    result: blankResult(barcode: code),
+                    lookupError: String(localized: "No match in SpoolmanDB-Community, and couldn't reach the Open Filament Database. Check your connection and try again.")
+                )
+            }
+            if smdbFailed {
+                return Outcome(
+                    found: false,
+                    source: "partial-error",
+                    result: blankResult(barcode: code),
+                    lookupError: String(localized: "No match in the Open Filament Database, and couldn't reach SpoolmanDB-Community. Check your connection and try again.")
+                )
+            }
             return Outcome(found: false, source: "none", result: blankResult(barcode: code), lookupError: nil)
         }
 
@@ -114,7 +130,9 @@ enum FilamentLookupService {
     /// what the database leaves out: the finish (`effect_type`) and a dual-colour roll's colours.
     static func analyze(_ reading: FilamentLabelReader.Reading) async -> Outcome {
         let text = reading.text
-        let extraBrands = await OFDClient.shared.brands()
+        async let ofdBrands = OFDClient.shared.brands()
+        async let smdbBrands = SpoolmanDBCommunityClient.shared.brands()
+        let extraBrands = Array(Set(await ofdBrands + smdbBrands))
         let parsed = FilamentTitleParser.parse(title: text, extraBrands: extraBrands)
         let labelColor = FilamentLabelReader.color(in: text)
         let labelEffect = FilamentLabelReader.effect(in: text)
@@ -167,20 +185,26 @@ enum FilamentLookupService {
                 }
                 source = outcome.source
                 found = true
+                lookupError = nil
                 break
             }
             if let error = outcome.lookupError {
+                lookupError = lookupError ?? error
                 // Neither database could be reached; every other code would fail the same way.
-                lookupError = error
-                break
+                if outcome.source == "error" { break }
             }
-            if result.barcode == nil, FilamentCode.classify(code).kind == .gtin { result.barcode = FilamentCode.classify(code).code }
+            if result.barcode == nil {
+                let classified = FilamentCode.classify(code)
+                if classified.kind == .gtin { result.barcode = classified.code }
+            }
         }
 
         // The label's own words decide the finish when the database's names don't, and a
         // dual- or tri-colour roll gets its parts as extra colours.
         result.effectType = result.effectType ?? labelEffect
-        if result.extraColorHexes.isEmpty, ["dual-color", "tri-color", "multicolor"].contains(result.effectType ?? ""), labelColor.partHexes.count >= 2 {
+        if result.extraColorHexes.isEmpty,
+           ["dual-color", "tri-color", "multicolor", "gradient", "rainbow"].contains(result.effectType ?? ""),
+           labelColor.partHexes.count >= 2 {
             result.extraColorHexes = labelColor.partHexes
         }
 

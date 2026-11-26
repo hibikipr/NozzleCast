@@ -48,11 +48,21 @@ struct ShoppingListItem: Identifiable, Equatable {
 
     /// "Bambu Lab PLA Basic · Jade White"
     var title: String {
-        let product = [brand, subtype.flatMap { $0.range(of: material, options: .caseInsensitive) != nil ? $0 : "\(material) \($0)" } ?? material]
+        let trimmedBrand = brand?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSubtype = subtype?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let materialPart: String
+        if let trimmedSubtype, !trimmedSubtype.isEmpty {
+            materialPart = MaterialFamily.containsMaterialToken(material, in: trimmedSubtype)
+                ? trimmedSubtype
+                : "\(material) \(trimmedSubtype)"
+        } else {
+            materialPart = material
+        }
+        let product = [trimmedBrand, materialPart]
             .compactMap { $0?.isEmpty == false ? $0 : nil }
             .joined(separator: " ")
-        guard let colorName, !colorName.isEmpty else { return product }
-        return "\(product) · \(colorName)"
+        guard let color = colorName?.trimmingCharacters(in: .whitespacesAndNewlines), !color.isEmpty else { return product }
+        return "\(product) · \(color)"
     }
 
     /// Whether this entry is for the same filament as `spool` — same material, brand, subtype and

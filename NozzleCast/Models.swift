@@ -74,11 +74,16 @@ struct AMSUnit: Identifiable, Equatable {
     var id: Int { index }
 
     /// Bambu's high-temperature AMS unit carries an unrelated raw unit id (e.g. 129), so it
-    /// gets a fixed label instead of being numbered alongside the regular AMS units.
-    func displayName(position: Int) -> String {
-        isHT
-            ? String(localized: "AMS-HT", comment: "Label for Bambu's high-temperature AMS unit")
-            : String(localized: "AMS \(position + 1)", comment: "Label for a numbered AMS unit, e.g. 'AMS 1'")
+    /// gets a fixed label instead of being numbered alongside the regular AMS units. When a
+    /// printer has more than one AMS-HT unit (`htCount > 1`), they are numbered `AMS-HT 1`,
+    /// `AMS-HT 2`, etc.
+    func displayName(position: Int, htCount: Int = 1) -> String {
+        if isHT {
+            return htCount > 1
+                ? String(localized: "AMS-HT \(position + 1)", comment: "Label for a numbered high-temperature AMS unit, e.g. 'AMS-HT 1'")
+                : String(localized: "AMS-HT", comment: "Label for Bambu's high-temperature AMS unit")
+        }
+        return String(localized: "AMS \(position + 1)", comment: "Label for a numbered AMS unit, e.g. 'AMS 1'")
     }
 
     /// A best-effort name from a raw unit id alone, for when the printer's units aren't loaded:
@@ -108,7 +113,7 @@ struct NozzleInfo: Identifiable, Equatable {
 }
 
 struct HMSError: Identifiable, Equatable {
-    var id: String { fullCode }
+    let id = UUID()
     var fullCode: String
     /// Bambu's alert level, as Bambuddy reports it since v1.2.5.7 (#2728): 0 invalid, 1 error
     /// (task stopped), 2 warning (task paused), 3 notification (no impact). Older Bambuddy
@@ -116,6 +121,10 @@ struct HMSError: Identifiable, Equatable {
     /// arbitrary (a fault that paused a print could read 6).
     var severity: Int
     var description: String?
+
+    static func == (lhs: HMSError, rhs: HMSError) -> Bool {
+        lhs.fullCode == rhs.fullCode && lhs.severity == rhs.severity && lhs.description == rhs.description
+    }
 
     enum Tier: Equatable {
         case error, warning
@@ -358,7 +367,8 @@ struct Printer: Identifiable, Equatable {
     }
 
     var etaDescription: String? {
-        guard let minutes = etaMinutesRemaining else { return nil }
+        guard let rawMinutes = etaMinutesRemaining else { return nil }
+        let minutes = max(0, rawMinutes)
         let h = minutes / 60
         let m = minutes % 60
         if h > 0 {
@@ -382,15 +392,6 @@ enum FilamentMaterial: String, CaseIterable, Identifiable {
     case tpu = "TPU"
 
     var id: String { rawValue }
-
-    /// Best-effort match against a Bambuddy material string (e.g. "PLA", "PETG-HF", "Support for PLA").
-    static func from(bambuddyMaterial: String) -> FilamentMaterial {
-        let upper = bambuddyMaterial.uppercased()
-        if upper.contains("PETG") { return .petg }
-        if upper.contains("ABS") || upper.contains("ASA") { return .abs }
-        if upper.contains("TPU") { return .tpu }
-        return .pla
-    }
 }
 
 /// Bambu-style material names put the base material first and any variant after it — "PLA Matte",
@@ -405,6 +406,22 @@ enum MaterialFamily {
     static func same(_ a: String, _ b: String) -> Bool {
         guard let fa = of(a), let fb = of(b) else { return false }
         return fa == fb
+    }
+
+    private nonisolated static func materialTokenPattern(for material: String) -> String? {
+        let trimmed = material.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return "(?<![A-Za-z0-9])" + NSRegularExpression.escapedPattern(for: trimmed) + "(?![A-Za-z0-9])"
+    }
+
+    nonisolated static func strippingMaterialToken(_ material: String, from text: String) -> String {
+        guard let pattern = materialTokenPattern(for: material) else { return text }
+        return text.replacingOccurrences(of: pattern, with: "", options: [.caseInsensitive, .regularExpression])
+    }
+
+    nonisolated static func containsMaterialToken(_ material: String, in text: String) -> Bool {
+        guard let pattern = materialTokenPattern(for: material) else { return false }
+        return text.range(of: pattern, options: [.caseInsensitive, .regularExpression]) != nil
     }
 }
 
@@ -452,7 +469,7 @@ struct Spool: Identifiable, Equatable {
         guard let subtype = subtype?.trimmingCharacters(in: .whitespaces), !subtype.isEmpty else { return material }
         // A subtype like "PLA Basic" already reads as material + profile — appending it after
         // `material` again would show "PLA PLA Basic".
-        if subtype.range(of: material, options: .caseInsensitive) != nil { return subtype }
+        if MaterialFamily.containsMaterialToken(material, in: subtype) { return subtype }
         return "\(material) \(subtype)"
     }
     /// Bambu's short filament preset id, e.g. "GFL05" — what `configure` calls `tray_info_idx`.
@@ -483,7 +500,10 @@ struct Spool: Identifiable, Equatable {
 
     var isArchived: Bool { archivedAt != nil }
 
-    var remainingGrams: Int { Int((Double(netWeightGrams) * Double(remainingPercent) / 100).rounded()) }
+    var remainingGrams: Int {
+        let clampedPercent = min(max(remainingPercent, 0), 100)
+        return Int((Double(max(0, netWeightGrams)) * Double(clampedPercent) / 100).rounded())
+    }
 
     /// - Parameters:
     ///   - printerName: Resolves a printer id to its display name.
@@ -504,8 +524,8 @@ struct Spool: Identifiable, Equatable {
         }
         switch location {
         case .storage(let name):
-            if let name {
-                return String(localized: "In storage · \(name)", comment: "Spool location: a named storage location")
+            if let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+                return String(localized: "In storage · \(trimmed)", comment: "Spool location: a named storage location")
             }
             return String(localized: "In storage", comment: "Spool location: unnamed storage")
         case .ams(let printerID, let amsIndex, let trayIndex):
@@ -523,6 +543,11 @@ extension Printer {
     /// "AMS 2"), an AMS HT unit labelled "AMS-HT" regardless of its raw id (128+).
     func amsUnitName(amsIndex: Int) -> String? {
         guard let unit = amsUnits.first(where: { $0.index == amsIndex }) else { return nil }
+        if unit.isHT {
+            let htUnits = amsUnits.filter(\.isHT)
+            let position = htUnits.firstIndex { $0.index == amsIndex } ?? 0
+            return unit.displayName(position: position, htCount: htUnits.count)
+        }
         let position = amsUnits.filter { !$0.isHT }.firstIndex { $0.index == amsIndex } ?? 0
         return unit.displayName(position: position)
     }

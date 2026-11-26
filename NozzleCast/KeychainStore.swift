@@ -1,26 +1,56 @@
+import os
 import Foundation
 import Security
 
-enum KeychainStore {
-    private static let service = "com.noozlecast.bambuddy"
+nonisolated enum KeychainStore {
+    static let defaultService = "com.noozlecast.bambuddy"
+    static let sharedService = "com.victormanuel.NozzleCast"
+    private static let sharedAccessGroupSuffix = "com.victormanuel.NozzleCast.shared"
+
+    /// Resolves the shared Keychain Access Group from `Info.plist`'s `AppIdentifierPrefix`.
+    /// Returns `nil` when unexpanded/empty (e.g. unsigned simulator or test host runs) so
+    /// Keychain operations fall back to the default access group without failing with
+    /// `errSecMissingEntitlement`.
+    static var sharedAccessGroup: String? {
+        guard let prefix = Bundle.main.object(forInfoDictionaryKey: "AppIdentifierPrefix") as? String,
+              !prefix.isEmpty,
+              !prefix.contains("$(")
+        else { return nil }
+        return prefix + sharedAccessGroupSuffix
+    }
 
     @discardableResult
-    static func set(_ value: String, forKey key: String) -> Bool {
+    static func set(
+        _ value: String,
+        forKey key: String,
+        service: String = defaultService,
+        accessGroup: String? = nil
+    ) -> Bool {
         let data = Data(value.utf8)
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
         var status = SecItemUpdate(
             query as CFDictionary,
-            [kSecValueData as String: data] as CFDictionary
+            [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            ] as CFDictionary
         )
         if status == errSecItemNotFound {
             var attributes = query
             attributes[kSecValueData as String] = data
             attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             status = SecItemAdd(attributes as CFDictionary, nil)
+        }
+        if status == errSecMissingEntitlement, accessGroup != nil {
+            AppLog.storage.debug("keychain write for '\(key, privacy: .private)' missing entitlement for access group '\(accessGroup ?? "", privacy: .private)', falling back to default group")
+            return set(value, forKey: key, service: service, accessGroup: nil)
         }
         return status == errSecSuccess
     }
@@ -31,7 +61,7 @@ enum KeychainStore {
     /// credentials." Items here are `kSecAttrAccessibleAfterFirstUnlock`, so a launch before the
     /// device's first unlock since boot — a push wake right after a restart, say — reads nothing
     /// while the real values sit untouched in the Keychain.
-    enum ReadResult: Equatable {
+    enum ReadResult: Equatable, Sendable {
         case found(String)
         /// No such item. The genuine "not configured" answer.
         case notFound
@@ -53,14 +83,21 @@ enum KeychainStore {
     /// Note the default: anything that isn't an outright success or `errSecItemNotFound` is
     /// treated as `.unavailable`, not as absence. Guessing "absent" for an unrecognized status is
     /// precisely the failure mode this type exists to prevent, and retrying costs nothing.
-    static func read(_ key: String) -> ReadResult {
-        let query: [String: Any] = [
+    static func read(
+        _ key: String,
+        service: String = defaultService,
+        accessGroup: String? = nil
+    ) -> ReadResult {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         switch status {
@@ -71,22 +108,39 @@ enum KeychainStore {
             return .found(string)
         case errSecItemNotFound:
             return .notFound
+        case errSecMissingEntitlement where accessGroup != nil:
+            AppLog.storage.debug("keychain read for '\(key, privacy: .private)' missing entitlement for access group '\(accessGroup ?? "", privacy: .private)', falling back to default group")
+            return read(key, service: service, accessGroup: nil)
         default:
-            NSLog("NCDEBUG keychain read for '%@' unavailable (OSStatus %d)", key, status)
+            AppLog.storage.debug("keychain read for '\(key, privacy: .private)' unavailable (OSStatus \(status, privacy: .public))")
             return .unavailable(status)
         }
     }
 
-    static func get(_ key: String) -> String? {
-        read(key).value
+    static func get(
+        _ key: String,
+        service: String = defaultService,
+        accessGroup: String? = nil
+    ) -> String? {
+        read(key, service: service, accessGroup: accessGroup).value
     }
 
-    static func remove(_ key: String) {
-        let query: [String: Any] = [
+    static func remove(
+        _ key: String,
+        service: String = defaultService,
+        accessGroup: String? = nil
+    ) {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
-        SecItemDelete(query as CFDictionary)
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        let status = SecItemDelete(query as CFDictionary)
+        if status == errSecMissingEntitlement, accessGroup != nil {
+            remove(key, service: service, accessGroup: nil)
+        }
     }
 }

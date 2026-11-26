@@ -19,6 +19,14 @@ shaped the app and are easy to second-guess without the context behind them.
   through development after finding the server URL specifically had been left in `UserDefaults`
   while the API key was already correctly in the Keychain — an inconsistency, not a deliberate
   choice, fixed with a one-time migration on first launch after the fix.
+
+  Relay (`RelayConfigStore` and `PushSharedStore.RelayConnection`) and ntfy
+  (`PushSharedStore.NtfyConfig`) credentials likewise live in the Keychain — specifically in the
+  shared Keychain Access Group (`$(AppIdentifierPrefix)com.victormanuel.NozzleCast.shared`,
+  `kSecAttrAccessibleAfterFirstUnlock`) shared between `NozzleCast` and `NozzleCastNSE`. Legacy
+  plaintext JSON files (`relay-config.json` in Application Support, and `relay-connection.json` /
+  `ntfy-config.json` in the App Group container) are migrated once into the shared Keychain and
+  removed only after the Keychain write succeeds.
 - **Mock data as the zero-config state**, not an error state. With no server configured, the app
   shows `MockData` printers/spools rather than an empty or broken screen, so the UI is browsable
   immediately.
@@ -67,11 +75,14 @@ to. Concretely:
 The main app, the notification extension, and the widget extension are three separate processes.
 Two mechanisms bridge them, chosen for how small the actual needs are:
 
-- **`PushSharedStore`** — a flat JSON file (plus a folder of JPEGs) in an App Group container,
-  covering the ntfy config the extension needs for its poll fallback and the notification history
-  log. This is *not* a general-purpose sync mechanism; it's sized for "one ntfy subscription and a
-  short list of recent notifications," which is what the app actually needs. Core Data/CloudKit
-  would be solving a problem this app doesn't have.
+- **`PushSharedStore`** — notification history (`notification-history.json`, plus a folder of JPEGs
+  in `notification-images/`) and lightweight preferences in the App Group container (`UserDefaults`
+  suite + coordinated JSON file), while ntfy and relay credentials (`ntfy-config`,
+  `relay-connection`) live in the shared Keychain Access Group (`$(AppIdentifierPrefix)com.victormanuel.NozzleCast.shared`)
+  with one-time migration from the legacy App Group JSON files. This is *not* a general-purpose
+  sync mechanism; it's sized for "one ntfy subscription and a short list of recent notifications,"
+  which is what the app actually needs. Core Data/CloudKit would be solving a problem this app
+  doesn't have.
 - **`PushSharedStore` is a duplicated small Swift file, not real shared source** — near-identical
   copies in `NozzleCast/` and `NozzleCastNSE/` instead of one file with multi-target membership.
   This project uses `PBXFileSystemSynchronizedRootGroup` (each target's whole folder syncs
@@ -160,8 +171,9 @@ keep working with the phone locked.
   (confirmed live 2026-09-08).** An iPad was power-cycled, launched in the background before its
   first unlock, and showed blank Bambuddy settings for the rest of that process's life — the
   credentials were never gone, and force-quitting while unlocked brought them straight back.
-  Keychain items here are `kSecAttrAccessibleAfterFirstUnlock` and `RelayConfigStore`'s file sits
-  in Application Support (protected until first unlock), so both are unreadable in that window,
+  Keychain items here are `kSecAttrAccessibleAfterFirstUnlock` (and `RelayConfigStore`'s file
+  previously sat in Application Support, protected until first unlock, before moving to the
+  shared Keychain Access Group as well), so both are unreadable in that window,
   and both used to report it as "not configured."
 
   The expensive consequence was not the blank settings, it was that
