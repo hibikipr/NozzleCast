@@ -122,9 +122,11 @@ private struct LowBadge: View {
 private struct StockSmallView: View {
     let printer: PrinterAMSSnapshot
 
-    private var columns: Int { printer.slotCount <= 4 ? 2 : 3 }
-
     var body: some View {
+        let slots = printer.slots
+        let columns = slots.count <= 4 ? 2 : 3
+        let lowCount = slots.reduce(0) { $0 + ($1.tray.isLow == true ? 1 : 0) }
+
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(printer.printerName)
@@ -133,10 +135,10 @@ private struct StockSmallView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Spacer(minLength: 4)
-                LowBadge(count: printer.lowCount)
+                LowBadge(count: lowCount)
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: columns), spacing: 6) {
-                ForEach(printer.slots) { slot in
+                ForEach(slots) { slot in
                     StockRing(tray: slot.tray, size: columns == 2 ? 44 : 30)
                 }
             }
@@ -152,34 +154,35 @@ private struct StockList: View {
     let rowLimit: Int
     var showsPrinterNames: Bool
 
-    private var shown: [(printer: PrinterAMSSnapshot, slots: [AMSSlot])] {
+    private func computeShown() -> (items: [(printer: PrinterAMSSnapshot, slots: [AMSSlot])], hidden: Int) {
         var left = rowLimit
         var out: [(PrinterAMSSnapshot, [AMSSlot])] = []
+        var shownSlots = 0
         for printer in printers {
             let header = showsPrinterNames ? 1 : 0
             guard left > header else { break }
-            let take = min(printer.slots.count, left - header)
-            out.append((printer, Array(printer.slots.prefix(take))))
+            let slots = printer.slots
+            let take = min(slots.count, left - header)
+            out.append((printer, Array(slots.prefix(take))))
+            shownSlots += take
             left -= header + take
         }
-        return out
-    }
-
-    private var hidden: Int {
-        printers.reduce(0) { $0 + $1.slotCount } - shown.reduce(0) { $0 + $1.slots.count }
+        let totalSlots = printers.reduce(0) { $0 + $1.slotCount }
+        return (out, totalSlots - shownSlots)
     }
 
     var body: some View {
+        let result = computeShown()
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(shown.enumerated()), id: \.offset) { index, entry in
+            ForEach(Array(result.items.enumerated()), id: \.offset) { index, entry in
                 if showsPrinterNames {
                     if index > 0 { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1).padding(.vertical, 2) }
                     PrinterHeader(printer: entry.printer, trailing: nil)
                 }
                 ForEach(entry.slots) { slot in StockRow(tray: slot.tray) }
             }
-            if hidden > 0 {
-                Text("+^[\(hidden) more slot](inflect: true)", comment: "Filament Stock widget: slots that didn't fit")
+            if result.hidden > 0 {
+                Text("+^[\(result.hidden) more slot](inflect: true)", comment: "Filament Stock widget: slots that didn't fit")
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.4))
             }
@@ -238,10 +241,13 @@ struct FilamentStockEntryView: View {
 
     /// Printers with low spools first, then printing ones.
     private var ordered: [PrinterAMSSnapshot] {
-        entry.printers.sorted { a, b in
-            if (a.lowCount > 0) != (b.lowCount > 0) { return a.lowCount > 0 }
-            return a.isPrinting && !b.isPrinting
-        }
+        entry.printers
+            .map { (printer: $0, hasLow: $0.hasLowStock) }
+            .sorted { a, b in
+                if a.hasLow != b.hasLow { return a.hasLow }
+                return a.printer.isPrinting && !b.printer.isPrinting
+            }
+            .map(\.printer)
     }
 
     var body: some View {

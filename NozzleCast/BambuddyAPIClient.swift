@@ -2,18 +2,18 @@ import Foundation
 
 // MARK: - DTOs (snake_case JSON decoded via .convertFromSnakeCase)
 
-struct BambuddyAuthMeDTO: Codable {
+nonisolated struct BambuddyAuthMeDTO: Codable, Sendable {
     var username: String
     var permissions: [String]
 }
 
-struct BambuddyPrinterDTO: Codable {
+nonisolated struct BambuddyPrinterDTO: Codable, Sendable {
     var id: Int
     var name: String
     var model: String
 }
 
-struct BambuddyTemperaturesDTO: Codable {
+nonisolated struct BambuddyTemperaturesDTO: Codable, Sendable {
     var bed: Double?
     var bedTarget: Double?
     var nozzle: Double?
@@ -25,7 +25,7 @@ struct BambuddyTemperaturesDTO: Codable {
     var chamberTarget: Double?
 }
 
-struct BambuddyTrayDTO: Codable {
+nonisolated struct BambuddyTrayDTO: Codable, Sendable {
     var id: Int
     var trayColor: String?
     var trayType: String?
@@ -34,7 +34,7 @@ struct BambuddyTrayDTO: Codable {
     var exists: Bool?
 }
 
-struct BambuddyAMSUnitDTO: Codable {
+nonisolated struct BambuddyAMSUnitDTO: Codable, Sendable {
     var id: Int
     var tray: [BambuddyTrayDTO]
     var isAmsHt: Bool?
@@ -46,18 +46,18 @@ struct BambuddyAMSUnitDTO: Codable {
     var dryFilament: String?
 }
 
-struct BambuddyHMSErrorDTO: Codable {
+nonisolated struct BambuddyHMSErrorDTO: Codable, Sendable {
     var severity: Int
     var fullCode: String
     var description: String?
 }
 
-struct BambuddyNozzleDTO: Codable {
+nonisolated struct BambuddyNozzleDTO: Codable, Sendable {
     var nozzleType: String
     var nozzleDiameter: String
 }
 
-struct BambuddyNozzleRackSlotDTO: Codable {
+nonisolated struct BambuddyNozzleRackSlotDTO: Codable, Sendable {
     var id: Int
     var nozzleDiameter: String
     var maxTemp: Int
@@ -65,7 +65,7 @@ struct BambuddyNozzleRackSlotDTO: Codable {
     var filamentColor: String
 }
 
-struct BambuddyStatusDTO: Codable {
+nonisolated struct BambuddyStatusDTO: Codable, Sendable {
     var id: Int
     var name: String
     var connected: Bool
@@ -109,7 +109,7 @@ struct BambuddyStatusDTO: Codable {
     var stgCurName: String?
 }
 
-struct BambuddyMaintenanceSummaryDTO: Codable {
+nonisolated struct BambuddyMaintenanceSummaryDTO: Codable, Sendable {
     var totalPrintHours: Double
     var dueCount: Int
     var warningCount: Int
@@ -117,7 +117,7 @@ struct BambuddyMaintenanceSummaryDTO: Codable {
 }
 
 /// One maintenance task on a printer, with Bambuddy's own due/warning verdict.
-struct BambuddyMaintenanceItemDTO: Codable {
+nonisolated struct BambuddyMaintenanceItemDTO: Codable, Sendable {
     var id: Int
     var maintenanceTypeName: String
     /// A lucide icon name from Bambuddy's web UI, e.g. "Droplet", "Flame".
@@ -137,16 +137,16 @@ struct BambuddyMaintenanceItemDTO: Codable {
     var lastPerformedAt: String?
 }
 
-struct BambuddySmartPlugSummaryDTO: Codable {
+nonisolated struct BambuddySmartPlugSummaryDTO: Codable, Sendable {
     var id: Int
     var name: String
 }
 
-struct BambuddySmartPlugEnergyDTO: Codable {
+nonisolated struct BambuddySmartPlugEnergyDTO: Codable, Sendable {
     var power: Double?
 }
 
-struct BambuddySmartPlugStatusDTO: Codable {
+nonisolated struct BambuddySmartPlugStatusDTO: Codable, Sendable {
     var state: String?
     var reachable: Bool
     var energy: BambuddySmartPlugEnergyDTO?
@@ -155,14 +155,14 @@ struct BambuddySmartPlugStatusDTO: Codable {
 /// Decodes any JSON value while discarding its content — used for `per_printer`, whose entry
 /// shape isn't documented and isn't needed here; only which printer ids are present as keys
 /// (currently-monitored printers) matters.
-struct BambuddyIgnoredValue: Codable {
+nonisolated struct BambuddyIgnoredValue: Codable, Sendable {
     init(from decoder: Decoder) throws {}
     func encode(to encoder: Encoder) throws {}
 }
 
 /// Bambuddy's integration with Obico, a self-hosted AI print-failure ("spaghetti") detection
 /// service — optional and account-wide, not a native printer feature.
-struct BambuddyObicoStatusDTO: Codable {
+nonisolated struct BambuddyObicoStatusDTO: Codable, Sendable {
     var enabled: Bool
     /// Keyed by Bambuddy printer id (as a string) — presence of a key means that printer is
     /// currently being monitored.
@@ -170,7 +170,7 @@ struct BambuddyObicoStatusDTO: Codable {
     var lastError: String?
 }
 
-struct BambuddySpoolDTO: Codable {
+nonisolated struct BambuddySpoolDTO: Codable, Sendable {
     var id: Int
     var material: String
     var subtype: String?
@@ -213,7 +213,7 @@ struct BambuddySpoolDTO: Codable {
     var trayUuid: String?
 }
 
-struct BambuddySpoolSupplierDTO: Codable {
+nonisolated struct BambuddySpoolSupplierDTO: Codable, Sendable {
     var supplierId: Int
     var supplierName: String
     var supplierArticleNumber: String?
@@ -222,7 +222,7 @@ struct BambuddySpoolSupplierDTO: Codable {
 }
 
 /// One print's draw on a spool (`GET /inventory/spools/{id}/usage`).
-struct BambuddySpoolUsageDTO: Codable {
+nonisolated struct BambuddySpoolUsageDTO: Codable, Sendable {
     var id: Int
     var printerId: Int?
     var printName: String?
@@ -234,7 +234,7 @@ struct BambuddySpoolUsageDTO: Codable {
 }
 
 /// An entry on Bambuddy's filament shopping list — a SKU to buy, not a spool.
-struct BambuddyShoppingListItemDTO: Codable {
+nonisolated struct BambuddyShoppingListItemDTO: Codable, Sendable {
     var id: Int
     var material: String
     var subtype: String?
@@ -248,7 +248,7 @@ struct BambuddyShoppingListItemDTO: Codable {
     var addedAt: String?
 }
 
-struct ShoppingListItemCreateBody: Codable {
+nonisolated struct ShoppingListItemCreateBody: Codable, Sendable {
     var material: String
     var subtype: String?
     var brand: String?
@@ -256,7 +256,7 @@ struct ShoppingListItemCreateBody: Codable {
     var quantitySpools: Int
 }
 
-private struct ShoppingListStatusBody: Codable {
+nonisolated private struct ShoppingListStatusBody: Codable, Sendable {
     var status: String
 }
 
@@ -265,7 +265,7 @@ private struct ShoppingListStatusBody: Codable {
 /// NozzleCast's edit screen actually exposes; Bambuddy's full SpoolUpdate schema has several
 /// more (core_weight, weight_locked, low_stock_threshold_pct, location_id, tag/RFID fields) not
 /// editable here yet.
-struct BambuddySpoolUpdateBody: Encodable {
+nonisolated struct BambuddySpoolUpdateBody: Encodable, Sendable {
     var material: String?
     var subtype: String?
     var colorName: String?
@@ -284,7 +284,7 @@ struct BambuddySpoolUpdateBody: Encodable {
     var note: String?
 }
 
-struct BambuddyAssignmentDTO: Codable {
+nonisolated struct BambuddyAssignmentDTO: Codable, Sendable {
     var id: Int
     var spoolId: Int
     var printerId: Int
@@ -294,12 +294,12 @@ struct BambuddyAssignmentDTO: Codable {
     var spool: BambuddySpoolDTO?
 }
 
-struct BambuddyLocationDTO: Codable {
+nonisolated struct BambuddyLocationDTO: Codable, Sendable {
     var id: Int
     var name: String
 }
 
-struct BambuddyNotificationProviderConfigDTO: Codable {
+nonisolated struct BambuddyNotificationProviderConfigDTO: Codable, Sendable {
     var server: String?
     var topic: String?
     var authToken: String?
@@ -309,7 +309,7 @@ struct BambuddyNotificationProviderConfigDTO: Codable {
 /// `/api/v1/notifications/` endpoint. Only the fields NozzleCast needs are modeled — the
 /// endpoint also returns ~35 `on_*` event-type flags and quiet-hours/digest settings we don't
 /// use here (Bambuddy's server does its own event filtering before publishing to ntfy).
-struct BambuddyNotificationProviderDTO: Codable {
+nonisolated struct BambuddyNotificationProviderDTO: Codable, Sendable {
     var id: Int
     var name: String
     var providerType: String
@@ -324,7 +324,7 @@ struct BambuddyNotificationProviderDTO: Codable {
 /// assignments are the one shape that differs (see `assignments()`, `assignSpool`, `unassign`).
 /// Locations and the color catalog stay on the built-in routes in both modes — Bambuddy mirrors
 /// Spoolman's locations into its own table and adds `location_id` to proxied spools.
-enum InventoryBackend: Equatable, Sendable {
+nonisolated enum InventoryBackend: Equatable, Sendable {
     case builtIn
     case spoolman
 
@@ -338,14 +338,14 @@ enum InventoryBackend: Equatable, Sendable {
 
 /// `GET /api/v1/spoolman/status`. `enabled` is Bambuddy's "use Spoolman for inventory" switch;
 /// `connected` is only evaluated while it's on.
-struct BambuddySpoolmanStatusDTO: Codable {
+nonisolated struct BambuddySpoolmanStatusDTO: Codable, Sendable {
     var enabled: Bool
     var connected: Bool
 }
 
 /// One row of `GET /api/v1/spoolman/inventory/slot-assignments/all` — Spoolman mode's
 /// equivalent of `BambuddyAssignmentDTO`, keyed by the Spoolman spool id.
-private struct SpoolmanSlotAssignmentDTO: Codable {
+nonisolated private struct SpoolmanSlotAssignmentDTO: Codable, Sendable {
     var printerId: Int
     var printerName: String?
     var amsId: Int
@@ -353,14 +353,14 @@ private struct SpoolmanSlotAssignmentDTO: Codable {
     var spoolmanSpoolId: Int
 }
 
-private struct SpoolmanSlotAssignBody: Codable {
+nonisolated private struct SpoolmanSlotAssignBody: Codable, Sendable {
     var spoolmanSpoolId: Int
     var printerId: Int
     var amsId: Int
     var trayId: Int
 }
 
-enum InventoryBackendError: LocalizedError {
+nonisolated enum InventoryBackendError: LocalizedError, Sendable {
     case unassignNeedsSpool
 
     var errorDescription: String? {
@@ -368,14 +368,14 @@ enum InventoryBackendError: LocalizedError {
     }
 }
 
-private struct AssignmentCreateBody: Codable {
+nonisolated private struct AssignmentCreateBody: Codable, Sendable {
     var spoolId: Int
     var printerId: Int
     var amsId: Int
     var trayId: Int
 }
 
-private struct SpoolCreateBody: Codable {
+nonisolated private struct SpoolCreateBody: Codable, Sendable {
     var material: String
     var colorName: String?
     var rgba: String?
@@ -396,7 +396,7 @@ private struct SpoolCreateBody: Codable {
 
 /// The spool fields a new spool can carry beyond the review form's material, colour, brand and
 /// weight — what a decoded Bambu tag says (see `SpoolBuddyTagDataDTO.createExtras`).
-struct SpoolCreateExtras: Equatable {
+nonisolated struct SpoolCreateExtras: Equatable, Sendable {
     /// RRGGBBAA to save instead of the form's colour with an opaque alpha: a tag's own colour,
     /// whose alpha says a translucent filament is translucent.
     var rgba: String?
@@ -415,7 +415,7 @@ struct SpoolCreateExtras: Equatable {
 
 /// One alert Bambuddy sent to one of its notification providers (ntfy, Pushover, Discord, email,
 /// …) — `GET /notifications/logs`. The same alert sent to two providers is two rows.
-struct BambuddyNotificationLogDTO: Codable {
+nonisolated struct BambuddyNotificationLogDTO: Codable, Sendable {
     var id: Int
     var eventType: String
     var title: String
@@ -430,7 +430,7 @@ struct BambuddyNotificationLogDTO: Codable {
 
 /// One job in Bambuddy's print queue (`GET /queue/`). Only what the Queue screen shows; the
 /// response carries much more (plate, calibration flags, AMS mapping, batch, …).
-struct BambuddyQueueItemDTO: Codable {
+nonisolated struct BambuddyQueueItemDTO: Codable, Sendable {
     var id: Int
     var printerId: Int?
     var printerName: String?
@@ -457,7 +457,7 @@ struct BambuddyQueueItemDTO: Codable {
 
 /// One row of Bambuddy's print log (`GET /print-log/`) — a single run of a print. Reprints of the
 /// same file are separate rows sharing an `archiveId`.
-struct BambuddyPrintLogEntryDTO: Codable {
+nonisolated struct BambuddyPrintLogEntryDTO: Codable, Sendable {
     var id: Int
     var archiveId: Int?
     var printName: String?
@@ -479,7 +479,7 @@ struct BambuddyPrintLogEntryDTO: Codable {
     var createdAt: String
 }
 
-struct BambuddyPrintLogPageDTO: Codable {
+nonisolated struct BambuddyPrintLogPageDTO: Codable, Sendable {
     var items: [BambuddyPrintLogEntryDTO]
     var total: Int
     /// Sent on every page from Bambuddy 1.3.0, which is also when each print of an archive got
@@ -493,8 +493,8 @@ struct BambuddyPrintLogPageDTO: Codable {
 /// a spool too short for the job (`insufficient_filament`), or, from 1.3.0, filament the printer
 /// has no tray loaded with (`unmatched_filament`, the jobs it now holds instead of printing on the
 /// wrong filament). Starting again with `skipFilamentCheck` is its "Print Anyway".
-struct QueueStartFilamentHold: LocalizedError, Equatable {
-    enum Kind: Equatable { case notLoaded, tooShort }
+nonisolated struct QueueStartFilamentHold: LocalizedError, Equatable, Sendable {
+    nonisolated enum Kind: Equatable, Sendable { case notLoaded, tooShort }
     var kind: Kind
     /// One line per filament, ready to show.
     var problems: [String]
@@ -539,14 +539,14 @@ struct QueueStartFilamentHold: LocalizedError, Equatable {
     }
 }
 
-private struct QueueReorderBody: Codable {
-    struct Item: Codable { var id: Int; var position: Int }
+nonisolated private struct QueueReorderBody: Codable, Sendable {
+    nonisolated struct Item: Codable, Sendable { var id: Int; var position: Int }
     var items: [Item]
 }
 
 // MARK: - Errors
 
-enum BambuddyAPIError: LocalizedError {
+nonisolated enum BambuddyAPIError: LocalizedError, Sendable {
     case notConfigured
     case invalidResponse
     case http(Int, String)
@@ -570,7 +570,7 @@ enum BambuddyAPIError: LocalizedError {
 
 // MARK: - Client
 
-struct BambuddyAPIClient {
+nonisolated struct BambuddyAPIClient: Sendable {
     var baseURL: URL
     var apiKey: String
     /// Where spool and slot-assignment requests go — see `InventoryBackend`. Resolved from the
@@ -578,22 +578,35 @@ struct BambuddyAPIClient {
     /// inventory and Spoolman is followed without any setting in the app.
     var inventory: InventoryBackend = .builtIn
 
-    private var decoder: JSONDecoder {
-        let d = JSONDecoder()
-        d.keyDecodingStrategy = .convertFromSnakeCase
-        return d
+    nonisolated private struct LowStockThresholdResponse: Decodable, Sendable {
+        var lowStockThreshold: Double?
     }
 
-    private var encoder: JSONEncoder {
-        let e = JSONEncoder()
-        e.keyEncodingStrategy = .convertToSnakeCase
-        return e
+    nonisolated private struct ColorCatalogResponse: Decodable, Sendable {
+        var colors: [String: String]
     }
 
-    private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) -> URLRequest {
-        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+    static func makeDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }
+
+    static func makeEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
+    }
+
+    private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) throws -> URLRequest {
+        guard var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false) else {
+            throw BambuddyAPIError.notConfigured
+        }
         if !query.isEmpty { components.queryItems = query }
-        var req = URLRequest(url: components.url!)
+        guard let url = components.url else {
+            throw BambuddyAPIError.notConfigured
+        }
+        var req = URLRequest(url: url)
         req.httpMethod = method
         // URLSession's default is 60s. Most calls run inside a refresh made of several dependent
         // rounds of requests, sometimes from a background wake with ~30s to live in total, where
@@ -607,6 +620,7 @@ struct BambuddyAPIClient {
         return req
     }
 
+    @concurrent
     private func send(_ req: URLRequest) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw BambuddyAPIError.invalidResponse }
@@ -632,10 +646,22 @@ struct BambuddyAPIClient {
         return data
     }
 
-    private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
-        let data = try await send(request(path, query: query))
+    @concurrent
+    private func send(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) async throws -> Data {
+        try await send(try request(path, method: method, query: query, body: body))
+    }
+
+    @concurrent
+    private func sendJSON<Body: Encodable & Sendable>(_ path: String, method: String, query: [URLQueryItem] = [], body: Body) async throws -> Data {
+        let encoded = try Self.makeEncoder().encode(body)
+        return try await send(try request(path, method: method, query: query, body: encoded))
+    }
+
+    @concurrent
+    private func get<T: Decodable & Sendable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
+        let data = try await send(try request(path, query: query))
         do {
-            return try decoder.decode(T.self, from: data)
+            return try Self.makeDecoder().decode(T.self, from: data)
         } catch {
             throw BambuddyAPIError.decoding(error)
         }
@@ -661,7 +687,7 @@ struct BambuddyAPIClient {
 
     /// Records a maintenance task as done now, restarting its interval.
     func performMaintenance(itemID: Int) async throws {
-        _ = try await send(request("/api/v1/maintenance/items/\(itemID)/perform", method: "POST", body: Data("{}".utf8)))
+        _ = try await send("/api/v1/maintenance/items/\(itemID)/perform", method: "POST", body: Data("{}".utf8))
     }
 
     func obicoStatus() async throws -> BambuddyObicoStatusDTO {
@@ -677,12 +703,12 @@ struct BambuddyAPIClient {
         try await get("/api/v1/smart-plugs/\(plugID)/status")
     }
 
-    /// Every spool, archived ones included. Bambuddy's list excludes archived spools unless
-    /// `include_archived=true` is passed, and `AppStore.refresh()` splits the result into
-    /// `spools` and `archivedSpools` itself. Without the flag the Archived filter was always
-    /// empty, however many spools were actually archived.
-    func spools() async throws -> [BambuddySpoolDTO] {
-        try await get("\(inventory.basePath)/spools", query: [URLQueryItem(name: "include_archived", value: "true")])
+    /// Every spool, or active spools only when `includeArchived` is false. Bambuddy's list excludes
+    /// archived spools unless `include_archived=true` is passed, and `AppStore.refresh()` splits the
+    /// result into `spools` and `archivedSpools` itself.
+    func spools(includeArchived: Bool = true) async throws -> [BambuddySpoolDTO] {
+        let query = includeArchived ? [URLQueryItem(name: "include_archived", value: "true")] : []
+        return try await get("\(inventory.basePath)/spools", query: query)
     }
 
     /// Which inventory the server is serving. Asks `/spoolman/status`, which needs the
@@ -692,13 +718,14 @@ struct BambuddyAPIClient {
     /// default every Bambuddy has. Nil when the server couldn't be asked (a timeout, no network,
     /// a 5xx): the caller keeps the inventory it already had rather than switching a Spoolman
     /// user to the built-in one over a blip.
+    @concurrent
     func inventoryBackend() async -> InventoryBackend? {
         do {
             let status: BambuddySpoolmanStatusDTO = try await get("/api/v1/spoolman/status")
             return status.enabled ? .spoolman : .builtIn
         } catch BambuddyAPIError.http(let code, _) where code == 401 || code == 403 {
             do {
-                _ = try await send(request("/api/v1/spoolman/inventory/spools"))
+                _ = try await send("/api/v1/spoolman/inventory/spools")
                 return .spoolman
             } catch {
                 return Self.serverAnswered(error) ? .builtIn : nil
@@ -719,6 +746,7 @@ struct BambuddyAPIClient {
         }
     }
 
+    @concurrent
     func assignments() async throws -> [BambuddyAssignmentDTO] {
         switch inventory {
         case .builtIn:
@@ -735,8 +763,7 @@ struct BambuddyAPIClient {
     /// The server-wide low-stock alert level (percent remaining), from Bambuddy's settings. The
     /// settings response is large; only this field is decoded.
     func lowStockThreshold() async throws -> Double? {
-        struct Response: Decodable { var lowStockThreshold: Double? }
-        let response: Response = try await get("/api/v1/settings/")
+        let response: LowStockThresholdResponse = try await get("/api/v1/settings/")
         return response.lowStockThreshold
     }
 
@@ -752,17 +779,16 @@ struct BambuddyAPIClient {
 
     /// Bambuddy doesn't merge duplicates — callers check the list first.
     func addToShoppingList(_ item: ShoppingListItemCreateBody) async throws {
-        _ = try await send(request("/api/v1/inventory/shopping-list", method: "POST", body: try encoder.encode(item)))
+        _ = try await sendJSON("/api/v1/inventory/shopping-list", method: "POST", body: item)
     }
 
     /// `pending`, `purchased` or `received`.
     func setShoppingListStatus(itemID: Int, status: String) async throws {
-        let body = try encoder.encode(ShoppingListStatusBody(status: status))
-        _ = try await send(request("/api/v1/inventory/shopping-list/\(itemID)/status", method: "PATCH", body: body))
+        _ = try await sendJSON("/api/v1/inventory/shopping-list/\(itemID)/status", method: "PATCH", body: ShoppingListStatusBody(status: status))
     }
 
     func removeFromShoppingList(itemID: Int) async throws {
-        _ = try await send(request("/api/v1/inventory/shopping-list/\(itemID)", method: "DELETE"))
+        _ = try await send("/api/v1/inventory/shopping-list/\(itemID)", method: "DELETE")
     }
 
     func locations() async throws -> [BambuddyLocationDTO] {
@@ -775,21 +801,8 @@ struct BambuddyAPIClient {
     /// presentable, falling back to the color's hex instead. Fetched once and cached by the
     /// caller (`AppStore`): it's small, curated data that essentially never changes mid-session,
     /// so re-fetching it on every 30s refresh tick would be pure waste.
-    ///
-    /// The response body is `{"colors": {hex: name, ...}}`, NOT a bare map at the top level —
-    /// confirmed against the route's actual `return` statement and against Bambuddy's own React
-    /// client (`api.getColorNameMap()` types this exact endpoint as `{ colors: Record<string,
-    /// string> }` and unwraps `.colors`). A previous version of this method decoded straight into
-    /// `[String: String]`, going only by the route's docstring ("Compact `{hex: name}` map")
-    /// without checking the literal `return` line beneath it — a real, envelope-shaped response
-    /// decoded as a bare dictionary throws a type-mismatch `DecodingError`, which the caller's
-    /// `try?` swallows with zero signal, leaving `colorCatalog` permanently empty. That silently
-    /// broke every spool whose `color_name` needed this catalog to resolve at all: not a partial
-    /// miss, a 100% failure, confirmed live (spool 38 "Rose Gold" kept showing "PLA" after this
-    /// exact fallback shipped).
     func colorCatalogMap() async throws -> [String: String] {
-        struct Response: Decodable { var colors: [String: String] }
-        let response: Response = try await get("/api/v1/inventory/colors/map")
+        let response: ColorCatalogResponse = try await get("/api/v1/inventory/colors/map")
         return response.colors
     }
 
@@ -800,51 +813,51 @@ struct BambuddyAPIClient {
     // MARK: Controls
 
     func pause(printerID: Int) async throws {
-        _ = try await send(request("/api/v1/printers/\(printerID)/print/pause", method: "POST"))
+        _ = try await send("/api/v1/printers/\(printerID)/print/pause", method: "POST")
     }
 
     func resume(printerID: Int) async throws {
-        _ = try await send(request("/api/v1/printers/\(printerID)/print/resume", method: "POST"))
+        _ = try await send("/api/v1/printers/\(printerID)/print/resume", method: "POST")
     }
 
     func stop(printerID: Int) async throws {
-        _ = try await send(request("/api/v1/printers/\(printerID)/print/stop", method: "POST"))
+        _ = try await send("/api/v1/printers/\(printerID)/print/stop", method: "POST")
     }
 
     func setChamberLight(printerID: Int, on: Bool) async throws {
-        _ = try await send(request(
+        _ = try await send(
             "/api/v1/printers/\(printerID)/chamber-light",
             method: "POST",
             query: [URLQueryItem(name: "on", value: on ? "true" : "false")]
-        ))
+        )
     }
 
     func homeAxes(printerID: Int) async throws {
-        _ = try await send(request("/api/v1/printers/\(printerID)/home-axes", method: "POST"))
+        _ = try await send("/api/v1/printers/\(printerID)/home-axes", method: "POST")
     }
 
     func clearPlate(printerID: Int) async throws {
-        _ = try await send(request("/api/v1/printers/\(printerID)/clear-plate", method: "POST"))
+        _ = try await send("/api/v1/printers/\(printerID)/clear-plate", method: "POST")
     }
 
     func rereadRFID(printerID: Int, amsID: Int, trayID: Int) async throws {
-        _ = try await send(request("/api/v1/printers/\(printerID)/ams/\(amsID)/slot/\(trayID)/refresh", method: "POST"))
+        _ = try await send("/api/v1/printers/\(printerID)/ams/\(amsID)/slot/\(trayID)/refresh", method: "POST")
     }
 
     func setSmartPlug(plugID: Int, on: Bool) async throws {
-        let body = try encoder.encode(["action": on ? "on" : "off"])
-        _ = try await send(request("/api/v1/smart-plugs/\(plugID)/control", method: "POST", body: body))
+        _ = try await sendJSON("/api/v1/smart-plugs/\(plugID)/control", method: "POST", body: ["action": on ? "on" : "off"])
     }
 
     // MARK: Camera
 
-    private struct StreamTokenResponse: Decodable { var token: String }
+    nonisolated private struct StreamTokenResponse: Decodable, Sendable { var token: String }
 
     /// Snapshots require a short-lived token (separate from the API key) minted by this endpoint.
+    @concurrent
     func cameraStreamToken() async throws -> String {
-        let data = try await send(request("/api/v1/printers/camera/stream-token", method: "POST"))
+        let data = try await send("/api/v1/printers/camera/stream-token", method: "POST")
         do {
-            return try decoder.decode(StreamTokenResponse.self, from: data).token
+            return try Self.makeDecoder().decode(StreamTokenResponse.self, from: data).token
         } catch {
             throw BambuddyAPIError.decoding(error)
         }
@@ -863,11 +876,11 @@ struct BambuddyAPIClient {
     /// on close. Reference-counted server-side: it never cuts off another viewer, and Bambuddy
     /// also shuts an unwatched stream down on its own after a few seconds.
     func stopCameraStream(printerID: Int) async throws {
-        _ = try await send(request("/api/v1/printers/\(printerID)/camera/stop", method: "POST"))
+        _ = try await send("/api/v1/printers/\(printerID)/camera/stop", method: "POST")
     }
 
     func cameraSnapshotData(printerID: Int, token: String) async throws -> Data {
-        try await send(request("/api/v1/printers/\(printerID)/camera/snapshot", query: [URLQueryItem(name: "token", value: token)]))
+        try await send("/api/v1/printers/\(printerID)/camera/snapshot", query: [URLQueryItem(name: "token", value: token)])
     }
 
     /// The rendered plate preview for the current (or most recently finished) print job —
@@ -879,7 +892,7 @@ struct BambuddyAPIClient {
     /// relay confirmed live that a plain Bearer request succeeds with no token (nozzlecast-relay
     /// #23). Minting a token first was a wasted request per cover fetch.
     func coverImageData(printerID: Int) async throws -> Data {
-        try await send(request("/api/v1/printers/\(printerID)/cover"))
+        try await send("/api/v1/printers/\(printerID)/cover")
     }
 
     // MARK: Notification log
@@ -909,15 +922,15 @@ struct BambuddyAPIClient {
 
     /// The plate thumbnail saved with a print-log row. 404 when the print was archived without one.
     func printLogThumbnailData(entryID: Int) async throws -> Data {
-        try await send(request("/api/v1/print-log/\(entryID)/thumbnail"))
+        try await send("/api/v1/print-log/\(entryID)/thumbnail")
     }
 
     func archiveThumbnailData(archiveID: Int) async throws -> Data {
-        try await send(request("/api/v1/archives/\(archiveID)/thumbnail"))
+        try await send("/api/v1/archives/\(archiveID)/thumbnail")
     }
 
     func libraryFileThumbnailData(fileID: Int) async throws -> Data {
-        try await send(request("/api/v1/library/files/\(fileID)/thumbnail"))
+        try await send("/api/v1/library/files/\(fileID)/thumbnail")
     }
 
     /// Records "how did it come out" on a print's archive: `"good"`, `"reject"`, or nil to clear
@@ -926,11 +939,12 @@ struct BambuddyAPIClient {
     /// each print of a file has its own outcome. Without it, Bambuddy puts it on the archive's
     /// latest print, as before 1.3.0. `dialog` is the source Bambuddy's own prompt claims — a
     /// person answered it, as opposed to a script (`api`).
+    @concurrent
     func setVerdict(archiveID: Int, runID: Int? = nil, verdict: String?) async throws {
         var payload: [String: Any] = verdict.map { ["user_verdict": $0, "user_verdict_source": "dialog"] } ?? ["user_verdict": NSNull()]
         if let runID { payload["run_id"] = runID }
         let body = try JSONSerialization.data(withJSONObject: payload)
-        _ = try await send(request("/api/v1/archives/\(archiveID)", method: "PATCH", body: body))
+        _ = try await send("/api/v1/archives/\(archiveID)", method: "PATCH", body: body)
     }
 
     /// Releases a staged (`manualStart`) job: Bambuddy clears the flag and its scheduler sends the
@@ -938,10 +952,11 @@ struct BambuddyAPIClient {
     /// checks the job's filament and refuses with `QueueStartFilamentHold` when a spool runs short
     /// or (1.3.0+) the printer has no tray loaded with it; `skipFilamentCheck` is its
     /// "Print Anyway".
+    @concurrent
     func startQueueItem(itemID: Int, skipFilamentCheck: Bool = false) async throws {
         let query = skipFilamentCheck ? [URLQueryItem(name: "skip_filament_check", value: "true")] : []
         do {
-            _ = try await send(request("/api/v1/queue/\(itemID)/start", method: "POST", query: query))
+            _ = try await send("/api/v1/queue/\(itemID)/start", method: "POST", query: query)
         } catch BambuddyAPIError.http(409, let body) {
             if let hold = QueueStartFilamentHold(body: body) { throw hold }
             throw BambuddyAPIError.http(409, body)
@@ -950,25 +965,24 @@ struct BambuddyAPIClient {
 
     /// Takes a job out of the queue. Bambuddy refuses for a job that's printing.
     func removeQueueItem(itemID: Int) async throws {
-        _ = try await send(request("/api/v1/queue/\(itemID)", method: "DELETE"))
+        _ = try await send("/api/v1/queue/\(itemID)", method: "DELETE")
     }
 
     /// Sets the given pending jobs' positions; Bambuddy ignores ids that aren't pending.
     func reorderQueue(_ positions: [(id: Int, position: Int)]) async throws {
-        let body = try encoder.encode(QueueReorderBody(items: positions.map { .init(id: $0.id, position: $0.position) }))
-        _ = try await send(request("/api/v1/queue/reorder", method: "POST", body: body))
+        let body = QueueReorderBody(items: positions.map { .init(id: $0.id, position: $0.position) })
+        _ = try await sendJSON("/api/v1/queue/reorder", method: "POST", body: body)
     }
 
     // MARK: Inventory mutations
 
+    @concurrent
     func assignSpool(spoolID: Int, printerID: Int, amsID: Int, trayID: Int) async throws {
         switch inventory {
         case .builtIn:
-            let body = try encoder.encode(AssignmentCreateBody(spoolId: spoolID, printerId: printerID, amsId: amsID, trayId: trayID))
-            _ = try await send(request("/api/v1/inventory/assignments", method: "POST", body: body))
+            _ = try await sendJSON("/api/v1/inventory/assignments", method: "POST", body: AssignmentCreateBody(spoolId: spoolID, printerId: printerID, amsId: amsID, trayId: trayID))
         case .spoolman:
-            let body = try encoder.encode(SpoolmanSlotAssignBody(spoolmanSpoolId: spoolID, printerId: printerID, amsId: amsID, trayId: trayID))
-            _ = try await send(request("/api/v1/spoolman/inventory/slot-assignments", method: "POST", body: body))
+            _ = try await sendJSON("/api/v1/spoolman/inventory/slot-assignments", method: "POST", body: SpoolmanSlotAssignBody(spoolmanSpoolId: spoolID, printerId: printerID, amsId: amsID, trayId: trayID))
         }
     }
 
@@ -977,10 +991,10 @@ struct BambuddyAPIClient {
     func unassign(printerID: Int, amsID: Int, trayID: Int, spoolID: Int?) async throws {
         switch inventory {
         case .builtIn:
-            _ = try await send(request("/api/v1/inventory/assignments/\(printerID)/\(amsID)/\(trayID)", method: "DELETE"))
+            _ = try await send("/api/v1/inventory/assignments/\(printerID)/\(amsID)/\(trayID)", method: "DELETE")
         case .spoolman:
             guard let spoolID else { throw InventoryBackendError.unassignNeedsSpool }
-            _ = try await send(request("/api/v1/spoolman/inventory/slot-assignments/\(spoolID)", method: "DELETE"))
+            _ = try await send("/api/v1/spoolman/inventory/slot-assignments/\(spoolID)", method: "DELETE")
         }
     }
 
@@ -989,18 +1003,19 @@ struct BambuddyAPIClient {
     /// no core weight — Bambuddy writes a sent one to the Spoolman spool's own `spool_weight`, which
     /// stops it inheriting its filament's (Bambuddy #2908), so its kiosk leaves it out.
     @discardableResult
+    @concurrent
     func createSpool(material: String, colorName: String, rgba: String, brand: String, labelWeight: Int, extras: SpoolCreateExtras = SpoolCreateExtras()) async throws -> BambuddySpoolDTO {
         let spoolman = inventory == .spoolman
-        let body = try encoder.encode(SpoolCreateBody(
+        let payload = SpoolCreateBody(
             material: material, colorName: colorName.isEmpty ? nil : colorName, rgba: rgba, brand: brand, labelWeight: labelWeight,
             subtype: extras.subtype, extraColors: extras.extraColors, effectType: extras.effectType,
             coreWeight: spoolman ? nil : extras.coreWeight, coreWeightCatalogId: spoolman ? nil : extras.coreWeightCatalogId,
             slicerFilament: extras.slicerFilament, slicerFilamentName: extras.slicerFilamentName,
             nozzleTempMin: extras.nozzleTempMin, nozzleTempMax: extras.nozzleTempMax
-        ))
-        let data = try await send(request("\(inventory.basePath)/spools", method: "POST", body: body))
+        )
+        let data = try await sendJSON("\(inventory.basePath)/spools", method: "POST", body: payload)
         do {
-            return try decoder.decode(BambuddySpoolDTO.self, from: data)
+            return try Self.makeDecoder().decode(BambuddySpoolDTO.self, from: data)
         } catch {
             throw BambuddyAPIError.decoding(error)
         }
@@ -1009,25 +1024,25 @@ struct BambuddyAPIClient {
     /// Soft delete: Bambuddy sets the spool's `archived_at`, and it drops out of the inventory
     /// list (`AppStore.refresh()` filters archived spools). Reversible with `restoreSpool`.
     func archiveSpool(spoolID: Int) async throws {
-        _ = try await send(request("\(inventory.basePath)/spools/\(spoolID)/archive", method: "POST"))
+        _ = try await send("\(inventory.basePath)/spools/\(spoolID)/archive", method: "POST")
     }
 
     /// Clears `archived_at` on a spool archived with `archiveSpool`.
     func restoreSpool(spoolID: Int) async throws {
-        _ = try await send(request("\(inventory.basePath)/spools/\(spoolID)/restore", method: "POST"))
+        _ = try await send("\(inventory.basePath)/spools/\(spoolID)/restore", method: "POST")
     }
 
     /// Permanently deletes the spool record. Not reversible — callers confirm first.
     func deleteSpool(spoolID: Int) async throws {
-        _ = try await send(request("\(inventory.basePath)/spools/\(spoolID)", method: "DELETE"))
+        _ = try await send("\(inventory.basePath)/spools/\(spoolID)", method: "DELETE")
     }
 
     @discardableResult
+    @concurrent
     func updateSpool(spoolID: Int, _ update: BambuddySpoolUpdateBody) async throws -> BambuddySpoolDTO {
-        let body = try encoder.encode(update)
-        let data = try await send(request("\(inventory.basePath)/spools/\(spoolID)", method: "PATCH", body: body))
+        let data = try await sendJSON("\(inventory.basePath)/spools/\(spoolID)", method: "PATCH", body: update)
         do {
-            return try decoder.decode(BambuddySpoolDTO.self, from: data)
+            return try Self.makeDecoder().decode(BambuddySpoolDTO.self, from: data)
         } catch {
             throw BambuddyAPIError.decoding(error)
         }
@@ -1037,7 +1052,7 @@ struct BambuddyAPIClient {
 // MARK: - SpoolBuddy
 
 /// A SpoolBuddy (Raspberry Pi with an NFC reader and a scale) registered with Bambuddy.
-struct BambuddySpoolBuddyDeviceDTO: Codable, Equatable {
+nonisolated struct BambuddySpoolBuddyDeviceDTO: Codable, Equatable, Sendable {
     var deviceId: String
     var hostname: String
     var online: Bool
@@ -1047,7 +1062,7 @@ struct BambuddySpoolBuddyDeviceDTO: Codable, Equatable {
     var scaleOk: Bool?
 }
 
-private struct SpoolTagLinkBody: Codable {
+nonisolated private struct SpoolTagLinkBody: Codable, Sendable {
     var tagUid: String
     var trayUuid: String?
     // Built-in inventory only, labelled as Bambuddy's SpoolBuddy kiosk labels its own links.
@@ -1057,7 +1072,7 @@ private struct SpoolTagLinkBody: Codable {
 
 /// Why a tag is being linked, recorded as the spool's `data_origin` the way Bambuddy's SpoolBuddy
 /// kiosk records it.
-enum TagLinkOrigin: String {
+nonisolated enum TagLinkOrigin: String, Sendable {
     /// A new spool added for the tag (the kiosk's Quick Add).
     case newSpool = "spoolbuddy"
     /// The tag linked to a spool already in the inventory.
@@ -1065,20 +1080,21 @@ enum TagLinkOrigin: String {
 }
 
 extension BambuddyAPIClient {
-    private struct WebSocketTokenResponse: Decodable { var token: String }
+    nonisolated private struct WebSocketTokenResponse: Decodable, Sendable { var token: String }
 
     /// Mints the short-lived token `/api/v1/ws` takes as `?token=`. The API key needs Bambuddy's
     /// `websocket:connect` permission. Nil from a server that predates the endpoint, whose socket
     /// takes no token.
+    @concurrent
     func webSocketToken() async throws -> String? {
         let data: Data
         do {
-            data = try await send(request("/api/v1/auth/ws-token", method: "POST"))
+            data = try await send("/api/v1/auth/ws-token", method: "POST")
         } catch BambuddyAPIError.http(404, _) {
             return nil
         }
         do {
-            return try decoder.decode(WebSocketTokenResponse.self, from: data).token
+            return try Self.makeDecoder().decode(WebSocketTokenResponse.self, from: data).token
         } catch {
             throw BambuddyAPIError.decoding(error)
         }
@@ -1094,6 +1110,7 @@ extension BambuddyAPIClient {
     /// In the built-in inventory the spool also gets the kiosk's `tag_type` ("bambulab" when the
     /// tag has a tray UUID, "generic" otherwise) and `data_origin`. Spoolman's tag route takes only
     /// the tag itself, as the kiosk sends it.
+    @concurrent
     func linkTag(spoolID: Int, tagUID: String, trayUUID: String?, origin: TagLinkOrigin) async throws {
         let trayUUID = trayUUID?.isEmpty == false ? trayUUID : nil
         let path: String
@@ -1106,14 +1123,13 @@ extension BambuddyAPIClient {
         case .spoolman:
             path = "\(inventory.basePath)/spools/\(spoolID)/tag"
         }
-        let body = try encoder.encode(link)
-        _ = try await send(request(path, method: "PATCH", body: body))
+        _ = try await sendJSON(path, method: "PATCH", body: link)
     }
 }
 
 /// The spool Bambuddy found for a scanned tag, as `spoolbuddy_tag_matched` carries it. Every field
 /// but the id is optional: Spoolman-backed spools can leave any of them empty.
-struct SpoolBuddyMatchedSpoolDTO: Codable, Equatable {
+nonisolated struct SpoolBuddyMatchedSpoolDTO: Codable, Equatable, Sendable {
     var id: Int
     var material: String?
     var subtype: String?
@@ -1134,7 +1150,7 @@ struct SpoolBuddyMatchedSpoolDTO: Codable, Equatable {
 /// catalog), slicer profile, temperatures, and the empty spool's weight. Nil from a Bambuddy older
 /// than that, for a tag that isn't Bambu's, or from a SpoolBuddy daemon that doesn't send the tag's
 /// data blocks.
-struct SpoolBuddyTagDataDTO: Codable, Equatable {
+nonisolated struct SpoolBuddyTagDataDTO: Codable, Equatable, Sendable {
     var material: String
     var subtype: String?
     var colorName: String?
@@ -1161,7 +1177,10 @@ struct SpoolBuddyTagDataDTO: Codable, Equatable {
         guard let rgba, rgba.count >= 6, rgba.prefix(6).allSatisfy(\.isHexDigit) else { return nil }
         return "#" + rgba.prefix(6).uppercased()
     }
+}
 
+@MainActor
+extension SpoolBuddyTagDataDTO {
     /// What the review form starts with for this roll.
     var scannedResult: ScannedResult {
         ScannedResult(
@@ -1210,7 +1229,7 @@ struct SpoolBuddyTagDataDTO: Codable, Equatable {
 
 /// The SpoolBuddy messages Bambuddy broadcasts on `/api/v1/ws` (see its
 /// `backend/app/api/routes/spoolbuddy.py`). Every other message on the socket is ignored.
-enum SpoolBuddyEvent: Equatable {
+nonisolated enum SpoolBuddyEvent: Equatable, Sendable {
     case tagMatched(deviceID: String, tagUID: String, trayUUID: String?, spool: SpoolBuddyMatchedSpoolDTO)
     /// A tag no spool carries. `trayUUID` is only set for a genuine Bambu tag, and `tagData` only
     /// when Bambuddy could decode one (see `SpoolBuddyTagDataDTO`).
@@ -1232,7 +1251,7 @@ enum SpoolBuddyEvent: Equatable {
         }
     }
 
-    private struct Envelope: Decodable {
+    nonisolated private struct Envelope: Decodable, Sendable {
         var type: String
         var deviceId: String?
         var tagUid: String?
@@ -1247,14 +1266,13 @@ enum SpoolBuddyEvent: Equatable {
 
     /// Decoded on its own, so a `tag_data` this build doesn't understand costs only the prefill,
     /// never the unknown-tag event itself.
-    private struct TagDataEnvelope: Decodable {
+    nonisolated private struct TagDataEnvelope: Decodable, Sendable {
         var tagData: SpoolBuddyTagDataDTO?
     }
 
     /// Nil for anything that isn't a well-formed SpoolBuddy event.
     static func decode(_ data: Data) -> SpoolBuddyEvent? {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let decoder = BambuddyAPIClient.makeDecoder()
         guard let e = try? decoder.decode(Envelope.self, from: data), let device = e.deviceId else { return nil }
         switch e.type {
         case "spoolbuddy_tag_matched":
@@ -1289,7 +1307,7 @@ enum SpoolBuddyEvent: Equatable {
 // MARK: - WebSocket
 
 /// One open socket. A seam for tests; the app uses `URLSessionBambuddyWebSocket`.
-protocol BambuddyWebSocket: AnyObject {
+protocol BambuddyWebSocket: AnyObject, Sendable {
     /// The next text message. Throws once the socket is closed.
     func receive() async throws -> String
     func send(_ text: String) async throws
@@ -1347,8 +1365,9 @@ final class BambuddyEventStream {
     @ObservationIgnored private let makeSocket: (URL) -> BambuddyWebSocket
     @ObservationIgnored private let sleep: (Duration) async throws -> Void
     @ObservationIgnored private let pingInterval: Duration
-    @ObservationIgnored private var runTask: Task<Void, Never>?
-    @ObservationIgnored private var socket: BambuddyWebSocket?
+    @ObservationIgnored nonisolated(unsafe) private var runTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var socket: (any BambuddyWebSocket)?
+    @ObservationIgnored private var runGeneration: UInt64 = 0
 
     init(
         baseURL: URL,
@@ -1368,12 +1387,28 @@ final class BambuddyEventStream {
         self.init(baseURL: client.baseURL, fetchToken: { try await client.webSocketToken() })
     }
 
+    nonisolated deinit {
+        runTask?.cancel()
+        if let socket {
+            Task { @MainActor in
+                socket.cancel()
+            }
+        }
+    }
+
     func start() {
         guard runTask == nil else { return }
-        runTask = Task { await run() }
+        runGeneration &+= 1
+        let generation = runGeneration
+        runTask = Task { [weak self] in
+            await self?.run()
+            guard let self, self.runGeneration == generation else { return }
+            self.runTask = nil
+        }
     }
 
     func stop() {
+        runGeneration &+= 1
         runTask?.cancel()
         runTask = nil
         socket?.cancel()

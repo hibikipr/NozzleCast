@@ -98,11 +98,12 @@ final class BambuddyConfig {
         guard !trimmed.isEmpty else { return nil }
         var s = trimmed.contains("://") ? trimmed : "https://" + trimmed
         while s.hasSuffix("/") { s.removeLast() }
-        guard let components = URLComponents(string: s),
+        guard var components = URLComponents(string: s),
               let scheme = components.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               let host = components.host, !host.isEmpty
         else { return nil }
+        components.scheme = scheme
         return components.url
     }
 

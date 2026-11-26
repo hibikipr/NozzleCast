@@ -21,8 +21,11 @@ public struct FilamentSwatchView: View {
 
     public var body: some View {
         Canvas { context, size in
-            Self.drawCheckerboard(&context, size: size)
-            Self.drawColorLayer(&context, size: size, colorHex: colorHex, alpha: alpha, extraColorHexes: extraColorHexes, subtype: subtype, effectType: effectType)
+            let resolved = Self.resolveColors(colorHex: colorHex, extraColorHexes: extraColorHexes, alpha: alpha)
+            if !resolved.isOpaque {
+                Self.drawCheckerboard(&context, size: size)
+            }
+            Self.drawColorLayer(&context, size: size, colors: resolved.colors, fallbackAlpha: alpha, subtype: subtype, effectType: effectType)
             Self.drawEffectOverlay(&context, size: size, colorHex: colorHex, extraColorHexes: extraColorHexes, subtype: subtype, effectType: effectType)
         }
     }
@@ -35,6 +38,7 @@ public struct FilamentSwatchView: View {
 
     private static func drawCheckerboard(_ context: inout GraphicsContext, size: CGSize) {
         context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(checkerLight))
+        var darkSquares = Path()
         var row = 0
         var y: CGFloat = 0
         while y < size.height {
@@ -42,13 +46,16 @@ public struct FilamentSwatchView: View {
             var x: CGFloat = 0
             while x < size.width {
                 if (row + col).isMultiple(of: 2) {
-                    context.fill(Path(CGRect(x: x, y: y, width: checkerCell, height: checkerCell)), with: .color(checkerDark))
+                    darkSquares.addRect(CGRect(x: x, y: y, width: checkerCell, height: checkerCell))
                 }
                 x += checkerCell
                 col += 1
             }
             y += checkerCell
             row += 1
+        }
+        if !darkSquares.isEmpty {
+            context.fill(darkSquares, with: .color(checkerDark))
         }
     }
 
@@ -59,21 +66,23 @@ public struct FilamentSwatchView: View {
     /// spool as rgba `ED2F2E` plus extra colors `ED2F2E,F3C432`, so prepending the main color
     /// painted its first color twice (three bands for a dual-color spool). Each extra stop carries
     /// its own alpha when written as 8 hex digits, as in Bambuddy; the main color uses `alpha`.
-    private static func resolvedColors(colorHex: String, extraColorHexes: [String], alpha: Double) -> [Color] {
+    private static func resolveColors(colorHex: String, extraColorHexes: [String], alpha: Double) -> (colors: [Color], isOpaque: Bool) {
         let stops = extraColorHexes.compactMap(stopColor)
-        guard stops.isEmpty else { return stops }
+        if !stops.isEmpty {
+            return (stops.map(\.color), stops.allSatisfy(\.isOpaque))
+        }
         let clean = colorHex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        return [Color(hex: String(clean.prefix(6))).opacity(alpha)]
+        return ([Color(hex: String(clean.prefix(6))).opacity(alpha)], alpha >= 1.0)
     }
 
     /// One extra-color stop: 6 hex digits (opaque) or 8 (RRGGBBAA). Anything else is skipped, as
     /// Bambuddy's `toCssHex` does.
-    private static func stopColor(_ token: String) -> Color? {
+    private static func stopColor(_ token: String) -> (color: Color, isOpaque: Bool)? {
         let clean = token.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespacesAndNewlines))
         guard clean.count == 6 || clean.count == 8, clean.allSatisfy(\.isHexDigit) else { return nil }
         let color = Color(hex: String(clean.prefix(6)))
-        guard clean.count == 8, let alphaByte = UInt8(clean.suffix(2), radix: 16) else { return color }
-        return color.opacity(Double(alphaByte) / 255)
+        guard clean.count == 8, let alphaByte = UInt8(clean.suffix(2), radix: 16) else { return (color, true) }
+        return (color.opacity(Double(alphaByte) / 255), alphaByte == 255)
     }
 
     private static func isMulticolor(subtype: String?, effectType: String?) -> Bool {
@@ -95,14 +104,13 @@ public struct FilamentSwatchView: View {
     }
 
     private static func drawColorLayer(
-        _ context: inout GraphicsContext, size: CGSize, colorHex: String, alpha: Double,
-        extraColorHexes: [String], subtype: String?, effectType: String?
+        _ context: inout GraphicsContext, size: CGSize, colors: [Color], fallbackAlpha: Double,
+        subtype: String?, effectType: String?
     ) {
         let path = Path(CGRect(origin: .zero, size: size))
-        let colors = resolvedColors(colorHex: colorHex, extraColorHexes: extraColorHexes, alpha: alpha)
 
         guard colors.count > 1 else {
-            context.fill(path, with: .color(colors.first ?? Color(white: 0.5).opacity(alpha)))
+            context.fill(path, with: .color(colors.first ?? Color(white: 0.5).opacity(fallbackAlpha)))
             return
         }
 

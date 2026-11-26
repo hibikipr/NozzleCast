@@ -208,6 +208,9 @@ struct Printer: Identifiable, Equatable {
     var jobFileName: String?
     var progress: Double?
     var etaMinutesRemaining: Int?
+    /// The clock time the current print should finish, captured from the remaining minutes when
+    /// this snapshot was built so it stays stable between refreshes.
+    var estimatedFinish: Date?
     var currentLayer: Int? = nil
     var totalLayers: Int? = nil
     /// Extra detail about what the printer is actually doing right now, beyond `state` — e.g.
@@ -263,6 +266,84 @@ struct Printer: Identifiable, Equatable {
     var aiMonitoringActive: Bool = false
     var aiLastError: String? = nil
 
+    init(
+        id: String,
+        name: String,
+        model: String,
+        imageAssetName: String? = nil,
+        state: PrinterState,
+        jobPhase: JobPhase? = nil,
+        jobFileName: String? = nil,
+        progress: Double? = nil,
+        etaMinutesRemaining: Int? = nil,
+        estimatedFinish: Date? = nil,
+        currentLayer: Int? = nil,
+        totalLayers: Int? = nil,
+        stageDetail: String? = nil,
+        nozzle: TemperatureReading,
+        rightNozzle: TemperatureReading? = nil,
+        bed: TemperatureReading,
+        chamber: TemperatureReading? = nil,
+        lightOn: Bool,
+        amsUnits: [AMSUnit],
+        externalTrays: [AMSTray] = [],
+        wifiSignalDBm: Int? = nil,
+        firmwareVersion: String? = nil,
+        hmsErrors: [HMSError] = [],
+        doorOpen: Bool = false,
+        fanSpeeds: FanSpeeds = FanSpeeds(),
+        awaitingPlateClear: Bool = false,
+        activeTrayID: Int? = nil,
+        lacksDeveloperMode: Bool = false,
+        nozzles: [NozzleInfo] = [],
+        nozzleRack: [NozzleRackSlot] = [],
+        totalPrintHours: Double? = nil,
+        maintenanceOK: Bool? = nil,
+        maintenanceTasks: [MaintenanceTask] = [],
+        smartPlug: SmartPlugInfo? = nil,
+        aiDetectionEnabled: Bool = false,
+        aiMonitoringActive: Bool = false,
+        aiLastError: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.model = model
+        self.imageAssetName = imageAssetName
+        self.state = state
+        self.jobPhase = jobPhase
+        self.jobFileName = jobFileName
+        self.progress = progress
+        self.etaMinutesRemaining = etaMinutesRemaining
+        self.estimatedFinish = estimatedFinish ?? etaMinutesRemaining.map { Date().addingTimeInterval(TimeInterval($0) * 60) }
+        self.currentLayer = currentLayer
+        self.totalLayers = totalLayers
+        self.stageDetail = stageDetail
+        self.nozzle = nozzle
+        self.rightNozzle = rightNozzle
+        self.bed = bed
+        self.chamber = chamber
+        self.lightOn = lightOn
+        self.amsUnits = amsUnits
+        self.externalTrays = externalTrays
+        self.wifiSignalDBm = wifiSignalDBm
+        self.firmwareVersion = firmwareVersion
+        self.hmsErrors = hmsErrors
+        self.doorOpen = doorOpen
+        self.fanSpeeds = fanSpeeds
+        self.awaitingPlateClear = awaitingPlateClear
+        self.activeTrayID = activeTrayID
+        self.lacksDeveloperMode = lacksDeveloperMode
+        self.nozzles = nozzles
+        self.nozzleRack = nozzleRack
+        self.totalPrintHours = totalPrintHours
+        self.maintenanceOK = maintenanceOK
+        self.maintenanceTasks = maintenanceTasks
+        self.smartPlug = smartPlug
+        self.aiDetectionEnabled = aiDetectionEnabled
+        self.aiMonitoringActive = aiMonitoringActive
+        self.aiLastError = aiLastError
+    }
+
     var isDualNozzle: Bool { nozzles.count > 1 }
 
     /// The most severe active HMS alert's level, nil with none. Shown beside the state, never in
@@ -274,11 +355,6 @@ struct Printer: Identifiable, Equatable {
     var needsAttention: Bool {
         guard state != .offline else { return false }
         return state == .failed || hmsErrors.contains { $0.level == .error || $0.level == .warning }
-    }
-
-    /// The clock time the current print should finish, from the remaining minutes.
-    var estimatedFinish: Date? {
-        etaMinutesRemaining.map { Date().addingTimeInterval(TimeInterval($0) * 60) }
     }
 
     var etaDescription: String? {

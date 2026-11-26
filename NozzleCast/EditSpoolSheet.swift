@@ -47,14 +47,18 @@ struct EditSpoolSheet: View {
     }
 
     /// Existing brands/subtypes across the whole inventory, offered as suggestions — matching
-    /// Bambuddy's own "type it or pick a value you've already used" behavior.
-    private var knownBrands: [String] {
-        Array(Set(store.spools.map(\.brand).filter { !$0.isEmpty })).sorted()
-    }
+    /// Bambuddy's own "type it or pick a value you've already used" behavior. Cached in `@State`
+    /// instead of recomputing/sorting on every keystroke in `body`.
+    @State private var knownBrands: [String] = []
     /// Bambuddy's own subtype suggestions, then any others already in the inventory.
-    private var knownSubtypes: [String] {
+    @State private var knownSubtypes: [String] = []
+
+    private func rebuildSuggestions() {
+        let brands = Array(Set(store.spools.map(\.brand).filter { !$0.isEmpty })).sorted()
+        if brands != knownBrands { knownBrands = brands }
         let inInventory = Set(store.spools.compactMap(\.subtype).filter { !$0.isEmpty })
-        return BambuddyMaterials.knownVariants + inInventory.subtracting(BambuddyMaterials.knownVariants).sorted()
+        let subtypes = BambuddyMaterials.knownVariants + inInventory.subtracting(BambuddyMaterials.knownVariants).sorted()
+        if subtypes != knownSubtypes { knownSubtypes = subtypes }
     }
 
     private var extraColorHexes: [String] {
@@ -102,6 +106,8 @@ struct EditSpoolSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear { rebuildSuggestions() }
+        .task(id: store.spools.count) { rebuildSuggestions() }
         .confirmationDialog(
             Text("Delete this spool?", comment: "Delete spool confirmation title"),
             isPresented: $isConfirmingDelete,

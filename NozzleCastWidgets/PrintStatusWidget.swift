@@ -54,6 +54,20 @@ struct PrintStatusEntry: TimelineEntry {
     let capturedAt: Date?
     /// One for small and medium, up to two (picked first) for large. Empty means no data.
     let snapshots: [PrintStatusSnapshot]
+    /// Pre-decoded covers keyed by `snapshot.printerID` so timeline entries share one decode.
+    let covers: [String: CoverArt]
+
+    init(
+        date: Date,
+        capturedAt: Date?,
+        snapshots: [PrintStatusSnapshot],
+        covers: [String: CoverArt] = [:]
+    ) {
+        self.date = date
+        self.capturedAt = capturedAt
+        self.snapshots = snapshots
+        self.covers = covers
+    }
 }
 
 struct PrintStatusProvider: AppIntentTimelineProvider {
@@ -67,23 +81,102 @@ struct PrintStatusProvider: AppIntentTimelineProvider {
             // Aged on purpose: a fresh stamp reads "0 sec ago".
             return PrintStatusEntry(date: .now, capturedAt: .now.addingTimeInterval(-120), snapshots: shown(Self.mockSnapshots(), for: context.family, printerID: nil))
         }
-        return PrintStatusEntry(date: .now, capturedAt: PrintStatusWidgetStore.lastSavedAt, snapshots: shown(stored, for: context.family, printerID: configuration.printer?.id))
+        let chosen = shown(stored, for: context.family, printerID: configuration.printer?.id)
+        let covers = Self.preloadCovers(for: chosen, family: context.family)
+        return PrintStatusEntry(date: .now, capturedAt: PrintStatusWidgetStore.lastSavedAt, snapshots: chosen, covers: covers)
     }
 
     func timeline(for configuration: PrintStatusWidgetIntent, in context: Context) async -> Timeline<PrintStatusEntry> {
         let now = Date.now
         let chosen = shown(PrintStatusWidgetStore.load(), for: context.family, printerID: configuration.printer?.id)
         let capturedAt = PrintStatusWidgetStore.lastSavedAt
+        let covers = Self.preloadCovers(for: chosen, family: context.family)
+        let hasActive = chosen.contains(where: \.isActive)
 
-        let reload = now.addingTimeInterval(1800)
-        // An entry a minute until the next reload, so the short "4m ago" stamp counts up (a live
-        // relative date reads "1 min, 36 sec ago", too wide beside the chips). Entries within one
-        // timeline don't cost reload budget. Plus one when each shown print's estimate passes, so
-        // the countdown gives way to the state label.
-        var dates = Set((0..<30).map { now.addingTimeInterval(Double($0) * 60) })
-        dates.formUnion(chosen.compactMap(\.estimatedEndAt).filter { $0 > now && $0 < reload })
-        let entries = dates.sorted().map { PrintStatusEntry(date: $0, capturedAt: capturedAt, snapshots: chosen) }
-        return Timeline(entries: entries, policy: .after(reload))
+        let dates: [Date]
+        let policy: TimelineReloadPolicy
+
+        if context.family == .systemSmall {
+            // Small doesn't render `StatusStamp`; only schedule entries for active countdown endings.
+            if hasActive {
+                let reload = now.addingTimeInterval(1800)
+                var entryDates: Set<Date> = [now]
+                entryDates.formUnion(chosen.compactMap(\.estimatedEndAt).filter { $0 > now && $0 < reload })
+                dates = entryDates.sorted()
+                policy = .after(reload)
+            } else {
+                dates = [now]
+                policy = .never
+            }
+        } else if chosen.isEmpty {
+            dates = [now]
+            policy = .never
+        } else if let capturedAt {
+            let age = now.timeIntervalSince(capturedAt)
+            if age < 3600 {
+                // An entry a minute until the 60-minute mark or 30m reload, so the short "4m ago"
+                // stamp counts up cleanly without exceeding a 30m reload window.
+                let reload = now.addingTimeInterval(1800)
+                let sixtyMinMark = capturedAt.addingTimeInterval(3600)
+                let minuteTickLimit = min(reload, sixtyMinMark)
+                var entryDates: Set<Date> = [now]
+                for minuteOffset in 1..<30 {
+                    let tick = now.addingTimeInterval(Double(minuteOffset) * 60)
+                    guard tick < minuteTickLimit else { break }
+                    entryDates.insert(tick)
+                }
+                if sixtyMinMark > now, sixtyMinMark < reload {
+                    entryDates.insert(sixtyMinMark)
+                }
+                if hasActive {
+                    entryDates.formUnion(chosen.compactMap(\.estimatedEndAt).filter { $0 > now && $0 < reload })
+                }
+                dates = entryDates.sorted()
+                policy = .after(reload)
+            } else {
+                let reload = now.addingTimeInterval(3600)
+                var entryDates: Set<Date> = [now]
+                if hasActive {
+                    entryDates.formUnion(chosen.compactMap(\.estimatedEndAt).filter { $0 > now && $0 < reload })
+                }
+                dates = entryDates.sorted()
+                policy = .after(reload)
+            }
+        } else if hasActive {
+            let reload = now.addingTimeInterval(1800)
+            var entryDates: Set<Date> = [now]
+            entryDates.formUnion(chosen.compactMap(\.estimatedEndAt).filter { $0 > now && $0 < reload })
+            dates = entryDates.sorted()
+            policy = .after(reload)
+        } else {
+            dates = [now]
+            policy = .never
+        }
+
+        let entries = dates.map {
+            PrintStatusEntry(date: $0, capturedAt: capturedAt, snapshots: chosen, covers: covers)
+        }
+        return Timeline(entries: entries, policy: policy)
+    }
+
+    private static func coverMaxPixelSize(for family: WidgetFamily) -> CGFloat {
+        family == .systemSmall ? 168 : 288
+    }
+
+    private static func preloadCovers(for snapshots: [PrintStatusSnapshot], family: WidgetFamily) -> [String: CoverArt] {
+        let maxPixelSize = coverMaxPixelSize(for: family)
+        var covers: [String: CoverArt] = [:]
+        covers.reserveCapacity(snapshots.count)
+        for snapshot in snapshots {
+            if let cover = coverArt(
+                printerID: snapshot.printerID,
+                jobName: snapshot.isActive ? snapshot.jobName : snapshot.lastJobName,
+                maxPixelSize: maxPixelSize
+            ) {
+                covers[snapshot.printerID] = cover
+            }
+        }
+        return covers
     }
 
     private func shown(_ all: [PrintStatusSnapshot], for family: WidgetFamily, printerID: String?) -> [PrintStatusSnapshot] {
@@ -154,10 +247,6 @@ private extension PrintStatusSnapshot {
         )
     }
 
-    var cover: CoverArt? {
-        coverArt(printerID: printerID, jobName: isActive ? jobName : lastJobName)
-    }
-
     var deepLink: URL? { URL(string: "nozzlecast://printer/\(printerID)") }
 }
 
@@ -166,9 +255,9 @@ private extension PrintStatusSnapshot {
 /// The cover in full colour. A widget only redraws when the app refreshes, so the Live Activity's
 /// build-up fill, % and segments would sit frozen at an old percentage here; the countdown, which
 /// ticks on its own, carries the progress instead.
-private func statusCover(_ snapshot: PrintStatusSnapshot, width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
+private func statusCover(_ snapshot: PrintStatusSnapshot, cover: CoverArt?, width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
     BuildUpThumbnail(
-        cover: snapshot.cover, fraction: 1,
+        cover: cover, fraction: 1,
         width: width, height: height, cornerRadius: cornerRadius, showsBuildUp: false
     )
     .overlay(alignment: .topTrailing) {
@@ -206,6 +295,7 @@ private struct FinishedText: View {
 /// staleness stamp (medium); large drops them and uses the taller thumbnail.
 private struct StatusCard: View {
     let snapshot: PrintStatusSnapshot
+    let cover: CoverArt?
     let capturedAt: Date?
     let now: Date
     let thumbHeight: CGFloat
@@ -220,7 +310,7 @@ private struct StatusCard: View {
         let state = snapshot.contentState
         HStack(alignment: .top, spacing: 14) {
             SafeSection {
-                statusCover(snapshot, width: 96, height: thumbHeight, cornerRadius: 16)
+                statusCover(snapshot, cover: cover, width: 96, height: thumbHeight, cornerRadius: 16)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -288,13 +378,21 @@ private struct StatusCard: View {
     }
 }
 
+@MainActor
+private enum SnapshotAgeFormatter {
+    static let relative: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+}
+
 /// "4m ago": how old the snapshot is at the entry's date. Static text, kept current by the
 /// timeline's per-minute entries.
+@MainActor
 private func snapshotAge(_ capturedAt: Date, at now: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .abbreviated
     // Under a minute reads "in 0 sec"/"0 sec ago" otherwise.
-    return formatter.localizedString(for: min(capturedAt, now.addingTimeInterval(-60)), relativeTo: now)
+    SnapshotAgeFormatter.relative.localizedString(for: min(capturedAt, now.addingTimeInterval(-60)), relativeTo: now)
 }
 
 private struct StatusStamp: View {
@@ -317,13 +415,14 @@ private struct StatusStamp: View {
 
 private struct PrintStatusSmallView: View {
     let snapshot: PrintStatusSnapshot
+    let cover: CoverArt?
     let now: Date
 
     var body: some View {
         let state = snapshot.contentState
         VStack(alignment: .leading, spacing: 6) {
             SafeSection {
-                statusCover(snapshot, width: 56, height: 72, cornerRadius: 12)
+                statusCover(snapshot, cover: cover, width: 56, height: 72, cornerRadius: 12)
             }
             Spacer(minLength: 0)
             Text(snapshot.printerName)
@@ -348,6 +447,7 @@ private struct PrintStatusSmallView: View {
 
 private struct PrintStatusMediumView: View {
     let snapshot: PrintStatusSnapshot
+    let cover: CoverArt?
     let capturedAt: Date?
     let now: Date
 
@@ -355,7 +455,7 @@ private struct PrintStatusMediumView: View {
         // The thumbnail takes the full content height, which varies by device (the medium widget is
         // 170pt on most iPhones but shorter on the smallest), so it's measured, not fixed.
         GeometryReader { proxy in
-            StatusCard(snapshot: snapshot, capturedAt: capturedAt, now: now, thumbHeight: proxy.size.height, detailed: true)
+            StatusCard(snapshot: snapshot, cover: cover, capturedAt: capturedAt, now: now, thumbHeight: proxy.size.height, detailed: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
@@ -365,6 +465,7 @@ private struct PrintStatusMediumView: View {
 
 private struct PrintStatusLargeView: View {
     let snapshots: [PrintStatusSnapshot]
+    let covers: [String: CoverArt]
     let capturedAt: Date?
     let now: Date
 
@@ -376,7 +477,7 @@ private struct PrintStatusLargeView: View {
                         .padding(.vertical, 10)
                 }
                 Link(destination: snapshot.deepLink ?? URL(string: "nozzlecast://monitor")!) {
-                    StatusCard(snapshot: snapshot, capturedAt: capturedAt, now: now, thumbHeight: 128, detailed: false)
+                    StatusCard(snapshot: snapshot, cover: covers[snapshot.printerID], capturedAt: capturedAt, now: now, thumbHeight: 128, detailed: false)
                 }
             }
             Spacer(minLength: 0)
@@ -406,12 +507,12 @@ struct PrintStatusWidgetEntryView: View {
             if let first = entry.snapshots.first {
                 switch family {
                 case .systemSmall:
-                    PrintStatusSmallView(snapshot: first, now: entry.date)
+                    PrintStatusSmallView(snapshot: first, cover: entry.covers[first.printerID], now: entry.date)
                         .widgetURL(first.deepLink)
                 case .systemLarge:
-                    PrintStatusLargeView(snapshots: entry.snapshots, capturedAt: entry.capturedAt, now: entry.date)
+                    PrintStatusLargeView(snapshots: entry.snapshots, covers: entry.covers, capturedAt: entry.capturedAt, now: entry.date)
                 default:
-                    PrintStatusMediumView(snapshot: first, capturedAt: entry.capturedAt, now: entry.date)
+                    PrintStatusMediumView(snapshot: first, cover: entry.covers[first.printerID], capturedAt: entry.capturedAt, now: entry.date)
                         .widgetURL(first.deepLink)
                 }
             } else {

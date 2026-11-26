@@ -5,7 +5,33 @@ import SwiftUI
 /// cover's backdrop (`CoverImageProcessing.backdrop(forRender:)`): light behind a dark printer
 /// (the H2C, X1E), dark behind a light one. Worked out from the image once per model and kept.
 enum PrinterArtBackdrop {
-    private static var cache: [String: Color] = [:]
+    private static let darkBackdrop = Color(
+        red: Double(CoverImageProcessing.backdropDark.red) / 255,
+        green: Double(CoverImageProcessing.backdropDark.green) / 255,
+        blue: Double(CoverImageProcessing.backdropDark.blue) / 255
+    )
+    private static let lightBackdrop = Color(
+        red: Double(CoverImageProcessing.backdropLight.red) / 255,
+        green: Double(CoverImageProcessing.backdropLight.green) / 255,
+        blue: Double(CoverImageProcessing.backdropLight.blue) / 255
+    )
+
+    /// Precomputed via `CoverImageProcessing.backdrop(forRender:)` for all 12 bundled `Printer*`
+    /// assets so `color(for:)` is an instant O(1) lookup with zero main-thread pixel scans.
+    private static var cache: [String: Color] = [
+        "PrinterA1": darkBackdrop,
+        "PrinterA2L": darkBackdrop,
+        "PrinterH2C": lightBackdrop,
+        "PrinterH2D": darkBackdrop,
+        "PrinterH2S": darkBackdrop,
+        "PrinterH3C": lightBackdrop,
+        "PrinterP1P": darkBackdrop,
+        "PrinterP1S": darkBackdrop,
+        "PrinterP2S": darkBackdrop,
+        "PrinterX1C": darkBackdrop,
+        "PrinterX1E": lightBackdrop,
+        "PrinterX2D": darkBackdrop,
+    ]
 
     static func color(for assetName: String?) -> Color {
         guard let assetName else { return NCColor.printerWell }
@@ -34,14 +60,21 @@ enum PrinterArtBackdrop {
 struct AnimatedPrinterImage: View {
     var assetName: String
     var state: PrinterState
+    var isActive: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var shouldAnimate: Bool {
+        !reduceMotion && isActive && scenePhase == .active && state.isAnimated
+    }
 
     var body: some View {
         if let geometry = PrinterArtGeometry.forAsset(assetName) {
-            TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || !state.isAnimated)) { context in
-                let time = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
-                let pose = PrinterPose(state: state, time: time, animated: !reduceMotion)
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: !shouldAnimate)) { context in
+                let animated = shouldAnimate
+                let time = animated ? context.date.timeIntervalSinceReferenceDate : 0
+                let pose = PrinterPose(state: state, time: time, animated: animated)
                 GeometryReader { proxy in
                     let scale = min(proxy.size.width, proxy.size.height) / PrinterArtGeometry.canvas
                     PrinterArtLayers(assetName: assetName, geometry: geometry, pose: pose, scale: scale)
@@ -64,8 +97,8 @@ private extension PrinterState {
     /// States with continuous motion; the rest are drawn once and the timeline is paused.
     var isAnimated: Bool {
         switch self {
-        case .printing, .paused, .finished, .failed: true
-        case .idle, .offline: false
+        case .printing, .paused, .failed: true
+        case .idle, .offline, .finished: false
         }
     }
 }

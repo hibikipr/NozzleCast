@@ -198,12 +198,13 @@ struct PrintsView: View {
             .padding(.horizontal, 16)
         }
 
-        if filteredHistory.isEmpty && !store.hasMorePrintHistory {
+        let history = filteredHistory
+        if history.isEmpty && !store.hasMorePrintHistory {
             emptyState(store.printHistory.isEmpty
                 ? String(localized: "No prints yet.", comment: "Empty print history")
                 : String(localized: "No prints match this filter.", comment: "Print history filter shows nothing"))
         } else {
-            ForEach(filteredHistory) { record in
+            ForEach(history) { record in
                 HistoryRow(record: record)
                     .padding(.horizontal, 16)
             }

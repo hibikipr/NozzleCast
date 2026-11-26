@@ -51,7 +51,46 @@ public enum CoverImageProcessing {
     private static let trimAlphaThreshold: UInt8 = 8
     private static let modelAlphaThreshold: UInt8 = 128
 
+    public struct ProcessedCover: Sendable {
+        public var sharp: Data
+        public var backdropIsLight: Bool
+        public var contentState: Data?
+
+        public init(sharp: Data, backdropIsLight: Bool, contentState: Data?) {
+            self.sharp = sharp
+            self.backdropIsLight = backdropIsLight
+            self.contentState = contentState
+        }
+    }
+
     // MARK: - Public entry points
+
+    /// Decodes, trims, and determines the backdrop once, producing the sharp cover and optionally
+    /// the byte-budgeted content-state fallback.
+    public static func process(from renderData: Data, includeContentState: Bool = true) -> ProcessedCover? {
+        guard let image = decode(renderData),
+              let trimmed = trimmedModel(of: image),
+              let sharpImage = flattened(trimmed.cropped, box: trimmed.box, backdrop: trimmed.backdrop, maxDimension: sharpMaxDimension),
+              let sharp = jpeg(sharpImage, quality: 0.9)
+        else { return nil }
+
+        let contentState: Data?
+        if includeContentState {
+            let maxDim = max(sharpImage.width, sharpImage.height)
+            let stateImage = maxDim <= contentStateMaxDimension
+                ? sharpImage
+                : flattened(trimmed.cropped, box: trimmed.box, backdrop: trimmed.backdrop, maxDimension: contentStateMaxDimension)
+            contentState = stateImage.flatMap { encodeContentState($0, maxBytes: contentStateMaxBytes) }
+        } else {
+            contentState = nil
+        }
+
+        return ProcessedCover(
+            sharp: sharp,
+            backdropIsLight: trimmed.backdrop == backdropLight,
+            contentState: contentState
+        )
+    }
 
     /// The sharp copy the app saves for the Live Activity (JPEG; size isn't budgeted).
     public static func sharpCover(from data: Data) -> Data? {
@@ -59,19 +98,14 @@ public enum CoverImageProcessing {
         return jpeg(prepared, quality: 0.9)
     }
 
-    /// The fallback that rides in the content-state, as JPEG within `maxBytes`: quality starts at
-    /// 0.95 and steps down by 0.05, returning the first — i.e. best — encoding that fits, or nil
-    /// if even 0.1 doesn't (fails closed: a blown budget ends the whole activity). iOS can't encode
-    /// WebP, which the relay uses for the same budget, so this one is JPEG.
+    /// The fallback that rides in the content-state, as JPEG within `maxBytes`: binary searches
+    /// candidate qualities from 0.10 to 0.95 in 0.05 steps, returning the highest quality that fits,
+    /// or nil if even 0.10 doesn't (fails closed: a blown budget ends the whole activity). iOS can't
+    /// encode WebP, which the relay uses for the same budget, so this one is JPEG.
     public static func contentStateCover(from data: Data, maxDimension: Int = contentStateMaxDimension,
                                          maxBytes: Int = contentStateMaxBytes) -> Data? {
         guard let image = decode(data), let prepared = prepared(image, maxDimension: maxDimension) else { return nil }
-        var quality = 0.95
-        while quality >= 0.1 - 1e-9 {
-            if let encoded = jpeg(prepared, quality: quality), encoded.count <= maxBytes { return encoded }
-            quality -= 0.05
-        }
-        return nil
+        return encodeContentState(prepared, maxBytes: maxBytes)
     }
 
     /// The backdrop a prepared cover was flattened onto, for filling the rest of the tile it's
@@ -83,8 +117,10 @@ public enum CoverImageProcessing {
     /// behind a cover it shows, so it matches the Live Activity's. Dark for a light model, light
     /// for a dark one; dark when the render has no visible pixels.
     public static func backdrop(forRender image: CGImage) -> RGB {
-        guard let pixels = rgbaPixels(of: image), let box = pixels.opaqueBounds(threshold: trimAlphaThreshold) else { return backdropDark }
-        return backdrop(forModelIn: pixels, box: box)
+        withRGBAPixels(of: image) { pixels in
+            guard let box = pixels.opaqueBounds(threshold: trimAlphaThreshold) else { return backdropDark }
+            return backdrop(forModelIn: pixels, box: box)
+        } ?? backdropDark
     }
 
     private static func backdrop(forModelIn pixels: Pixels, box: CGRect) -> RGB {
@@ -92,9 +128,15 @@ public enum CoverImageProcessing {
     }
 
     public static func backdrop(of image: CGImage) -> RGB {
-        guard let pixels = rgbaPixels(of: image) else { return backdropDark }
         let width = image.width, height = image.height
-        let corners = [(0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)].map { pixels.pixel(x: $0.0, y: $0.1) }
+        guard width > 0, height > 0 else { return backdropDark }
+        let cornerCoords = [(0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)]
+        var corners: [RGB] = []
+        corners.reserveCapacity(4)
+        for (x, y) in cornerCoords {
+            guard let rgb = cornerPixel(of: image, x: x, y: y) else { return backdropDark }
+            corners.append(rgb)
+        }
         let matchTolerance = 3 * 14 * 14
         let darkMatches = corners.filter { distance($0, backdropDark) <= matchTolerance }.count
         let lightMatches = corners.filter { distance($0, backdropLight) <= matchTolerance }.count
@@ -109,12 +151,20 @@ public enum CoverImageProcessing {
     /// Trimmed to the model, scaled to fit `maxDimension` (never enlarged) and flattened onto the
     /// backdrop for its brightness. Nil when the image has no visible pixels at all.
     static func prepared(_ image: CGImage, maxDimension: Int) -> CGImage? {
-        guard let pixels = rgbaPixels(of: image), let box = pixels.opaqueBounds(threshold: trimAlphaThreshold),
-              let cropped = image.cropping(to: box)
-        else { return nil }
+        guard let trimmed = trimmedModel(of: image) else { return nil }
+        return flattened(trimmed.cropped, box: trimmed.box, backdrop: trimmed.backdrop, maxDimension: maxDimension)
+    }
 
-        let backdrop = backdrop(forModelIn: pixels, box: box)
+    private static func trimmedModel(of image: CGImage) -> (cropped: CGImage, box: CGRect, backdrop: RGB)? {
+        withRGBAPixels(of: image) { pixels in
+            guard let box = pixels.opaqueBounds(threshold: trimAlphaThreshold),
+                  let cropped = image.cropping(to: box)
+            else { return nil }
+            return (cropped, box, backdrop(forModelIn: pixels, box: box))
+        }
+    }
 
+    private static func flattened(_ cropped: CGImage, box: CGRect, backdrop: RGB, maxDimension: Int) -> CGImage? {
         let scale = min(Double(maxDimension) / Double(max(box.width, box.height)), 1)
         let width = max(Int((Double(box.width) * scale).rounded()), 1)
         let height = max(Int((Double(box.height) * scale).rounded()), 1)
@@ -129,9 +179,28 @@ public enum CoverImageProcessing {
         return context.makeImage()
     }
 
+    private static func encodeContentState(_ prepared: CGImage, maxBytes: Int) -> Data? {
+        var low = 0
+        var high = contentStateQualities.count - 1
+        var best: Data?
+        while low <= high {
+            let mid = (low + high) / 2
+            if let encoded = jpeg(prepared, quality: contentStateQualities[mid]), encoded.count <= maxBytes {
+                best = encoded
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return best
+    }
+
+    private static let contentStateQualities: [Double] = stride(from: 10, through: 95, by: 5).map { Double($0) / 100 }
+
     /// The image's top-right pixel, for tests to see the backdrop a notched model leaves there.
     static func topRightColor(of image: CGImage) -> RGB? {
-        rgbaPixels(of: image)?.pixel(x: image.width - 1, y: 0)
+        guard image.width > 0, image.height > 0 else { return nil }
+        return cornerPixel(of: image, x: image.width - 1, y: 0)
     }
 
     // MARK: - Helpers
@@ -161,8 +230,40 @@ public enum CoverImageProcessing {
         return dr * dr + dg * dg + db * db
     }
 
-    /// The image redrawn as RGBA (premultiplied; `Pixels.pixel` undoes that), row 0 at the top.
-    private static func rgbaPixels(of image: CGImage) -> Pixels? {
+    private static func cornerPixel(of image: CGImage, x: Int, y: Int) -> RGB? {
+        guard let cropped = image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)) else { return nil }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+        let drawn = pixel.withUnsafeMutableBytes { buffer -> Bool in
+            guard let baseAddress = buffer.baseAddress,
+                  let context = CGContext(
+                      data: baseAddress,
+                      width: 1,
+                      height: 1,
+                      bitsPerComponent: 8,
+                      bytesPerRow: 4,
+                      space: colorSpace,
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  )
+            else { return false }
+            context.clear(CGRect(x: 0, y: 0, width: 1, height: 1))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        guard drawn else { return nil }
+        return unpremultipliedRGB(r: pixel[0], g: pixel[1], b: pixel[2], a: pixel[3])
+    }
+
+    private static func unpremultipliedRGB(r: UInt8, g: UInt8, b: UInt8, a: UInt8) -> RGB {
+        let alpha = Double(a)
+        guard alpha > 0 else { return RGB(red: 0, green: 0, blue: 0) }
+        func unpremultiplied(_ value: UInt8) -> UInt8 { UInt8(min(Double(value) * 255 / alpha, 255).rounded()) }
+        return RGB(red: unpremultiplied(r), green: unpremultiplied(g), blue: unpremultiplied(b))
+    }
+
+    /// Scans the image's RGBA pixels directly from the `CGContext` buffer without copying into a
+    /// separate byte array.
+    private static func withRGBAPixels<T>(of image: CGImage, _ body: (Pixels) -> T?) -> T? {
         let width = image.width, height = image.height
         guard width > 0, height > 0,
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
@@ -172,12 +273,14 @@ public enum CoverImageProcessing {
         context.clear(CGRect(x: 0, y: 0, width: width, height: height))
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let data = context.data else { return nil }
-        let bytes = Array(UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: width * height * 4))
-        return Pixels(bytes: bytes, width: width, height: height)
+        return withExtendedLifetime(context) {
+            let bytes = data.assumingMemoryBound(to: UInt8.self)
+            return body(Pixels(bytes: bytes, width: width, height: height))
+        }
     }
 
     private struct Pixels {
-        let bytes: [UInt8]
+        let bytes: UnsafePointer<UInt8>
         let width: Int
         let height: Int
 
@@ -185,10 +288,7 @@ public enum CoverImageProcessing {
 
         func pixel(x: Int, y: Int) -> RGB {
             let offset = (y * width + x) * 4
-            let alpha = Double(bytes[offset + 3])
-            guard alpha > 0 else { return RGB(red: 0, green: 0, blue: 0) }
-            func unpremultiplied(_ value: UInt8) -> UInt8 { UInt8(min(Double(value) * 255 / alpha, 255).rounded()) }
-            return RGB(red: unpremultiplied(bytes[offset]), green: unpremultiplied(bytes[offset + 1]), blue: unpremultiplied(bytes[offset + 2]))
+            return unpremultipliedRGB(r: bytes[offset], g: bytes[offset + 1], b: bytes[offset + 2], a: bytes[offset + 3])
         }
 
         /// Bounding box of the pixels at least `threshold` opaque, in top-left image coordinates

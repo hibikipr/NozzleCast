@@ -13,8 +13,10 @@ struct LiveCameraStreamView: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var streamURL: URL?
     @State private var failed = false
+    @State private var reloadID = 0
 
     var body: some View {
         ZStack {
@@ -22,15 +24,29 @@ struct LiveCameraStreamView: View {
 
             if let streamURL {
                 MJPEGStreamWebView(url: streamURL)
+                    .id(StreamViewID(url: streamURL, reloadID: reloadID))
                     .ignoresSafeArea()
             } else if failed {
-                VStack(spacing: 10) {
+                VStack(spacing: 14) {
                     Image(systemName: "video.slash.fill")
                         .font(.system(size: 34))
                         .foregroundStyle(.white.opacity(0.4))
                     Text("Couldn't start the live camera.", comment: "Live camera failed to load")
                         .ncFont(size: 14, relativeTo: .subheadline)
                         .foregroundStyle(.white.opacity(0.6))
+                    Button {
+                        failed = false
+                        streamURL = nil
+                        reloadID += 1
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                            .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
+                            .foregroundStyle(NCColor.onAccent)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(NCColor.accent))
+                    }
+                    .buttonStyle(.plain)
                 }
             } else {
                 ProgressView().tint(.white)
@@ -49,18 +65,40 @@ struct LiveCameraStreamView: View {
             }
             .padding(16)
         }
-        .task {
+        .task(id: StreamTaskKey(isActive: scenePhase == .active, reloadID: reloadID)) {
+            guard scenePhase == .active else { return }
+            failed = false
+            streamURL = nil
             if let url = await store.liveStreamURL(printerID: printerID) {
+                guard !Task.isCancelled else { return }
                 streamURL = url
             } else {
+                guard !Task.isCancelled else { return }
                 failed = true
             }
         }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            if oldPhase == .active, newPhase != .active {
+                streamURL = nil
+                store.stopLiveStream(printerID: printerID)
+            }
+        }
         .onDisappear {
+            streamURL = nil
             store.stopLiveStream(printerID: printerID)
         }
         .statusBarHidden()
     }
+}
+
+private struct StreamTaskKey: Hashable {
+    var isActive: Bool
+    var reloadID: Int
+}
+
+private struct StreamViewID: Hashable {
+    var url: URL
+    var reloadID: Int
 }
 
 /// WebKit renders `multipart/x-mixed-replace` MJPEG natively in an `<img>`, which is exactly how
@@ -69,6 +107,8 @@ struct LiveCameraStreamView: View {
 /// stream (Bambuddy stops an unwatched stream a few seconds later on its own).
 private struct MJPEGStreamWebView: UIViewRepresentable {
     var url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -79,16 +119,27 @@ private struct MJPEGStreamWebView: UIViewRepresentable {
         webView.scrollView.backgroundColor = .black
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        context.coordinator.loadedURL = url
         webView.loadHTMLString(Self.page(for: url), baseURL: nil)
         return webView
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {}
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.loadedURL != url else { return }
+        context.coordinator.loadedURL = url
+        webView.stopLoading()
+        webView.loadHTMLString(Self.page(for: url), baseURL: nil)
+    }
 
-    static func dismantleUIView(_ webView: WKWebView, coordinator: ()) {
+    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
         // Explicitly drop the stream connection rather than waiting for deallocation.
+        coordinator.loadedURL = nil
         webView.stopLoading()
         webView.loadHTMLString("", baseURL: nil)
+    }
+
+    final class Coordinator {
+        var loadedURL: URL?
     }
 
     private static func page(for url: URL) -> String {

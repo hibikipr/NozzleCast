@@ -87,20 +87,20 @@ struct GlassCard: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(
+            .background {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(.ultraThinMaterial)
                     .environment(\.colorScheme, .dark)
-            )
-            .background(
+            }
+            .background {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(NCColor.cardFill)
-            )
-            .overlay(
+                    .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 8)
+            }
+            .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(NCColor.cardBorder, lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 8)
+            }
     }
 }
 

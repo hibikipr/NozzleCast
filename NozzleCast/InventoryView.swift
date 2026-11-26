@@ -40,6 +40,45 @@ struct InventoryView: View {
     /// filtering/searching over `store.spools` only runs when an actual input changed, not on
     /// every unrelated body evaluation of this view.
     @State private var filtered: [Spool] = []
+    /// Pre-resolved `[spool.id: caption]` map so `SpoolCard` / `SpoolListRow` don't subscribe
+    /// directly to `store.printers` inside every row's `body`.
+    @State private var locationCaptions: [String: String] = [:]
+
+    private func resolvedLocationCaption(for spool: Spool) -> String {
+        spool.locationCaption(
+            printerName: { store.printer($0)?.name },
+            amsUnitName: { store.printer($0)?.amsUnitName(amsIndex: $1) }
+        )
+    }
+
+    private func caption(for spool: Spool) -> String {
+        if let cached = locationCaptions[spool.id] { return cached }
+        guard selectedTab == .inventory else {
+            return spool.locationCaption(printerName: { _ in nil })
+        }
+        return resolvedLocationCaption(for: spool)
+    }
+
+    private func recomputeLocationCaptions() {
+        var map: [String: String] = [:]
+        map.reserveCapacity(filtered.count)
+        for spool in filtered {
+            map[spool.id] = resolvedLocationCaption(for: spool)
+        }
+        if map != locationCaptions {
+            locationCaptions = map
+        }
+    }
+
+    /// Lightweight key for printer/AMS display-name metadata; only reads `store.printers` when
+    /// the Inventory tab is active so 30s printer refreshes don't invalidate this view off-tab.
+    private var printerCaptionKey: [String] {
+        guard selectedTab == .inventory else { return [] }
+        return store.printers.map { printer in
+            let units = printer.amsUnits.map { "\($0.index):\($0.isHT)" }.joined(separator: ",")
+            return "\(printer.id)|\(printer.name)|\(units)"
+        }
+    }
 
     private func recomputeFiltered() {
         let source = filter == .archived ? store.archivedSpools : store.spools
@@ -65,6 +104,7 @@ struct InventoryView: View {
 
             return matchesFilter && matchesSearch
         }
+        recomputeLocationCaptions()
     }
 
     /// Whether a spool's free-form material belongs to a filter's material family: its first
@@ -193,7 +233,7 @@ struct InventoryView: View {
                                 LazyVGrid(columns: columns, spacing: 12) {
                                     ForEach(filtered) { spool in
                                         Button { edit(spool) } label: {
-                                            SpoolCard(spool: spool)
+                                            SpoolCard(spool: spool, locationCaption: caption(for: spool))
                                         }
                                         .buttonStyle(.plain)
                                         .contextMenu { spoolActions(spool) }
@@ -205,7 +245,7 @@ struct InventoryView: View {
                                 LazyVStack(spacing: 8) {
                                     ForEach(filtered) { spool in
                                         Button { edit(spool) } label: {
-                                            SpoolListRow(spool: spool)
+                                            SpoolListRow(spool: spool, locationCaption: caption(for: spool))
                                         }
                                         .buttonStyle(.plain)
                                         .contextMenu { spoolActions(spool) }
@@ -286,6 +326,12 @@ struct InventoryView: View {
         .onChange(of: store.archivedSpools) { recomputeFiltered() }
         .onChange(of: filter) { recomputeFiltered() }
         .onChange(of: searchText) { recomputeFiltered() }
+        .onChange(of: selectedTab) { _, tab in
+            if tab == .inventory { recomputeLocationCaptions() }
+        }
+        .onChange(of: printerCaptionKey) {
+            if selectedTab == .inventory { recomputeLocationCaptions() }
+        }
     }
 
     /// Long-press actions on a spool card or row. Archive is the everyday "done with this spool"
@@ -396,7 +442,7 @@ struct InventoryView: View {
 
 struct SpoolCard: View {
     var spool: Spool
-    @Environment(AppStore.self) private var store
+    var locationCaption: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -436,7 +482,7 @@ struct SpoolCard: View {
                 }
                 .padding(.top, 2)
 
-                Text(spool.locationCaption(printerName: store.printerName, amsUnitName: store.amsUnitName))
+                Text(locationCaption)
                     .ncFont(size: 10.5, relativeTo: .caption2)
                     .foregroundStyle(NCColor.textTertiary)
                     .padding(.top, 2)
@@ -470,9 +516,11 @@ struct SpoolCard: View {
 
 struct SpoolListRow: View {
     var spool: Spool
+    var locationCaption: String? = nil
     @Environment(AppStore.self) private var store
 
     var body: some View {
+        let resolvedCaption = locationCaption ?? spool.locationCaption(printerName: store.printerName, amsUnitName: store.amsUnitName)
         HStack(spacing: 12) {
             spool.swatch
                 .frame(width: 44, height: 44)
@@ -486,7 +534,7 @@ struct SpoolListRow: View {
                 Text(spool.materialWithSubtype)
                     .ncFont(size: 14, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
-                Text("\(spool.colorName) · \(spool.brand) · \(spool.locationCaption(printerName: store.printerName, amsUnitName: store.amsUnitName))")
+                Text("\(spool.colorName) · \(spool.brand) · \(resolvedCaption)")
                     .ncFont(size: 11.5, relativeTo: .caption)
                     .foregroundStyle(NCColor.textTertiary)
                     .lineLimit(1)

@@ -24,11 +24,12 @@ struct ShoppingListSheet: View {
     }
 
     var body: some View {
+        let suggestions = lowStockSuggestions
         NavigationStack {
             List {
-                if !lowStockSuggestions.isEmpty {
+                if !suggestions.isEmpty {
                     Section {
-                        ForEach(lowStockSuggestions) { spool in
+                        ForEach(suggestions) { spool in
                             LowStockSuggestionRow(spool: spool) { store.addToShoppingList(spool) }
                         }
                     } header: {
@@ -64,7 +65,7 @@ struct ShoppingListSheet: View {
                     }
                 }
 
-                if store.shoppingList.isEmpty && lowStockSuggestions.isEmpty {
+                if store.shoppingList.isEmpty && suggestions.isEmpty {
                     Section {
                         Text("Nothing to buy. Long-press a spool in your inventory to add its filament here.", comment: "Empty shopping list")
                             .ncFont(size: 13, relativeTo: .footnote)

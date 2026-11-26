@@ -12,8 +12,16 @@ enum ConnectionStatus: Equatable {
 
 @Observable
 final class AppStore {
-    var printers: [Printer] = []
-    var spools: [Spool] = []
+    var printers: [Printer] = [] {
+        didSet { rebuildPrintersIndex() }
+    }
+    private(set) var printersByID: [String: Printer] = [:]
+
+    var spools: [Spool] = [] {
+        didSet { rebuildSpoolsIndex() }
+    }
+    private(set) var spoolsByID: [String: Spool] = [:]
+
     /// Spools Bambuddy has archived (soft-deleted), kept separately so they stay out of every
     /// count, filter and AMS lookup that `spools` feeds, but can still be listed, restored or
     /// deleted from the inventory's Archived filter. Without this, the Undo bar was the only way
@@ -44,14 +52,38 @@ final class AppStore {
     /// retried on the next refresh instead of being stuck cacheless for the rest of the session.
     private var colorCatalog: [String: String] = [:]
 
-    init(config: BambuddyConfig) {
+    init(config: BambuddyConfig, autoConnect: Bool = true) {
         self.config = config
+        printThumbnailCache.countLimit = 120
+        printThumbnailCache.totalCostLimit = 30 * 1024 * 1024
+        coverCache.countLimit = 40
+        coverCache.totalCostLimit = 20 * 1024 * 1024
         if config.isConfigured {
             connectionStatus = .connecting
-            Task { await testConnectionAndRefresh() }
+            if autoConnect {
+                Task { await testConnectionAndRefresh() }
+            }
         } else {
             loadMockData()
         }
+    }
+
+    private func rebuildPrintersIndex() {
+        var index: [String: Printer] = [:]
+        index.reserveCapacity(printers.count)
+        for printer in printers where index[printer.id] == nil {
+            index[printer.id] = printer
+        }
+        printersByID = index
+    }
+
+    private func rebuildSpoolsIndex() {
+        var index: [String: Spool] = [:]
+        index.reserveCapacity(spools.count)
+        for spool in spools where index[spool.id] == nil {
+            index[spool.id] = spool
+        }
+        spoolsByID = index
     }
 
     var isLive: Bool { config.isConfigured && connectionStatusIsUsable }
@@ -121,13 +153,15 @@ final class AppStore {
     }
 
     /// Which inventory the server is serving — Bambuddy's own, or Spoolman through Bambuddy's
-    /// proxy. Re-detected at the start of every refresh, so flipping Bambuddy's Spoolman switch is
+    /// proxy. Re-detected periodically on refresh, so flipping Bambuddy's Spoolman switch is
     /// followed without any setting in the app; every spool and slot-assignment request goes
     /// wherever this says. Nothing in the UI changes with it beyond hiding the edit fields
     /// Spoolman can't store (`EditSpoolSheet`).
     private(set) var inventoryBackend: InventoryBackend = .builtIn
 
     func loadMockData() {
+        cachedMetadataServerKey = nil
+        resetServerScopedCaches()
         printers = MockData.makePrinters()
         // Demo spools carry a percentage rather than weights; at or under 20% counts as low.
         spools = MockData.makeSpools().map { spool in
@@ -141,11 +175,8 @@ final class AppStore {
         printHistoryTotal = printHistory.count
         isShowingDemoData = true
         resolvePendingDeepLink()
-        AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
-        WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
-        WidgetCenter.shared.reloadTimelines(ofKind: "FilamentStockWidget")
-        PrintStatusWidgetStore.save(Self.makePrintStatusSnapshots(printers: printers, history: printHistory))
-        WidgetCenter.shared.reloadTimelines(ofKind: "PrintStatusWidget")
+        saveAMSWidgetIfNeeded()
+        savePrintStatusWidget()
         if ScreenshotMocks.isActive {
             Task { await startScreenshotLiveActivities() }
         }
@@ -154,24 +185,29 @@ final class AppStore {
     /// Screenshot mode: Live Activities for the demo printers that are printing, with their mock
     /// covers, the way a refresh starts them for real ones.
     private func startScreenshotLiveActivities() async {
+        let includeContentState = !RelayConfigStore.isConfigured
         var coverImages: [String: Data] = [:]
         for printer in printers where printer.state == .printing {
             guard let render = ScreenshotMocks.coverData(job: printer.jobFileName) else { continue }
             let id = PrintActivityAttributes.normalizedID(printer.name)
-            if let sharp = CoverImageProcessing.sharpCover(from: render) {
-                LiveActivityCoverStore.save(sharp, printerID: id, jobName: printer.jobFileName)
+            if case .saved(let contentState) = await Self.processAndSaveCover(
+                render: render,
+                printerID: id,
+                jobName: printer.jobFileName,
+                includeContentState: includeContentState
+            ), let contentState {
+                coverImages[id] = contentState
             }
-            coverImages[id] = CoverImageProcessing.contentStateCover(from: render)
         }
         await PrintLiveActivityManager.shared.sync(printers: printers, coverImages: coverImages)
     }
 
-    func printer(_ id: String) -> Printer? { printers.first { $0.id == id } }
+    func printer(_ id: String) -> Printer? { printersByID[id] }
     func printerName(_ id: String) -> String? { printer(id)?.name }
     func amsUnitName(printerID: String, amsIndex: Int) -> String? { printer(printerID)?.amsUnitName(amsIndex: amsIndex) }
     func spool(_ id: String?) -> Spool? {
         guard let id else { return nil }
-        return spools.first { $0.id == id }
+        return spoolsByID[id]
     }
 
     // MARK: - Connection
@@ -241,6 +277,7 @@ final class AppStore {
     /// without Apple push keys can't push them, so `RelayAlertFeed` fetches them from it instead.
     func updateRelayAlertDelivery() async {
         guard let delivery = await RelayAlertClient.delivery() else { return }
+        lastRelayAlertDeliveryCheckAt = Date()
         let wasFeedActive = RelayAlertFeed.isActive
         PushSharedStore.relayAlertsPush = delivery.pushes
         let wasActive = PushSharedStore.relayAlertsActive
@@ -260,104 +297,315 @@ final class AppStore {
         if RelayAlertFeed.isActive && !wasFeedActive { await RelayAlertClient.syncMutes() }
     }
 
+    private enum RefreshMode: Int, Comparable {
+        case backgroundWake = 0
+        case standard = 1
+        case userForced = 2
+
+        static func < (lhs: RefreshMode, rhs: RefreshMode) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
     /// The refresh cycle currently running, if any, and whether another refresh was asked for
     /// while it ran. Refreshes are triggered from many independent places (the foreground poll,
     /// scenePhase, every action's follow-up, the detail menu, background wakes); running them
     /// concurrently multiplied the request fan-out and let an older response land after a newer
     /// one.
     private var refreshCycle: Task<Void, Never>?
-    private var refreshRequestedDuringRun = false
+    private var requestedRefreshMode: RefreshMode?
+    @ObservationIgnored private var activeRefreshWaiters: Set<UUID> = []
 
     /// Coalesces concurrent calls: a call made while a cycle is running doesn't start a second one
     /// in parallel — it flags that another pass is wanted and waits for the cycle, which runs
     /// exactly one more pass before finishing to pick up whatever changed in the meantime (e.g.
     /// the action that asked for it).
     ///
-    /// The follow-up pass lives *inside* the cycle task, and every caller awaits that one task
-    /// once. The first version kept the rerun loop in the first caller and had later callers wait
-    /// with `while let running = refreshTask { await running.value }` — but awaiting an
-    /// already-finished task returns without suspending, so a waiter spun on the main actor
-    /// forever and the first caller never got back on to clear `refreshTask`. Any two overlapping
-    /// refreshes (launch + foreground, poll + action) froze the whole UI.
+    /// Cancellation-aware: if every active waiter cancels (for instance when a `BGAppRefreshTask`
+    /// hits its expiration handler), the underlying `refreshCycle` task is cancelled cleanly.
     func refresh() async {
-        if let cycle = refreshCycle {
-            refreshRequestedDuringRun = true
-            await cycle.value
-            return
-        }
-        let cycle = Task {
-            repeat {
-                refreshRequestedDuringRun = false
-                await performRefresh()
-            } while refreshRequestedDuringRun
-            refreshCycle = nil
-        }
-        refreshCycle = cycle
-        await cycle.value
+        await runCoalescedRefresh(mode: .standard)
     }
 
-    private func performRefresh() async {
-        guard let unconfiguredClient = client else { return }
-        isRefreshing = true
-        defer { isRefreshing = false }
-        let checkedBackend = await unconfiguredClient.inventoryBackend()
-        if checkedBackend == nil { NSLog("NCDEBUG inventory backend check inconclusive; keeping %@", String(describing: inventoryBackend)) }
-        let backend = checkedBackend ?? inventoryBackend
-        if backend != inventoryBackend {
-            NSLog("NCDEBUG inventory backend is now %@", String(describing: backend))
-            inventoryBackend = backend
-            // Spool ids belong to the backend they came from; an Undo for a spool archived in
-            // the other one would point at the wrong record.
-            recentlyArchivedSpool = nil
-        }
-        // Immutable from here on: it's shared by the concurrent requests below.
-        let client = BambuddyAPIClient(baseURL: unconfiguredClient.baseURL, apiKey: unconfiguredClient.apiKey, inventory: backend)
-        do {
-            async let printerDTOs = client.printers()
-            async let spoolDTOs = client.spools()
-            async let assignmentDTOs = client.assignments()
-            async let locationDTOs = client.locations()
-            // Account-wide, optional, and not part of a printer's own status - fetched
-            // separately and allowed to fail without affecting anything else in the refresh.
-            async let obicoTask: BambuddyObicoStatusDTO? = try? client.obicoStatus()
-            // Same best-effort shape, but only actually fetched once — see colorCatalog's doc.
-            async let colorCatalogTask: [String: String]? = colorCatalog.isEmpty ? try? client.colorCatalogMap() : nil
-            // Best-effort too: reading settings needs a permission an API key may not have, and
-            // Bambuddy's own default (20%) is what applies then anyway.
-            async let lowStockThresholdTask: Double? = try? client.lowStockThreshold()
-            async let shoppingListTask: [BambuddyShoppingListItemDTO]? = try? client.shoppingList()
+    /// Lightweight refresh for headless background push wakes: refreshes printers, active spools,
+    /// slot assignments, Live Activity covers, Live Activities, and widgets while skipping
+    /// non-essential metadata endpoints (`shoppingList`, `archivedSpools`, `locations`,
+    /// `lowStockThreshold`, `maintenanceSummary`).
+    func refreshForBackgroundWake() async {
+        await runCoalescedRefresh(mode: .backgroundWake)
+    }
 
-            let (printerList, spoolList, assignmentList, locationList) = try await (printerDTOs, spoolDTOs, assignmentDTOs, locationDTOs)
-            let obico = await obicoTask
-            // `try?` above swallows a decoding-shape mismatch (a mismatched response schema)
-            // with zero signal beyond an empty result -- exactly what happened when this method
-            // decoded the wrong envelope shape and silently left every spool's color-name
-            // fallback dead for an entire release. Logged unconditionally (not just on failure)
-            // so "it's just always 0" is visible in the device log instead of invisible.
-            if let fetchedCatalog = await colorCatalogTask {
-                if !fetchedCatalog.isEmpty { colorCatalog = fetchedCatalog }
-                NSLog("NCDEBUG color catalog fetch: %d entries (cached total now %d)", fetchedCatalog.count, colorCatalog.count)
+    private func runCoalescedRefresh(mode: RefreshMode) async {
+        while !Task.isCancelled {
+            if let cycle = refreshCycle {
+                if cycle.isCancelled {
+                    await cycle.value
+                    continue
+                }
+                if let existing = requestedRefreshMode {
+                    requestedRefreshMode = max(existing, mode)
+                } else {
+                    requestedRefreshMode = mode
+                }
+                let waiterID = UUID()
+                activeRefreshWaiters.insert(waiterID)
+                defer { activeRefreshWaiters.remove(waiterID) }
+                await withTaskCancellationHandler {
+                    await cycle.value
+                } onCancel: {
+                    Task { @MainActor [weak self] in
+                        self?.cancelRefreshWaiter(waiterID)
+                    }
+                }
+                return
             }
 
-            locationNames = Dictionary(uniqueKeysWithValues: locationList.map { ($0.id, $0.name) })
-            if let threshold = await lowStockThresholdTask { lowStockThreshold = threshold }
-            if let items = await shoppingListTask { shoppingList = items.map(Self.mapShoppingListItem) }
-            let lowStockThreshold = self.lowStockThreshold
+            let waiterID = UUID()
+            activeRefreshWaiters.insert(waiterID)
+            defer { activeRefreshWaiters.remove(waiterID) }
+
+            let cycle = Task {
+                var currentMode = mode
+                repeat {
+                    requestedRefreshMode = nil
+                    await performRefresh(mode: currentMode)
+                    guard !Task.isCancelled, let nextMode = requestedRefreshMode else { break }
+                    currentMode = nextMode
+                } while true
+                refreshCycle = nil
+            }
+            refreshCycle = cycle
+
+            await withTaskCancellationHandler {
+                await cycle.value
+            } onCancel: {
+                Task { @MainActor [weak self] in
+                    self?.cancelRefreshWaiter(waiterID)
+                }
+            }
+            return
+        }
+    }
+
+    private func cancelRefreshWaiter(_ waiterID: UUID) {
+        activeRefreshWaiters.remove(waiterID)
+        if activeRefreshWaiters.isEmpty {
+            refreshCycle?.cancel()
+        }
+    }
+
+    private struct InventoryFetchResult: Sendable {
+        var backend: InventoryBackend
+        var checkedBackend: InventoryBackend?
+        var spools: [BambuddySpoolDTO]
+        var assignments: [BambuddyAssignmentDTO]
+    }
+
+    private enum LowStockThresholdFetchResult: Sendable {
+        case skipped
+        case fetched(Double?)
+        case clientError
+        case transientError
+    }
+
+    private struct PrinterPollOutput: Sendable {
+        var printerID: Int
+        var freshStatus: BambuddyStatusDTO?
+        var statusToUse: BambuddyStatusDTO?
+        var maintenance: BambuddyMaintenanceSummaryDTO?
+        var fetchedMaintenance: Bool
+        var smartPlug: (info: BambuddySmartPlugSummaryDTO, status: BambuddySmartPlugStatusDTO)?
+        var plugMappingUpdate: PlugMappingUpdate
+    }
+
+    private enum PlugMappingUpdate: Sendable {
+        case unchanged
+        case resolved(BambuddySmartPlugSummaryDTO?)
+        case invalidate
+    }
+
+    private enum CoverSyncOutcome: Sendable {
+        case alreadySaved
+        case saved(contentState: Data?)
+        case failed
+    }
+
+    nonisolated private static func fetchInventory(
+        client: BambuddyAPIClient,
+        currentBackend: InventoryBackend,
+        checkBackend: Bool,
+        includeArchived: Bool
+    ) async throws -> InventoryFetchResult {
+        let checkedBackend = checkBackend ? await client.inventoryBackend() : nil
+        let backend = checkedBackend ?? currentBackend
+        let scopedClient = BambuddyAPIClient(baseURL: client.baseURL, apiKey: client.apiKey, inventory: backend)
+        async let spools = scopedClient.spools(includeArchived: includeArchived)
+        async let assignments = scopedClient.assignments()
+        return try await InventoryFetchResult(
+            backend: backend,
+            checkedBackend: checkedBackend,
+            spools: spools,
+            assignments: assignments
+        )
+    }
+
+    nonisolated private static func fetchLocationsIfNeeded(
+        client: BambuddyAPIClient,
+        shouldFetch: Bool
+    ) async throws -> [BambuddyLocationDTO]? {
+        guard shouldFetch else { return nil }
+        return try await client.locations()
+    }
+
+    nonisolated private static func fetchLowStockThresholdIfNeeded(
+        client: BambuddyAPIClient,
+        shouldFetch: Bool
+    ) async -> LowStockThresholdFetchResult {
+        guard shouldFetch else { return .skipped }
+        do {
+            return .fetched(try await client.lowStockThreshold())
+        } catch {
+            return BambuddyAPIClient.serverAnswered(error) ? .clientError : .transientError
+        }
+    }
+
+    @concurrent
+    private static func hasSavedCover(printerID: String, jobName: String?) async -> Bool {
+        LiveActivityCoverStore.has(printerID: printerID, jobName: jobName)
+    }
+
+    @concurrent
+    private static func processAndSaveCover(
+        render: Data,
+        printerID: String,
+        jobName: String?,
+        includeContentState: Bool
+    ) async -> CoverSyncOutcome {
+        guard let processed = CoverImageProcessing.process(from: render, includeContentState: includeContentState) else {
+            return .failed
+        }
+        LiveActivityCoverStore.save(
+            processed.sharp,
+            printerID: printerID,
+            jobName: jobName,
+            backdropIsLight: processed.backdropIsLight
+        )
+        return .saved(contentState: processed.contentState)
+    }
+
+    private func performRefresh(mode: RefreshMode) async {
+        guard let unconfiguredClient = client else { return }
+        let serverKey = "\(unconfiguredClient.baseURL.absoluteString)|\(unconfiguredClient.apiKey)"
+        resetServerScopedCachesIfNeeded(serverKey: serverKey)
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        let now = Date()
+        let forceBypassTTL = (mode == .userForced)
+        let isBackgroundWake = (mode == .backgroundWake)
+
+        let shouldCheckBackend = forceBypassTTL
+            || lastInventoryBackendCheckAt == nil
+            || (!isBackgroundWake && now.timeIntervalSince(lastInventoryBackendCheckAt!) >= Self.inventoryBackendTTL)
+
+        let shouldFetchLocations = !isBackgroundWake && (
+            forceBypassTTL
+                || lastLocationsFetchAt == nil
+                || now.timeIntervalSince(lastLocationsFetchAt!) >= Self.locationsTTL
+        )
+
+        let shouldFetchLowStockThreshold = !isBackgroundWake && (
+            forceBypassTTL
+                || lastLowStockThresholdFetchAt == nil
+                || now.timeIntervalSince(lastLowStockThresholdFetchAt!) >= Self.lowStockThresholdTTL
+        )
+
+        let shouldFetchShoppingList = !isBackgroundWake
+        let includeArchivedSpools = !isBackgroundWake
+        let shouldFetchColorCatalog = colorCatalog.isEmpty
+        let currentBackend = inventoryBackend
+
+        do {
+            // Run `inventoryBackend()` concurrently with `printers()` (gating only `spools()` and
+            // `assignments()`), and run all slow metadata fetches in the same wave.
+            async let printerDTOs = unconfiguredClient.printers()
+            async let inventoryTask = Self.fetchInventory(
+                client: unconfiguredClient,
+                currentBackend: currentBackend,
+                checkBackend: shouldCheckBackend,
+                includeArchived: includeArchivedSpools
+            )
+            async let locationsTask = Self.fetchLocationsIfNeeded(client: unconfiguredClient, shouldFetch: shouldFetchLocations)
+            async let obicoTask: BambuddyObicoStatusDTO? = try? unconfiguredClient.obicoStatus()
+            async let colorCatalogTask: [String: String]? = shouldFetchColorCatalog ? (try? unconfiguredClient.colorCatalogMap()) : nil
+            async let lowStockThresholdTask = Self.fetchLowStockThresholdIfNeeded(client: unconfiguredClient, shouldFetch: shouldFetchLowStockThreshold)
+            async let shoppingListTask: [BambuddyShoppingListItemDTO]? = shouldFetchShoppingList ? (try? unconfiguredClient.shoppingList()) : nil
+
+            let printerList = try await printerDTOs
+            try Task.checkCancellation()
 
             let statusFetchedAt = Date()
             let fallbackStatuses = lastGoodStatuses
                 .filter { statusFetchedAt.timeIntervalSince($0.value.at) < Self.statusReuseWindow }
                 .mapValues(\.status)
-            let (extras, freshStatuses): ([Int: PrinterExtras], [Int: BambuddyStatusDTO]) = try await withThrowingTaskGroup(of: (Int, PrinterExtras, BambuddyStatusDTO?).self) { group in
-                for p in printerList {
-                    group.addTask {
-                        async let statusTask: BambuddyStatusDTO? = try? client.status(printerID: p.id)
-                        async let maintenanceTask: BambuddyMaintenanceSummaryDTO? = try? client.maintenanceSummary(printerID: p.id)
+            let cachedSmartPlugs = smartPlugMappingByPrinterID
+            let cachedSmartPlugTimes = smartPlugMappingFetchedAt
+            let cachedMaintenance = maintenanceByPrinterID
 
-                        var smartPlug: (BambuddySmartPlugSummaryDTO, BambuddySmartPlugStatusDTO)?
-                        if let plugInfo: BambuddySmartPlugSummaryDTO = try? await client.smartPlug(printerID: p.id) {
-                            if let plugStatus: BambuddySmartPlugStatusDTO = try? await client.smartPlugStatus(plugID: plugInfo.id) {
-                                smartPlug = (plugInfo, plugStatus)
+            let printerOutputs: [Int: PrinterPollOutput] = try await withThrowingTaskGroup(of: PrinterPollOutput.self) { group in
+                for p in printerList {
+                    let cachedMaint = cachedMaintenance[p.id]
+                    let reuseMaintenance: BambuddyMaintenanceSummaryDTO?
+                    if isBackgroundWake {
+                        reuseMaintenance = cachedMaint?.summary
+                    } else if !forceBypassTTL, let cachedMaint, statusFetchedAt.timeIntervalSince(cachedMaint.at) < Self.maintenanceTTL {
+                        reuseMaintenance = cachedMaint.summary
+                    } else {
+                        reuseMaintenance = nil
+                    }
+
+                    let cachedPlugEntry = cachedSmartPlugs[p.id]
+                    let plugFetchedAt = cachedSmartPlugTimes[p.id]
+                    let hasFreshPlugMapping = !forceBypassTTL
+                        && cachedPlugEntry != nil
+                        && plugFetchedAt.map { statusFetchedAt.timeIntervalSince($0) < Self.smartPlugMappingTTL } == true
+
+                    group.addTask {
+                        async let statusTask: BambuddyStatusDTO? = try? unconfiguredClient.status(printerID: p.id)
+
+                        async let maintenanceTask: BambuddyMaintenanceSummaryDTO? = reuseMaintenance == nil && !isBackgroundWake
+                            ? (try? unconfiguredClient.maintenanceSummary(printerID: p.id))
+                            : nil
+
+                        var smartPlug: (info: BambuddySmartPlugSummaryDTO, status: BambuddySmartPlugStatusDTO)?
+                        var plugMappingUpdate: PlugMappingUpdate = .unchanged
+
+                        if !isBackgroundWake {
+                            if hasFreshPlugMapping, let cachedSummaryOpt = cachedPlugEntry {
+                                if let plugInfo = cachedSummaryOpt {
+                                    do {
+                                        let plugStatus = try await unconfiguredClient.smartPlugStatus(plugID: plugInfo.id)
+                                        smartPlug = (plugInfo, plugStatus)
+                                    } catch BambuddyAPIError.http(404, _) {
+                                        plugMappingUpdate = .invalidate
+                                    } catch {
+                                        // Transient smart-plug error; keep the mapping.
+                                    }
+                                }
+                            } else {
+                                do {
+                                    let plugInfo = try await unconfiguredClient.smartPlug(printerID: p.id)
+                                    plugMappingUpdate = .resolved(plugInfo)
+                                    if let plugInfo,
+                                       let plugStatus = try? await unconfiguredClient.smartPlugStatus(plugID: plugInfo.id) {
+                                        smartPlug = (plugInfo, plugStatus)
+                                    }
+                                } catch BambuddyAPIError.http(404, _) {
+                                    plugMappingUpdate = .resolved(nil)
+                                } catch {
+                                    // Transient error; leave previous mapping unchanged.
+                                }
                             }
                         }
 
@@ -365,29 +613,171 @@ final class AppStore {
                         if fresh == nil, fallbackStatuses[p.id] != nil {
                             NSLog("NCDEBUG status for printer %d failed; showing its last one", p.id)
                         }
-                        let extras = PrinterExtras(status: fresh ?? fallbackStatuses[p.id], maintenance: await maintenanceTask, smartPlug: smartPlug)
-                        return (p.id, extras, fresh)
+                        let fetchedMaint = await maintenanceTask
+                        let maintenance = reuseMaintenance ?? fetchedMaint
+                        return PrinterPollOutput(
+                            printerID: p.id,
+                            freshStatus: fresh,
+                            statusToUse: fresh ?? fallbackStatuses[p.id],
+                            maintenance: maintenance,
+                            fetchedMaintenance: reuseMaintenance == nil && fetchedMaint != nil,
+                            smartPlug: smartPlug,
+                            plugMappingUpdate: plugMappingUpdate
+                        )
                     }
                 }
-                var result: [Int: PrinterExtras] = [:]
-                var fresh: [Int: BambuddyStatusDTO] = [:]
-                for try await (id, extras, status) in group {
-                    result[id] = extras
-                    if let status { fresh[id] = status }
+
+                var result: [Int: PrinterPollOutput] = [:]
+                result.reserveCapacity(printerList.count)
+                for try await output in group {
+                    result[output.printerID] = output
                 }
-                return (result, fresh)
+                return result
             }
-            for (id, status) in freshStatuses { lastGoodStatuses[id] = (status, statusFetchedAt) }
+
+            let inventoryResult = try await inventoryTask
+            let fetchedLocations = try await locationsTask
+            let obico = await obicoTask
+            let fetchedCatalog = await colorCatalogTask
+            let thresholdResult = await lowStockThresholdTask
+            let fetchedShoppingList = await shoppingListTask
+
+            try Task.checkCancellation()
+
+            if shouldCheckBackend {
+                if inventoryResult.checkedBackend == nil {
+                    NSLog("NCDEBUG inventory backend check inconclusive; keeping %@", String(describing: inventoryBackend))
+                } else {
+                    lastInventoryBackendCheckAt = now
+                }
+            }
+            let backend = inventoryResult.backend
+
+            if let fetchedCatalog {
+                if !fetchedCatalog.isEmpty { colorCatalog = fetchedCatalog }
+                NSLog("NCDEBUG color catalog fetch: %d entries (cached total now %d)", fetchedCatalog.count, colorCatalog.count)
+            }
+
+            let resolvedLocationNames: [Int: String]
+            if let fetchedLocations {
+                resolvedLocationNames = Dictionary(uniqueKeysWithValues: fetchedLocations.map { ($0.id, $0.name) })
+                lastLocationsFetchAt = now
+            } else {
+                resolvedLocationNames = locationNames
+            }
+
+            var resolvedThreshold = self.lowStockThreshold
+            switch thresholdResult {
+            case .skipped, .transientError:
+                break
+            case .clientError:
+                lastLowStockThresholdFetchAt = now
+            case .fetched(let threshold):
+                lastLowStockThresholdFetchAt = now
+                if let threshold { resolvedThreshold = threshold }
+            }
+
+            let resolvedShoppingList = fetchedShoppingList?.map(Self.mapShoppingListItem)
+
+            for (id, output) in printerOutputs {
+                if let fresh = output.freshStatus {
+                    lastGoodStatuses[id] = (fresh, statusFetchedAt)
+                }
+                if output.fetchedMaintenance, let maint = output.maintenance {
+                    maintenanceByPrinterID[id] = (maint, statusFetchedAt)
+                }
+                switch output.plugMappingUpdate {
+                case .unchanged:
+                    break
+                case .resolved(let summary):
+                    smartPlugMappingByPrinterID[id] = summary
+                    smartPlugMappingFetchedAt[id] = statusFetchedAt
+                case .invalidate:
+                    smartPlugMappingFetchedAt.removeValue(forKey: id)
+                }
+            }
 
             var assignmentsByPrinterSlot: [String: BambuddyAssignmentDTO] = [:]
             var assignmentsBySpoolID: [Int: BambuddyAssignmentDTO] = [:]
-            for a in assignmentList {
+            for a in inventoryResult.assignments {
                 assignmentsByPrinterSlot["\(a.printerId)-\(a.amsId)-\(a.trayId)"] = a
                 assignmentsBySpoolID[a.spoolId] = a
             }
 
-            printers = printerList.map { dto in
-                Self.mapPrinter(dto, extras: extras[dto.id] ?? PrinterExtras(status: nil, maintenance: nil, smartPlug: nil), obico: obico, assignmentsByPrinterSlot: assignmentsByPrinterSlot)
+            let mappedPrinters = printerList.map { dto in
+                let output = printerOutputs[dto.id]
+                let extras = PrinterExtras(
+                    status: output?.statusToUse,
+                    maintenance: output?.maintenance,
+                    smartPlug: output?.smartPlug
+                )
+                var printer = Self.mapPrinter(
+                    dto,
+                    extras: extras,
+                    obico: obico,
+                    assignmentsByPrinterSlot: assignmentsByPrinterSlot
+                )
+                if isBackgroundWake, printer.smartPlug == nil {
+                    printer.smartPlug = printersByID[printer.id]?.smartPlug
+                }
+                return printer
+            }
+
+            for printer in mappedPrinters {
+                if let job = printer.jobFileName, !job.isEmpty {
+                    lastSeenJobNameByPrinterID[printer.id] = job
+                }
+            }
+
+            let mappedSpools = inventoryResult.spools
+                .filter { $0.archivedAt == nil }
+                .map {
+                    Self.mapSpool(
+                        $0,
+                        assignment: assignmentsBySpoolID[$0.id],
+                        locationNames: resolvedLocationNames,
+                        colorCatalog: colorCatalog,
+                        lowStockThreshold: resolvedThreshold,
+                        backend: backend
+                    )
+                }
+
+            let mappedArchivedSpools: [Spool]? = includeArchivedSpools
+                ? inventoryResult.spools
+                    .filter { $0.archivedAt != nil }
+                    .sorted { ($0.archivedAt ?? "") > ($1.archivedAt ?? "") }
+                    .map {
+                        Self.mapSpool(
+                            $0,
+                            assignment: nil,
+                            locationNames: resolvedLocationNames,
+                            colorCatalog: colorCatalog,
+                            lowStockThreshold: resolvedThreshold,
+                            backend: backend
+                        )
+                    }
+                : nil
+
+            // Commit all refreshed domain state cohesively before awaiting cover images or alert feeds.
+            if backend != inventoryBackend {
+                NSLog("NCDEBUG inventory backend is now %@", String(describing: backend))
+                inventoryBackend = backend
+                // Spool ids belong to the backend they came from; an Undo for a spool archived in
+                // the other one would point at the wrong record.
+                recentlyArchivedSpool = nil
+            }
+            locationNames = resolvedLocationNames
+            lowStockThreshold = resolvedThreshold
+            if let resolvedShoppingList { shoppingList = resolvedShoppingList }
+            printers = mappedPrinters
+            spools = mappedSpools
+            if let mappedArchivedSpools { archivedSpools = mappedArchivedSpools }
+            isShowingDemoData = false
+            lastSuccessfulRefreshAt = Date()
+            // A failed refresh drops connectionStatus to .failed; a later successful one must lift
+            // it again, or the unreachable banner would outlive the outage.
+            if case .failed = connectionStatus, let username = lastConnectedUsername {
+                connectionStatus = .connected(username: username)
             }
             resolvePendingDeepLink()
 
@@ -395,76 +785,113 @@ final class AppStore {
             // until the sharp copy for this job is saved. That copy is what the Live Activity
             // shows (it can't fetch anything itself), and this runs on the relay's background
             // wakes too, so a relay-started activity gets it without the app being opened.
-            let printersNeedingCover = printers.filter {
-                $0.state == .printing
-                    && !LiveActivityCoverStore.has(printerID: PrintActivityAttributes.normalizedID($0.name), jobName: $0.jobFileName)
-                    && !coverFetchFailedJobs.contains(Self.coverJobKey($0))
+            let includeContentState = !RelayConfigStore.isConfigured
+            let printingCandidates = mappedPrinters.filter {
+                $0.state == .printing && !coverFetchFailedJobs.contains(Self.coverJobKey($0))
             }
             var coverImages: [String: Data] = [:]
-            if !printersNeedingCover.isEmpty {
-                await withTaskGroup(of: (String, Data?).self) { group in
-                    for printer in printersNeedingCover {
+            if !printingCandidates.isEmpty {
+                await withTaskGroup(of: (Int, CoverSyncOutcome).self) { group in
+                    for (index, printer) in printingCandidates.enumerated() {
+                        let printerID = printer.id
+                        let normalizedID = PrintActivityAttributes.normalizedID(printer.name)
+                        let jobName = printer.jobFileName
                         group.addTask {
+                            if await Self.hasSavedCover(printerID: normalizedID, jobName: jobName) {
+                                return (index, .alreadySaved)
+                            }
                             // The API call itself still needs Bambuddy's real numeric id; the Live
                             // Activity side is keyed by the name-based one.
-                            guard let render = await self.printerCoverData(printerID: printer.id) else { return (Self.coverJobKey(printer), nil) }
-                            if let sharp = CoverImageProcessing.sharpCover(from: render) {
-                                LiveActivityCoverStore.save(sharp, printerID: PrintActivityAttributes.normalizedID(printer.name), jobName: printer.jobFileName)
+                            guard let render = await self.printerCoverData(printerID: printerID) else {
+                                return (index, .failed)
                             }
-                            // The small copy for the content-state, the fallback for when the
-                            // saved one can't be read.
-                            return (Self.coverJobKey(printer), CoverImageProcessing.contentStateCover(from: render))
+                            let outcome = await Self.processAndSaveCover(
+                                render: render,
+                                printerID: normalizedID,
+                                jobName: jobName,
+                                includeContentState: includeContentState
+                            )
+                            return (index, outcome)
                         }
                     }
-                    for await (jobKey, data) in group {
-                        guard let printer = printersNeedingCover.first(where: { Self.coverJobKey($0) == jobKey }) else { continue }
-                        if let data {
-                            coverImages[PrintActivityAttributes.normalizedID(printer.name)] = data
-                        } else {
-                            // A job with no fetchable (or no budget-fitting) render won't grow one
-                            // later; retrying it cost a token mint and an image fetch per refresh.
-                            coverFetchFailedJobs.insert(jobKey)
+                    for await (index, outcome) in group {
+                        let printer = printingCandidates[index]
+                        switch outcome {
+                        case .alreadySaved:
+                            break
+                        case .saved(let contentState):
+                            if let contentState {
+                                coverImages[PrintActivityAttributes.normalizedID(printer.name)] = contentState
+                            }
+                        case .failed:
+                            // A job with no fetchable render won't grow one later; retrying it cost
+                            // an image fetch per refresh.
+                            coverFetchFailedJobs.insert(Self.coverJobKey(printer))
                         }
                     }
                 }
             }
+            guard !Task.isCancelled else { return }
             await PrintLiveActivityManager.shared.sync(printers: printers, coverImages: coverImages)
+            guard !Task.isCancelled else { return }
 
-            spools = spoolList
-                .filter { $0.archivedAt == nil }
-                .map { Self.mapSpool($0, assignment: assignmentsBySpoolID[$0.id], locationNames: locationNames, colorCatalog: colorCatalog, lowStockThreshold: lowStockThreshold, backend: backend) }
-            // Newest archive first — Bambuddy's `archived_at` is ISO 8601, so it sorts as a string.
-            archivedSpools = spoolList
-                .filter { $0.archivedAt != nil }
-                .sorted { ($0.archivedAt ?? "") > ($1.archivedAt ?? "") }
-                .map { Self.mapSpool($0, assignment: nil, locationNames: locationNames, colorCatalog: colorCatalog, lowStockThreshold: lowStockThreshold, backend: backend) }
+            saveAMSWidgetIfNeeded()
+            savePrintStatusWidget()
 
-            isShowingDemoData = false
-            lastSuccessfulRefreshAt = Date()
-            // No Firebase means no pushed alerts; read them from Bambuddy's log instead. Every
-            // refresh, so the foreground poll and the relay's background wakes both check.
+            // No Firebase means no pushed alerts; read them from Bambuddy's log instead.
             // A relay without Apple push keys keeps them for the app to fetch instead.
-            await updateRelayAlertDelivery()
+            if forceBypassTTL
+                || lastRelayAlertDeliveryCheckAt == nil
+                || Date().timeIntervalSince(lastRelayAlertDeliveryCheckAt!) >= Self.relayAlertDeliveryTTL {
+                await updateRelayAlertDelivery()
+            }
+            guard !Task.isCancelled else { return }
             if RelayAlertFeed.isActive {
                 await RelayAlertFeed.check()
             } else if BambuddyAlertFeed.isActive {
-                await BambuddyAlertFeed.check(using: client)
+                await BambuddyAlertFeed.check(using: unconfiguredClient)
             }
-            // A failed refresh drops connectionStatus to .failed; a later successful one must lift
-            // it again, or the unreachable banner would outlive the outage.
-            if case .failed = connectionStatus, let username = lastConnectedUsername {
-                connectionStatus = .connected(username: username)
-            }
-
-            AMSWidgetStore.save(Self.makeAMSSnapshots(printers: printers, spools: spools))
-            WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
-            WidgetCenter.shared.reloadTimelines(ofKind: "FilamentStockWidget")
-            savePrintStatusWidget()
         } catch {
+            if Self.isCancellation(error) {
+                NSLog("NCDEBUG Bambuddy refresh cancelled")
+                return
+            }
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             NSLog("NCDEBUG Bambuddy refresh failed: %@", msg)
             connectionStatus = .failed(msg)
         }
+    }
+
+    private func resetServerScopedCachesIfNeeded(serverKey: String) {
+        guard cachedMetadataServerKey != serverKey else { return }
+        resetServerScopedCaches()
+        cachedMetadataServerKey = serverKey
+    }
+
+    private func resetServerScopedCaches() {
+        cacheGeneration &+= 1
+        lastInventoryBackendCheckAt = nil
+        lastLowStockThresholdFetchAt = nil
+        lastLocationsFetchAt = nil
+        smartPlugMappingByPrinterID = [:]
+        smartPlugMappingFetchedAt = [:]
+        maintenanceByPrinterID = [:]
+        lastRelayAlertDeliveryCheckAt = nil
+        colorCatalog = [:]
+        locationNames = [:]
+        coverFetchFailedJobs = []
+        lastGoodStatuses = [:]
+        lastSeenJobNameByPrinterID = [:]
+        streamTokenTask = nil
+        streamTokenMintedAt = nil
+        coverCache.removeAllObjects()
+        inFlightDisplayCovers = [:]
+        inFlightCoverImages = [:]
+        printThumbnailCache.removeAllObjects()
+        inFlightPrintThumbnails = [:]
+        missingPrintThumbnails = [:]
+        lastSavedAMSSnapshots = nil
+        lastSavedPrintStatusSnapshots = nil
     }
 
     /// Whether an error only means the awaiting task was cancelled, not that a request failed.
@@ -489,6 +916,26 @@ final class AppStore {
     private var lastGoodStatuses: [Int: (status: BambuddyStatusDTO, at: Date)] = [:]
     private static let statusReuseWindow: TimeInterval = 120
     private var lastConnectedUsername: String?
+
+    private static let inventoryBackendTTL: TimeInterval = 5 * 60
+    private static let lowStockThresholdTTL: TimeInterval = 5 * 60
+    private static let locationsTTL: TimeInterval = 5 * 60
+    private static let smartPlugMappingTTL: TimeInterval = 5 * 60
+    private static let maintenanceTTL: TimeInterval = 3 * 60
+    private static let relayAlertDeliveryTTL: TimeInterval = 2 * 60
+
+    @ObservationIgnored private var cachedMetadataServerKey: String?
+    @ObservationIgnored private var cacheGeneration: UInt64 = 0
+    @ObservationIgnored private var lastInventoryBackendCheckAt: Date?
+    @ObservationIgnored private var lastLowStockThresholdFetchAt: Date?
+    @ObservationIgnored private var lastLocationsFetchAt: Date?
+    @ObservationIgnored private var smartPlugMappingByPrinterID: [Int: BambuddySmartPlugSummaryDTO?] = [:]
+    @ObservationIgnored private var smartPlugMappingFetchedAt: [Int: Date] = [:]
+    @ObservationIgnored private var maintenanceByPrinterID: [Int: (summary: BambuddyMaintenanceSummaryDTO, at: Date)] = [:]
+    @ObservationIgnored private var lastRelayAlertDeliveryCheckAt: Date?
+    @ObservationIgnored private var lastSeenJobNameByPrinterID: [String: String] = [:]
+    @ObservationIgnored private var lastSavedAMSSnapshots: [PrinterAMSSnapshot]?
+    @ObservationIgnored private var lastSavedPrintStatusSnapshots: [PrintStatusSnapshot]?
 
     // MARK: - Mapping
 
@@ -824,17 +1271,80 @@ final class AppStore {
         )
     }
 
+    nonisolated private static let iso8601FractionalStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    nonisolated private static let iso8601WholeStyle = Date.ISO8601FormatStyle()
+
     /// Parses Bambuddy's timestamps, e.g. `2026-09-30T00:29:03.208491` — ISO 8601 with
     /// microseconds and, as served by its Python backend, no UTC offset (these are UTC). Also
     /// accepts the same shape with an offset or without the fractional part, so a format change
     /// on Bambuddy's side degrades to "no date" rather than a crash.
     nonisolated static func parseBambuddyTimestamp(_ raw: String) -> Date? {
-        let withOffset = raw.range(of: #"(Z|[+-]\d{2}:?\d{2})$"#, options: .regularExpression) != nil
-        let normalized = withOffset ? raw : raw + "Z"
-        // Date.ISO8601FormatStyle handles at most millisecond fractions; trim the rest.
-        let trimmed = normalized.replacingOccurrences(of: #"(\.\d{3})\d+"#, with: "$1", options: .regularExpression)
-        let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
-        return (try? fractional.parse(trimmed)) ?? (try? Date.ISO8601FormatStyle().parse(trimmed))
+        guard !raw.isEmpty else { return nil }
+        let utf8 = raw.utf8
+        func isDigit(_ byte: UInt8) -> Bool { byte >= 48 && byte <= 57 }
+
+        // Detect trailing timezone: "Z", "+HHMM", "-HHMM", "+HH:MM", or "-HH:MM".
+        let hasTimezone: Bool = {
+            let count = utf8.count
+            let end = utf8.endIndex
+            let last = utf8[utf8.index(before: end)]
+            if last == UInt8(ascii: "Z") { return true }
+            if count >= 5 {
+                let signIdx = utf8.index(end, offsetBy: -5)
+                let sign = utf8[signIdx]
+                if (sign == UInt8(ascii: "+") || sign == UInt8(ascii: "-")),
+                   isDigit(utf8[utf8.index(after: signIdx)]),
+                   isDigit(utf8[utf8.index(signIdx, offsetBy: 2)]),
+                   isDigit(utf8[utf8.index(signIdx, offsetBy: 3)]),
+                   isDigit(last) {
+                    return true
+                }
+            }
+            if count >= 6 {
+                let signIdx = utf8.index(end, offsetBy: -6)
+                let sign = utf8[signIdx]
+                let colonIdx = utf8.index(end, offsetBy: -3)
+                if (sign == UInt8(ascii: "+") || sign == UInt8(ascii: "-")),
+                   utf8[colonIdx] == UInt8(ascii: ":"),
+                   isDigit(utf8[utf8.index(after: signIdx)]),
+                   isDigit(utf8[utf8.index(signIdx, offsetBy: 2)]),
+                   isDigit(utf8[utf8.index(after: colonIdx)]),
+                   isDigit(last) {
+                    return true
+                }
+            }
+            return false
+        }()
+
+        // Date.ISO8601FormatStyle handles at most millisecond fractions; trim extra digits.
+        var normalized = raw
+        var hasFraction = false
+        if let dotIndex = utf8.firstIndex(of: UInt8(ascii: ".")) {
+            hasFraction = true
+            let afterDot = utf8.index(after: dotIndex)
+            var digitEnd = afterDot
+            var digitCount = 0
+            var thirdDigitEnd = afterDot
+            while digitEnd < utf8.endIndex, isDigit(utf8[digitEnd]) {
+                digitEnd = utf8.index(after: digitEnd)
+                digitCount += 1
+                if digitCount == 3 { thirdDigitEnd = digitEnd }
+            }
+            if digitCount > 3 {
+                let prefix = String(raw[..<thirdDigitEnd])
+                let suffix = String(raw[digitEnd...])
+                normalized = hasTimezone ? (prefix + suffix) : (prefix + suffix + "Z")
+            } else if !hasTimezone {
+                normalized = raw + "Z"
+            }
+        } else if !hasTimezone {
+            normalized = raw + "Z"
+        }
+
+        if hasFraction, let date = try? iso8601FractionalStyle.parse(normalized) {
+            return date
+        }
+        return try? iso8601WholeStyle.parse(normalized)
     }
 
     /// One snapshot per printer for the Print Status widget. The content-state fields come from the same
@@ -1048,6 +1558,36 @@ final class AppStore {
     /// asked; false after an older relay refused it, so the app stops asking until it relaunches.
     @ObservationIgnored private var relayComposesCovers: Bool?
 
+    private final class CachedCover: NSObject {
+        let image: UIImage
+        let isComposed: Bool
+
+        init(image: UIImage, isComposed: Bool) {
+            self.image = image
+            self.isComposed = isComposed
+        }
+    }
+
+    @ObservationIgnored private let coverCache = NSCache<NSString, CachedCover>()
+    @ObservationIgnored private var inFlightDisplayCovers: [String: Task<(image: UIImage, isComposed: Bool)?, Never>] = [:]
+    @ObservationIgnored private var inFlightCoverImages: [String: Task<UIImage?, Never>] = [:]
+
+    nonisolated private static func imageMemoryCost(_ image: UIImage) -> Int {
+        if let cgImage = image.cgImage {
+            return cgImage.bytesPerRow * cgImage.height
+        }
+        return Int(image.size.width * image.scale * image.size.height * image.scale * 4)
+    }
+
+    private func coverCacheJobKey(for printerID: String) -> String {
+        if let job = printer(printerID)?.jobFileName, !job.isEmpty {
+            return job
+        }
+        let lastJob = lastSeenJobNameByPrinterID[printerID] ?? ""
+        let latestHistoryID = printHistory.first(where: { $0.printerID == printerID })?.id ?? ""
+        return "\(lastJob)#\(latestHistoryID)"
+    }
+
     /// The cover for showing in a tile `pixelSize` big: composed by the relay to fit it — trimmed
     /// to the model, on the backdrop for its brightness — when it can, else the raw render, for
     /// the caller to put on that backdrop itself (`isComposed` false).
@@ -1057,23 +1597,52 @@ final class AppStore {
            let image = ScreenshotMocks.fittedCover(job: printer(printerID)?.jobFileName ?? printHistory.first { $0.printerID == printerID }?.name, pixelSize: pixelSize) {
             return (image, false)
         }
-        var askRelayForRaw = true
-        if relayComposesCovers != false, let name = printers.first(where: { $0.id == printerID })?.name {
-            switch await RelayCoverClient.displayCoverImageData(printerName: name, pixelSize: pixelSize) {
-            case .image(let data):
-                relayComposesCovers = true
-                if let image = await ImageDownsampling.image(from: data, maxPixelSize: nil) { return (image, true) }
-            case .unsupported:
-                relayComposesCovers = false
-            case .unavailable:
-                // The relay has no cover either way (or no relay); straight to Bambuddy.
-                askRelayForRaw = false
-            }
+        let sizeKey = "\(Int(pixelSize.width.rounded()))x\(Int(pixelSize.height.rounded()))"
+        let rawKey = "\(printerID)|\(coverCacheJobKey(for: printerID))|\(sizeKey)"
+        let cacheKey = rawKey as NSString
+        if let cached = coverCache.object(forKey: cacheKey) {
+            return (cached.image, cached.isComposed)
         }
-        guard let data = await printerCoverData(printerID: printerID, maxPixelSize: max(pixelSize.width, pixelSize.height), askRelay: askRelayForRaw),
-              let image = await ImageDownsampling.image(from: data, maxPixelSize: max(pixelSize.width, pixelSize.height))
-        else { return nil }
-        return (image, false)
+        if let existingTask = inFlightDisplayCovers[rawKey] {
+            return await existingTask.value
+        }
+
+        let generation = cacheGeneration
+        let task = Task<(image: UIImage, isComposed: Bool)?, Never> { [weak self] in
+            guard let self else { return nil }
+            defer {
+                if self.cacheGeneration == generation {
+                    self.inFlightDisplayCovers.removeValue(forKey: rawKey)
+                }
+            }
+            var askRelayForRaw = true
+            if self.relayComposesCovers != false, let name = self.printer(printerID)?.name {
+                switch await RelayCoverClient.displayCoverImageData(printerName: name, pixelSize: pixelSize) {
+                case .image(let data):
+                    self.relayComposesCovers = true
+                    if let image = await ImageDownsampling.image(from: data, maxPixelSize: nil) {
+                        if self.cacheGeneration == generation {
+                            self.coverCache.setObject(CachedCover(image: image, isComposed: true), forKey: cacheKey, cost: Self.imageMemoryCost(image))
+                        }
+                        return (image, true)
+                    }
+                case .unsupported:
+                    self.relayComposesCovers = false
+                case .unavailable:
+                    // The relay has no cover either way (or no relay); straight to Bambuddy.
+                    askRelayForRaw = false
+                }
+            }
+            guard let data = await self.printerCoverData(printerID: printerID, maxPixelSize: max(pixelSize.width, pixelSize.height), askRelay: askRelayForRaw),
+                  let image = await ImageDownsampling.image(from: data, maxPixelSize: max(pixelSize.width, pixelSize.height))
+            else { return nil }
+            if self.cacheGeneration == generation {
+                self.coverCache.setObject(CachedCover(image: image, isComposed: false), forKey: cacheKey, cost: Self.imageMemoryCost(image))
+            }
+            return (image, false)
+        }
+        inFlightDisplayCovers[rawKey] = task
+        return await task.value
     }
 
     /// Fetches the rendered plate preview (angled 3D view) for a printer's current or most
@@ -1085,15 +1654,45 @@ final class AppStore {
     /// print or a job name with a "/", which Bambuddy can't (see `RelayCoverClient`). Bambuddy directly is
     /// the fallback.
     func printerCoverImage(printerID: String, maxPixelSize: CGFloat? = nil) async -> UIImage? {
-        guard let data = await printerCoverData(printerID: printerID, maxPixelSize: maxPixelSize) else { return nil }
-        return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
+        if isShowingDemoData {
+            guard let data = await printerCoverData(printerID: printerID, maxPixelSize: maxPixelSize) else { return nil }
+            return await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
+        }
+        let sizeKey = maxPixelSize.map { "max\(Int($0.rounded()))" } ?? "full"
+        let rawKey = "\(printerID)|\(coverCacheJobKey(for: printerID))|\(sizeKey)"
+        let cacheKey = rawKey as NSString
+        if let cached = coverCache.object(forKey: cacheKey) {
+            return cached.image
+        }
+        if let existingTask = inFlightCoverImages[rawKey] {
+            return await existingTask.value
+        }
+
+        let generation = cacheGeneration
+        let task = Task<UIImage?, Never> { [weak self] in
+            guard let self else { return nil }
+            defer {
+                if self.cacheGeneration == generation {
+                    self.inFlightCoverImages.removeValue(forKey: rawKey)
+                }
+            }
+            guard let data = await self.printerCoverData(printerID: printerID, maxPixelSize: maxPixelSize),
+                  let image = await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize)
+            else { return nil }
+            if self.cacheGeneration == generation {
+                self.coverCache.setObject(CachedCover(image: image, isComposed: false), forKey: cacheKey, cost: Self.imageMemoryCost(image))
+            }
+            return image
+        }
+        inFlightCoverImages[rawKey] = task
+        return await task.value
     }
 
     /// The cover render's encoded bytes as served (a PNG with its transparency intact), from the
     /// relay first and Bambuddy directly otherwise — see `printerCoverImage`.
     func printerCoverData(printerID: String, maxPixelSize: CGFloat? = nil, askRelay: Bool = true) async -> Data? {
         if isShowingDemoData, let data = ScreenshotMocks.coverData(job: printer(printerID)?.jobFileName) { return data }
-        if askRelay, let name = printers.first(where: { $0.id == printerID })?.name,
+        if askRelay, let name = printer(printerID)?.name,
            let data = await RelayCoverClient.coverImageData(printerName: name, maxPixelSize: maxPixelSize) {
             return data
         }
@@ -1130,8 +1729,8 @@ final class AppStore {
 
     func refreshFromUser() async {
         isUserRefreshing = true
-        await refresh()
-        isUserRefreshing = false
+        defer { isUserRefreshing = false }
+        await runCoalescedRefresh(mode: .userForced)
     }
 
     // MARK: - Actions
@@ -1142,12 +1741,13 @@ final class AppStore {
     /// - Configured but not currently connected: nothing changes locally (an optimistic change
     ///   would just be a lie nothing ever sends) and the user is told why.
     /// - Otherwise: `localChange` is applied optimistically, the request is sent, and on success
-    ///   the state is refreshed if `refreshAfter`. On failure the error goes to `actionError` —
-    ///   never `connectionStatus`, see its doc — and a refresh restores the server's real state
-    ///   in place of the optimistic change.
+    ///   the state is refreshed if `refreshAfter`. On failure `onFailure` runs, the error goes to
+    ///   `actionError` — never `connectionStatus`, see its doc — and a refresh restores the
+    ///   server's real state in place of the optimistic change.
     private func performAction(
         refreshAfter: Bool = true,
         localChange: () -> Void = {},
+        onFailure: @escaping () -> Void = {},
         _ operation: @escaping (BambuddyAPIClient) async throws -> Void
     ) {
         if isShowingDemoData {
@@ -1164,6 +1764,7 @@ final class AppStore {
                 try await operation(client)
                 if refreshAfter { await refresh() }
             } catch {
+                onFailure()
                 actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 await refresh()
             }
@@ -1228,6 +1829,7 @@ final class AppStore {
             self.printers[idx].jobFileName = nil
             self.printers[idx].progress = nil
             self.printers[idx].etaMinutesRemaining = nil
+            self.printers[idx].estimatedFinish = nil
         }) { client in
             try await client.stop(printerID: bbID)
             try await Self.confirmPrinterReaches(client: client, printerID: bbID) { state in
@@ -1544,6 +2146,10 @@ final class AppStore {
             archived.archivedDateIsKnown = self.inventoryBackend == .builtIn
             self.archivedSpools.insert(archived, at: 0)
             self.recentlyArchivedSpool = spool
+        }, onFailure: {
+            if self.recentlyArchivedSpool?.id == spoolID {
+                self.recentlyArchivedSpool = nil
+            }
         }) { client in
             try await client.archiveSpool(spoolID: bbID)
         }
@@ -1599,6 +2205,7 @@ final class AppStore {
     static let printHistoryPageSize = 40
 
     @ObservationIgnored private let printThumbnailCache = NSCache<NSString, UIImage>()
+    @ObservationIgnored private var inFlightPrintThumbnails: [String: Task<UIImage?, Never>] = [:]
     /// Thumbnails the server didn't have (a print archived without one 404s), and when, so a
     /// scrolling list doesn't ask again every time a row reappears. Only for a minute: a print
     /// that has only just finished gets its thumbnail a little after it shows up in the log.
@@ -1630,12 +2237,101 @@ final class AppStore {
         }
     }
 
-    /// Saves the Print Status widget's snapshots and reloads it. The previous save fills in a
-    /// printer's last print when the history isn't loaded (a refresh before `loadPrints`, or a
-    /// background wake that never loads it), rather than the widget dropping to a bare "Idle".
+    private func saveAMSWidgetIfNeeded() {
+        let next = Self.makeAMSSnapshots(printers: printers, spools: spools)
+        let previous = lastSavedAMSSnapshots ?? AMSWidgetStore.load()
+        if AMSWidgetStore.lastSavedAt != nil, Self.amsSnapshotsEqual(previous, next) {
+            lastSavedAMSSnapshots = previous
+            return
+        }
+        lastSavedAMSSnapshots = next
+        AMSWidgetStore.save(next)
+        WidgetCenter.shared.reloadTimelines(ofKind: "AMSWidget")
+        WidgetCenter.shared.reloadTimelines(ofKind: "FilamentStockWidget")
+    }
+
+    /// Saves the Print Status widget's snapshots and reloads it when snapshot content changed.
+    /// The previous save fills in a printer's last print when the history isn't loaded (a refresh
+    /// before `loadPrints`, or a background wake that never loads it), rather than the widget
+    /// dropping to a bare "Idle".
     private func savePrintStatusWidget() {
-        PrintStatusWidgetStore.save(Self.makePrintStatusSnapshots(printers: printers, history: printHistory, previous: PrintStatusWidgetStore.load()))
+        let previous = lastSavedPrintStatusSnapshots ?? PrintStatusWidgetStore.load()
+        let next = Self.makePrintStatusSnapshots(printers: printers, history: printHistory, previous: previous)
+        if PrintStatusWidgetStore.lastSavedAt != nil, Self.printStatusSnapshotsEquivalent(previous, next) {
+            lastSavedPrintStatusSnapshots = previous
+            return
+        }
+        lastSavedPrintStatusSnapshots = next
+        PrintStatusWidgetStore.save(next)
         WidgetCenter.shared.reloadTimelines(ofKind: "PrintStatusWidget")
+    }
+
+    nonisolated private static func amsSnapshotsEqual(_ lhs: [PrinterAMSSnapshot], _ rhs: [PrinterAMSSnapshot]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        for (a, b) in zip(lhs, rhs) {
+            guard a.printerName == b.printerName,
+                  a.stateLabel == b.stateLabel,
+                  a.isPrinting == b.isPrinting,
+                  a.amsUnits.count == b.amsUnits.count
+            else { return false }
+            for (unitA, unitB) in zip(a.amsUnits, b.amsUnits) {
+                guard unitA.displayName == unitB.displayName,
+                      unitA.isHighTemp == unitB.isHighTemp,
+                      unitA.trays.count == unitB.trays.count
+                else { return false }
+                for (trayA, trayB) in zip(unitA.trays, unitB.trays) {
+                    guard trayA.colorHex == trayB.colorHex,
+                          trayA.colorAlpha == trayB.colorAlpha,
+                          trayA.extraColorHexes == trayB.extraColorHexes,
+                          trayA.subtype == trayB.subtype,
+                          trayA.effectType == trayB.effectType,
+                          trayA.materialLabel == trayB.materialLabel,
+                          trayA.isFeeding == trayB.isFeeding,
+                          trayA.colorName == trayB.colorName,
+                          trayA.remainingGrams == trayB.remainingGrams,
+                          trayA.remainingFraction == trayB.remainingFraction,
+                          trayA.isLow == trayB.isLow
+                    else { return false }
+                }
+            }
+        }
+        return true
+    }
+
+    nonisolated private static func printStatusSnapshotsEquivalent(_ lhs: [PrintStatusSnapshot], _ rhs: [PrintStatusSnapshot]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        for (a, b) in zip(lhs, rhs) {
+            guard a.printerID == b.printerID,
+                  a.printerName == b.printerName,
+                  a.stateLabel == b.stateLabel,
+                  a.isActive == b.isActive,
+                  a.progress == b.progress,
+                  a.jobName == b.jobName,
+                  a.currentLayer == b.currentLayer,
+                  a.totalLayers == b.totalLayers,
+                  a.nozzleTempC == b.nozzleTempC,
+                  a.rightNozzleTempC == b.rightNozzleTempC,
+                  a.bedTempC == b.bedTempC,
+                  a.issueSeverity == b.issueSeverity,
+                  a.issueCount == b.issueCount,
+                  a.stageDetail == b.stageDetail,
+                  a.lastJobName == b.lastJobName,
+                  a.finishedAt == b.finishedAt,
+                  a.lastOutcome == b.lastOutcome
+            else { return false }
+            if a.isActive {
+                if abs(a.startedAt.timeIntervalSince(b.startedAt)) >= 45 { return false }
+                switch (a.estimatedEndAt, b.estimatedEndAt) {
+                case (nil, nil):
+                    break
+                case let (ea?, eb?):
+                    if abs(ea.timeIntervalSince(eb)) >= 45 { return false }
+                default:
+                    return false
+                }
+            }
+        }
+        return true
     }
 
     func loadMorePrintHistory() async {
@@ -1826,22 +2522,46 @@ final class AppStore {
         }
     }
 
-    private func cachedPrintThumbnail(key: String, maxPixelSize: CGFloat, _ fetch: (BambuddyAPIClient) async throws -> Data) async -> UIImage? {
-        let cacheKey = "\(key)@\(Int(maxPixelSize))" as NSString
+    private func cachedPrintThumbnail(
+        key: String,
+        maxPixelSize: CGFloat,
+        _ fetch: @escaping (BambuddyAPIClient) async throws -> Data
+    ) async -> UIImage? {
+        let rawKey = "\(key)@\(Int(maxPixelSize))"
+        let cacheKey = rawKey as NSString
         if let cached = printThumbnailCache.object(forKey: cacheKey) { return cached }
         if let missedAt = missingPrintThumbnails[key], Date().timeIntervalSince(missedAt) < Self.missingPrintThumbnailRetryInterval { return nil }
-        guard let client else { return nil }
-        do {
-            let data = try await fetch(client)
-            guard let image = await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize) else { return nil }
-            printThumbnailCache.setObject(image, forKey: cacheKey)
-            return image
-        } catch BambuddyAPIError.http(404, _) {
-            missingPrintThumbnails[key] = Date()
-            return nil
-        } catch {
-            return nil
+        if let existingTask = inFlightPrintThumbnails[rawKey] {
+            return await existingTask.value
         }
+        guard let client else { return nil }
+
+        let generation = cacheGeneration
+        let task = Task<UIImage?, Never> { [weak self] in
+            guard let self else { return nil }
+            defer {
+                if self.cacheGeneration == generation {
+                    self.inFlightPrintThumbnails.removeValue(forKey: rawKey)
+                }
+            }
+            do {
+                let data = try await fetch(client)
+                guard let image = await ImageDownsampling.image(from: data, maxPixelSize: maxPixelSize) else { return nil }
+                if self.cacheGeneration == generation {
+                    self.printThumbnailCache.setObject(image, forKey: cacheKey, cost: Self.imageMemoryCost(image))
+                }
+                return image
+            } catch BambuddyAPIError.http(404, _) {
+                if self.cacheGeneration == generation {
+                    self.missingPrintThumbnails[key] = Date()
+                }
+                return nil
+            } catch {
+                return nil
+            }
+        }
+        inFlightPrintThumbnails[rawKey] = task
+        return await task.value
     }
 
     private func mapQueue(_ dtos: [BambuddyQueueItemDTO]) -> [QueuedPrint] {
@@ -2072,6 +2792,9 @@ final class AppStore {
     /// task's history; the refresh afterwards picks up its new due date.
     func performMaintenance(printerID: String, taskID: Int) {
         guard let printerIndex = printers.firstIndex(where: { $0.id == printerID }) else { return }
+        if let bbID = bambuddyID(printerID) {
+            maintenanceByPrinterID.removeValue(forKey: bbID)
+        }
         performAction(localChange: {
             guard let taskIndex = self.printers[printerIndex].maintenanceTasks.firstIndex(where: { $0.id == taskID }) else { return }
             var task = self.printers[printerIndex].maintenanceTasks[taskIndex]
