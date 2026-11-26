@@ -88,9 +88,9 @@ final class SpoolmanDBCommunityClient {
             }
         }
         loadTask = task
+        defer { if loadTask == task { loadTask = nil } }
         let result = try await task.value
         cache = result
-        loadTask = nil
         return result
     }
 

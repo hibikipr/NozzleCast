@@ -66,6 +66,7 @@ struct MonitorView: View {
                         PrinterDetailView(printerID: selectedPrinterID, hidesTabBar: false, onBack: {
                             columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
                         }, backIcon: "sidebar.left")
+                        .id(selectedPrinterID)
                     } else {
                         // In portrait the list slides over the detail pane instead of sitting
                         // beside it, and this centered placeholder pokes out past the overlay's
@@ -246,6 +247,7 @@ struct MonitorView: View {
 
     @ViewBuilder
     private func printerRow(_ printer: Printer) -> some View {
+        let isMonitorLive = (selectedTab == .monitor) && !showNotifications && (horizontalSizeClass == .regular || path.isEmpty)
         let card = PrinterCard(
             id: printer.id,
             name: printer.name,
@@ -265,7 +267,8 @@ struct MonitorView: View {
             lastPrint: lastPrint(for: printer.id),
             allTrays: printer.allTrays,
             imageAssetName: printer.imageAssetName,
-            layout: cardLayout
+            layout: cardLayout,
+            isCameraPaused: !isMonitorLive
         )
         if horizontalSizeClass == .compact {
             NavigationLink(value: printer.id) { card }
@@ -321,6 +324,7 @@ struct PrinterCard: View {
     var allTrays: [AMSTray]
     var imageAssetName: String?
     var layout: PrinterCardLayout = .classic
+    var isCameraPaused: Bool = false
     @Environment(AppStore.self) private var store
     @State private var isCameraLive = false
     /// Picture in picture: whether a tap has brought the camera or cover up to the big tile.
@@ -544,7 +548,7 @@ struct PrinterCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(printerBackdrop)
             if state == .printing {
-                LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: Self.thumbnailSize * 3, coverFallbackJobIdentity: jobFileName ?? id, printerArtAssetName: imageAssetName, isShowingLiveFrame: $isCameraLive)
+                LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: Self.thumbnailSize * 3, coverFallbackJobIdentity: jobFileName ?? id, printerArtAssetName: imageAssetName, isShowingLiveFrame: $isCameraLive, isPaused: isCameraPaused)
                     .font(.system(size: 24))
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -563,7 +567,7 @@ struct PrinterCard: View {
                 .strokeBorder(NCColor.printerWellBorder, lineWidth: 1)
         )
         .overlay(alignment: .topLeading) {
-            if isCameraLive {
+            if showsLiveFrame {
                 LiveBadge().padding(5)
             }
         }
@@ -592,7 +596,7 @@ struct PrinterCard: View {
     private func media(maxPixelSize: CGFloat) -> some View {
         Group {
             if state == .printing {
-                LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: maxPixelSize, coverFallbackJobIdentity: jobFileName ?? id, isShowingLiveFrame: $isCameraLive)
+                LiveCameraView(printerID: id, pollInterval: 5, maxPixelSize: maxPixelSize, coverFallbackJobIdentity: jobFileName ?? id, isShowingLiveFrame: $isCameraLive, isPaused: isCameraPaused)
             } else {
                 PrinterCoverImage(printerID: id, jobIdentity: jobFileName ?? lastPrint?.name ?? id, maxPixelSize: maxPixelSize, fallbackRecord: hasJob ? nil : lastPrint?.record)
             }

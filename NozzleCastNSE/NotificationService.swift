@@ -1,7 +1,15 @@
 import UserNotifications
 import ActivityKit
 import UIKit
+import ImageIO
+import UniformTypeIdentifiers
+import os
 import NozzleCastShared
+
+private struct UncheckedSendable<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
+}
 
 /// Bambuddy's self-hosted ntfy server relays through the user's shared Firebase project as a
 /// data-only push (no `aps.alert`), so iOS won't display anything unless something here builds
@@ -12,23 +20,43 @@ import NozzleCastShared
 /// visible notification. (It used to push a thumbnail of it into the Live Activity too; that
 /// shows the print's cover only now.)
 final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
-    private var contentHandler: ((UNNotificationContent) -> Void)?
-    private var bestAttemptContent: UNMutableNotificationContent?
+    private struct State: @unchecked Sendable {
+        var contentHandler: ((UNNotificationContent) -> Void)?
+        var bestAttemptContent: UNMutableNotificationContent?
+        var inFlightTask: Task<Void, Never>?
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    private static let maxImageBytes = 8 * 1024 * 1024
+
+    static let downloadSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 12
+        return URLSession(configuration: config)
+    }()
 
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
-        self.contentHandler = contentHandler
         let content = (request.content.mutableCopy() as? UNMutableNotificationContent) ?? UNMutableNotificationContent()
-        bestAttemptContent = content
+        state.withLockUnchecked { state in
+            state.contentHandler = contentHandler
+            state.bestAttemptContent = content
+            state.inFlightTask = nil
+        }
 
         NSLog("NCDEBUG NSE didReceive userInfo=%@", request.content.userInfo)
+
+        let boxedContent = UncheckedSendable(content)
 
         // An alert the relay forwarded from Bambuddy's webhook: title and body are already in it.
         if let relayAlert = request.content.userInfo["nozzlecast"] as? [String: Any] {
             let alertID = relayAlert["alertID"] as? String
             let photoID = relayAlert["photoID"] as? String
-            Task {
-                guard let content = bestAttemptContent else { return }
-                await handleRelayAlert(alertID: alertID, photoID: photoID, content: content)
+            startInFlightTask {
+                await self.handleRelayAlert(alertID: alertID, photoID: photoID, content: boxedContent.value)
             }
             return
         }
@@ -38,30 +66,62 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             return
         }
 
-        Task {
-            guard let content = bestAttemptContent else { return }
+        startInFlightTask {
             switch message.event {
             case "poll_request":
-                await handlePollRequest(message, content: content)
+                await self.handlePollRequest(message, content: boxedContent.value)
+            case "message":
+                await self.handleMessage(message, content: boxedContent.value)
             default:
-                await handleMessage(message, content: content)
+                self.deliver(boxedContent.value)
             }
         }
     }
 
     override func serviceExtensionTimeWillExpire() {
-        if let bestAttemptContent {
-            deliver(bestAttemptContent)
+        let (handler, fallbackContent, task) = state.withLockUnchecked { state -> (((UNNotificationContent) -> Void)?, UNNotificationContent?, Task<Void, Never>?) in
+            let handler = state.contentHandler
+            state.contentHandler = nil
+            let fallbackContent = (state.bestAttemptContent?.copy() as? UNNotificationContent) ?? state.bestAttemptContent
+            state.bestAttemptContent = nil
+            let task = state.inFlightTask
+            state.inFlightTask = nil
+            return (handler, fallbackContent, task)
+        }
+        task?.cancel()
+        if let handler, let fallbackContent {
+            handler(fallbackContent)
+        }
+    }
+
+    private func startInFlightTask(_ operation: @escaping @Sendable () async -> Void) {
+        let task = Task {
+            guard !Task.isCancelled else { return }
+            await operation()
+        }
+        state.withLock { state in
+            if state.contentHandler != nil {
+                state.inFlightTask = task
+            } else {
+                task.cancel()
+            }
         }
     }
 
     private func deliver(_ content: UNNotificationContent) {
-        contentHandler?(content)
-        contentHandler = nil
+        let handler = state.withLockUnchecked { state -> ((UNNotificationContent) -> Void)? in
+            let handler = state.contentHandler
+            state.contentHandler = nil
+            state.bestAttemptContent = nil
+            state.inFlightTask = nil
+            return handler
+        }
+        handler?(content)
     }
 
     private func handleMessage(_ message: NtfyPushMessage, content: UNMutableNotificationContent) async {
         await apply(message, to: content)
+        guard !Task.isCancelled else { return }
         deliver(content)
     }
 
@@ -69,10 +129,13 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         guard let config = PushSharedStore.loadNtfyConfig(),
               let polled = await NtfyPoller.poll(baseUrl: config.server, topic: message.topic, messageID: message.pollID ?? message.id, authToken: config.authToken)
         else {
+            guard !Task.isCancelled else { return }
             deliver(content)
             return
         }
+        guard !Task.isCancelled else { return }
         await apply(polled, to: content)
+        guard !Task.isCancelled else { return }
         deliver(content)
     }
 
@@ -113,16 +176,17 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         ))
         content.badge = NSNumber(value: PushSharedStore.unreadCount())
 
-        if let attachmentURL = message.attachmentURL, let imageData = await Self.downloadImage(attachmentURL) {
-            if let localURL = Self.writeTempFile(imageData, id: message.id),
-               let attachment = try? UNNotificationAttachment(identifier: message.id, url: localURL) {
+        if let attachmentURL = message.attachmentURL, let image = await Self.downloadImage(attachmentURL) {
+            guard !Task.isCancelled else { return }
+            if let attachment = Self.makeAttachment(from: image.data, id: message.id, mimeType: image.mimeType) {
                 content.attachments = [attachment]
             }
             // Same full-size download used for the banner attachment, kept alongside the history
             // entry so the in-app Notifications list can show it too (that list reads the shared
             // history log directly, not the system's notification center).
-            PushSharedStore.saveHistoryImage(imageData, id: message.id)
+            PushSharedStore.saveHistoryImage(image.data, id: message.id)
         }
+        guard !Task.isCancelled else { return }
         await Self.updateLiveActivity(matching: message)
     }
 
@@ -152,46 +216,121 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             return
         }
         let id = alertID ?? UUID().uuidString
-        if let photoID, let imageData = await Self.downloadRelayPhoto(photoID) {
-            if let localURL = Self.writeTempFile(imageData, id: id),
-               let attachment = try? UNNotificationAttachment(identifier: id, url: localURL) {
-                content.attachments = [attachment]
-            }
-            PushSharedStore.saveHistoryImage(imageData, id: id)
-        }
+        // Logged before the photo: a slow download can outlast the extension's time, and the
+        // alert should still reach the in-app list and the badge.
         PushSharedStore.appendHistory(.init(id: id, title: content.title, body: content.body, receivedAt: Date(), isRead: false))
         content.badge = NSNumber(value: PushSharedStore.unreadCount())
+
+        if let photoID, let image = await Self.downloadRelayPhoto(photoID) {
+            guard !Task.isCancelled else { return }
+            if let attachment = Self.makeAttachment(from: image.data, id: id, mimeType: image.mimeType) {
+                content.attachments = [attachment]
+            }
+            PushSharedStore.saveHistoryImage(image.data, id: id)
+        }
+        guard !Task.isCancelled else { return }
         deliver(content)
     }
 
-    private static func downloadRelayPhoto(_ photoID: String) async -> Data? {
+    private static func downloadRelayPhoto(_ photoID: String) async -> (data: Data, mimeType: String?)? {
         guard let relay = PushSharedStore.loadRelayConnection() else { return nil }
         var request = URLRequest(url: relay.url.appendingPathComponent("alert-photo").appendingPathComponent(photoID))
         request.setValue("Bearer \(relay.authSecret)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, http.statusCode == 200
-        else { return nil }
-        return data
+        return await downloadData(for: request, allowedStatusCodes: 200..<201)
     }
 
-    private static func downloadImage(_ url: URL) async -> Data? {
+    private static func downloadImage(_ url: URL) async -> (data: Data, mimeType: String?)? {
         var request = URLRequest(url: url)
-        // Well inside the extension's ~30 s; the default 60 s would outlast it.
-        request.timeoutInterval = 15
-        if let authToken = PushSharedStore.loadNtfyConfig()?.authToken {
+        if let config = PushSharedStore.loadNtfyConfig(),
+           let authToken = config.authToken, !authToken.isEmpty,
+           let serverURL = URL(string: config.server.trimmingCharacters(in: .whitespacesAndNewlines)),
+           matchesServerOrigin(url, configuredServerURL: serverURL) {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
-        else { return nil }
-        return data
+        return await downloadData(for: request, allowedStatusCodes: 200..<300)
     }
 
-    private static func writeTempFile(_ data: Data, id: String) -> URL? {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(id).jpg")
+    private static func matchesServerOrigin(_ url: URL, configuredServerURL: URL) -> Bool {
+        guard let urlScheme = url.scheme?.lowercased(),
+              let serverScheme = configuredServerURL.scheme?.lowercased(),
+              urlScheme == serverScheme,
+              let urlHost = url.host?.lowercased(),
+              let serverHost = configuredServerURL.host?.lowercased(),
+              urlHost == serverHost
+        else { return false }
+        return effectivePort(for: url, scheme: urlScheme) == effectivePort(for: configuredServerURL, scheme: serverScheme)
+    }
+
+    private static func effectivePort(for url: URL, scheme: String) -> Int? {
+        if let port = url.port { return port }
+        switch scheme {
+        case "https": return 443
+        case "http": return 80
+        default: return nil
+        }
+    }
+
+    private static func downloadData(for request: URLRequest, allowedStatusCodes: Range<Int>) async -> (data: Data, mimeType: String?)? {
+        let delegate = ImageDownloadDelegate(maxBytes: maxImageBytes, allowedStatusCodes: allowedStatusCodes)
+        return await delegate.run(session: downloadSession, request: request)
+    }
+
+    private static func makeAttachment(from data: Data, id: String, mimeType: String?) -> UNNotificationAttachment? {
+        guard let localURL = writeTempFile(data, id: id, mimeType: mimeType) else { return nil }
+        do {
+            return try UNNotificationAttachment(identifier: id, url: localURL)
+        } catch {
+            try? FileManager.default.removeItem(at: localURL)
+            return nil
+        }
+    }
+
+    private static func writeTempFile(_ data: Data, id: String, mimeType: String?) -> URL? {
+        let ext = imageFileExtension(for: data, mimeType: mimeType)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(id).\(ext)")
         guard (try? data.write(to: url)) != nil else { return nil }
         return url
+    }
+
+    private static func imageFileExtension(for data: Data, mimeType: String?) -> String {
+        if let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let type = CGImageSourceGetType(source) as String? {
+            if let ext = fileExtension(forUTI: type) {
+                return ext
+            }
+        }
+        if let mimeType = mimeType?.split(separator: ";").first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            if let ext = fileExtension(forMimeType: mimeType) {
+                return ext
+            }
+            if let utType = UTType(mimeType: mimeType),
+               let ext = fileExtension(forUTI: utType.identifier) ?? utType.preferredFilenameExtension {
+                return ext
+            }
+        }
+        return "jpg"
+    }
+
+    private static func fileExtension(forUTI uti: String) -> String? {
+        switch uti {
+        case UTType.jpeg.identifier: return "jpg"
+        case UTType.png.identifier: return "png"
+        case UTType.webP.identifier: return "webp"
+        case UTType.heic.identifier, UTType.heif.identifier: return "heic"
+        case UTType.gif.identifier: return "gif"
+        default: return UTType(uti)?.preferredFilenameExtension
+        }
+    }
+
+    private static func fileExtension(forMimeType mimeType: String) -> String? {
+        switch mimeType {
+        case "image/jpeg", "image/jpg": return "jpg"
+        case "image/png": return "png"
+        case "image/webp": return "webp"
+        case "image/heic", "image/heif": return "heic"
+        case "image/gif": return "gif"
+        default: return nil
+        }
     }
 
     /// Bambuddy's ntfy messages don't carry a printer id, only a name embedded in the title/body
@@ -269,7 +408,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 }
                 await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(.now.addingTimeInterval(1800)))
                 NSLog("NCDEBUG NSE ended activity id=%@ resultingState=%@", activity.id, String(describing: activity.activityState))
-            } else {
+            } else if let progress {
                 // Bambuddy's progress titles carry the real percentage and remaining time (e.g.
                 // "Print 70% Complete" / "...Remaining: 4m") — previously ignored entirely, which
                 // left the Live Activity frozen at whatever value it started with (0% from the
@@ -277,14 +416,12 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 // opened and did its own foreground refresh against Bambuddy's real API. Parsing
                 // these directly out of the push text closes that gap without needing the
                 // extension to make any of its own network calls.
-                if let progress {
-                    state.progress = progress
-                    // Same plausibility rule as the app and relay (`RemainingTimeTrust`): Bambuddy's
-                    // near-zero placeholder must not become a countdown to "now". An untrusted value
-                    // leaves the previous estimate alone rather than clearing it.
-                    if let remainingMinutes, RemainingTimeTrust.isTrustworthy(remainingMinutes: Double(remainingMinutes), progress: progress) {
-                        state.estimatedEndAt = Date().addingTimeInterval(TimeInterval(remainingMinutes * 60))
-                    }
+                state.progress = progress
+                // Same plausibility rule as the app and relay (`RemainingTimeTrust`): Bambuddy's
+                // near-zero placeholder must not become a countdown to "now". An untrusted value
+                // leaves the previous estimate alone rather than clearing it.
+                if let remainingMinutes, RemainingTimeTrust.isTrustworthy(remainingMinutes: Double(remainingMinutes), progress: progress) {
+                    state.estimatedEndAt = Date().addingTimeInterval(TimeInterval(remainingMinutes * 60))
                 }
                 await activity.update(ActivityContent(state: state, staleDate: nil))
             }
@@ -350,5 +487,111 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
     private static func remainingMinutes(fromMessage message: String) -> Int? {
         guard let match = message.range(of: #"(?<=Remaining: )\d+(?=m)"#, options: .regularExpression) else { return nil }
         return Int(message[match])
+    }
+}
+
+private final class ImageDownloadDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private struct State: @unchecked Sendable {
+        var continuation: CheckedContinuation<(data: Data, mimeType: String?)?, Never>?
+        var task: URLSessionDataTask?
+        var httpResponse: HTTPURLResponse?
+        var buffer = Data()
+        var exceededLimit = false
+        var cancelled = false
+    }
+
+    private let maxBytes: Int
+    private let allowedStatusCodes: Range<Int>
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    init(maxBytes: Int, allowedStatusCodes: Range<Int>) {
+        self.maxBytes = maxBytes
+        self.allowedStatusCodes = allowedStatusCodes
+    }
+
+    func run(session: URLSession, request: URLRequest) async -> (data: Data, mimeType: String?)? {
+        guard !Task.isCancelled else { return nil }
+        let task = session.dataTask(with: request)
+        task.delegate = self
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let shouldResumeNil = state.withLock { state -> Bool in
+                    if state.cancelled {
+                        return true
+                    }
+                    state.continuation = continuation
+                    state.task = task
+                    return false
+                }
+                if shouldResumeNil {
+                    continuation.resume(returning: nil)
+                } else {
+                    task.resume()
+                }
+            }
+        } onCancel: {
+            let taskToCancel = state.withLock { state -> URLSessionDataTask? in
+                state.cancelled = true
+                return state.task
+            }
+            taskToCancel?.cancel()
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let http = response as? HTTPURLResponse,
+              allowedStatusCodes.contains(http.statusCode),
+              response.expectedContentLength <= Int64(maxBytes)
+        else {
+            state.withLock { state in
+                state.exceededLimit = response.expectedContentLength > Int64(maxBytes)
+            }
+            completionHandler(.cancel)
+            return
+        }
+        state.withLock { state in
+            state.httpResponse = http
+            if response.expectedContentLength > 0 {
+                state.buffer.reserveCapacity(Int(response.expectedContentLength))
+            }
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        let shouldCancel = state.withLock { state -> Bool in
+            if state.exceededLimit || state.cancelled || state.buffer.count + data.count > maxBytes {
+                state.exceededLimit = true
+                state.buffer.removeAll(keepingCapacity: false)
+                return true
+            }
+            state.buffer.append(data)
+            return false
+        }
+        if shouldCancel {
+            dataTask.cancel()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let (continuation, result) = state.withLock { state -> (CheckedContinuation<(data: Data, mimeType: String?)?, Never>?, (data: Data, mimeType: String?)?) in
+            let continuation = state.continuation
+            state.continuation = nil
+            state.task = nil
+            guard error == nil,
+                  !state.exceededLimit,
+                  !state.cancelled,
+                  let http = state.httpResponse,
+                  state.buffer.count <= maxBytes
+            else {
+                state.buffer.removeAll(keepingCapacity: false)
+                return (continuation, nil)
+            }
+            let data = state.buffer
+            state.buffer.removeAll(keepingCapacity: false)
+            return (continuation, (data: data, mimeType: http.mimeType))
+        }
+        continuation?.resume(returning: result)
     }
 }

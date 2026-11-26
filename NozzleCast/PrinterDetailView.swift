@@ -416,7 +416,7 @@ struct PrinterInfoPillRow: View {
     var body: some View {
         FlowLayout(spacing: 6, rowSpacing: 6) {
             if let dbm = wifiSignalDBm {
-                InfoPill(icon: "wifi", text: "\(dbm)dBm")
+                InfoPill(icon: "wifi", text: String(localized: "\(dbm)dBm", comment: "Wi-Fi signal strength in dBm, e.g. '-58dBm'"))
             }
             if hmsErrorCount > 0 {
                 Button {
@@ -442,7 +442,7 @@ struct PrinterInfoPillRow: View {
                 InfoPill(icon: "cpu", text: fw)
             }
             if let hours = totalPrintHours {
-                InfoPill(icon: "clock", text: "\(Int(hours))h")
+                InfoPill(icon: "clock", text: String(localized: "\(Int(hours))h", comment: "Printer total print time in hours, e.g. '124h'"))
             }
             if let ok = maintenanceOK {
                 Button {
@@ -904,7 +904,12 @@ struct PrinterAMSSection: View {
                                 .ncFont(size: 11, weight: .semibold, relativeTo: .caption2)
                                 .foregroundStyle(NCColor.textTertiary)
                             if isDualNozzle, let feedsRight = unit.feedsRightNozzle {
-                                InfoPill(icon: feedsRight ? "arrow.right" : "arrow.left", text: feedsRight ? "R" : "L")
+                                InfoPill(
+                                    icon: feedsRight ? "arrow.right" : "arrow.left",
+                                    text: feedsRight
+                                        ? String(localized: "R", comment: "Right nozzle, in a temperature chip")
+                                        : String(localized: "L", comment: "Left nozzle, in a temperature chip")
+                                )
                             }
                             if unit.isDrying {
                                 InfoPill(icon: "wind", text: String(localized: "Drying", comment: "AMS unit is actively running a drying cycle"), tint: NCColor.accentLight)

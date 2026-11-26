@@ -2,7 +2,7 @@ import Foundation
 
 /// The data-only payload ntfy delivers via Firebase — parsed from the push `userInfo` dict
 /// (all string values, as FCM data messages carry them) rather than via `Codable`/`JSONDecoder`.
-struct NtfyPushMessage {
+struct NtfyPushMessage: Sendable {
     var id: String
     var event: String
     var topic: String
@@ -65,15 +65,17 @@ extension NtfyPushMessage {
 }
 
 enum NtfyPoller {
-    private static func normalizeBaseUrl(_ baseUrl: String) -> String {
-        var normalized = baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        while normalized.hasSuffix("/") { normalized.removeLast() }
-        return normalized
-    }
-
     static func poll(baseUrl: String, topic: String, messageID: String, authToken: String?) async -> NtfyPushMessage? {
-        let normalized = normalizeBaseUrl(baseUrl)
-        guard var components = URLComponents(string: "\(normalized)/\(topic)/json") else { return nil }
+        let trimmed = baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let baseURL = URL(string: trimmed),
+              baseURL.scheme != nil,
+              baseURL.host != nil
+        else { return nil }
+
+        let endpointURL = baseURL
+            .appendingPathComponent(topic)
+            .appendingPathComponent("json")
+        guard var components = URLComponents(url: endpointURL, resolvingAgainstBaseURL: false) else { return nil }
         components.queryItems = [
             URLQueryItem(name: "poll", value: "1"),
             URLQueryItem(name: "id", value: messageID),
@@ -81,12 +83,13 @@ enum NtfyPoller {
         guard let url = components.url else { return nil }
 
         var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        if let authToken {
+        // Poll + follow-up image download must fit well inside the ~30s NSE budget.
+        request.timeoutInterval = 8
+        if let authToken, !authToken.isEmpty {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
 
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await NotificationService.downloadSession.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
         else { return nil }
 

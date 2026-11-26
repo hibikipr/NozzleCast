@@ -81,7 +81,7 @@ struct EditSpoolSheet: View {
                     // Spoolman stores no per-spool nozzle temperatures — see `isSpoolman`.
                     if !isSpoolman { tempSection }
                     notesSection
-                    if spool.materialNumber != nil || !spool.suppliers.isEmpty { purchasingSection }
+                    if current.materialNumber != nil || !current.suppliers.isEmpty { purchasingSection }
                     usageSection
                     removeSection
                 }
@@ -115,7 +115,7 @@ struct EditSpoolSheet: View {
             }
             Button(role: .cancel) {} label: { Text("Cancel") }
         } message: {
-            Text("\(spool.brand) \(spool.material) \(spool.colorName) will be removed from your inventory for good, including its usage history. Archive it instead to keep the record.", comment: "Delete spool confirmation message")
+            Text("\(current.brand) \(current.material) \(current.colorName) will be removed from your inventory for good, including its usage history. Archive it instead to keep the record.", comment: "Delete spool confirmation message")
         }
     }
 
@@ -184,10 +184,10 @@ struct EditSpoolSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Purchasing", comment: "Spool screen section: material number and suppliers").sectionEyebrow()
             VStack(alignment: .leading, spacing: 10) {
-                if let materialNumber = spool.materialNumber {
+                if let materialNumber = current.materialNumber {
                     detailRow(String(localized: "Material number", comment: "Manufacturer's article number for a filament"), value: materialNumber)
                 }
-                ForEach(spool.suppliers, id: \.self) { supplier in
+                ForEach(current.suppliers, id: \.self) { supplier in
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(supplier.name)
@@ -383,7 +383,7 @@ struct EditSpoolSheet: View {
                 Spacer()
                 FilamentSwatchView(
                     colorHex: colorHex,
-                    alpha: spool.colorAlpha,
+                    alpha: current.colorAlpha,
                     extraColorHexes: extraColorHexes,
                     subtype: subtype.isEmpty ? nil : subtype,
                     effectType: effectType.isEmpty ? nil : effectType
@@ -453,7 +453,7 @@ struct EditSpoolSheet: View {
     /// A field you can type freely into, with a trailing menu of suggested existing values —
     /// matching Bambuddy's own material/brand/subtype inputs (free text, but pick from what's
     /// already known works too).
-    private func comboField(_ title: String, text: Binding<String>, suggestions: [String]) -> some View {
+    private func comboField(_ title: LocalizedStringKey, text: Binding<String>, suggestions: [String]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .ncFont(size: 12, weight: .medium, relativeTo: .caption)
@@ -481,7 +481,7 @@ struct EditSpoolSheet: View {
         }
     }
 
-    private func labeledField(_ title: String, text: Binding<String>, keyboardType: UIKeyboardType = .default) -> some View {
+    private func labeledField(_ title: LocalizedStringKey, text: Binding<String>, keyboardType: UIKeyboardType = .default) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .ncFont(size: 12, weight: .medium, relativeTo: .caption)
@@ -502,6 +502,28 @@ struct EditSpoolSheet: View {
         )
     }
 
+    /// Parses a decimal number entered with either `.` or `,` as the decimal separator (`.decimalPad`
+    /// produces `,` in many locales, while `Double.init` only accepts `.`).
+    static func parseDecimal(_ raw: String) -> Double? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let value = Double(trimmed), value.isFinite {
+            return value
+        }
+        if trimmed.contains(","), !trimmed.contains("."),
+           let value = Double(trimmed.replacingOccurrences(of: ",", with: ".")),
+           value.isFinite {
+            return value
+        }
+        let formatter = NumberFormatter()
+        formatter.locale = .current
+        formatter.numberStyle = .decimal
+        if let number = formatter.number(from: trimmed)?.doubleValue, number.isFinite {
+            return number
+        }
+        return nil
+    }
+
     private func save() {
         store.updateSpool(
             spool.id,
@@ -513,10 +535,10 @@ struct EditSpoolSheet: View {
             subtype: subtype.trimmingCharacters(in: .whitespaces).isEmpty ? nil : subtype.trimmingCharacters(in: .whitespaces),
             // Spoolman has no effect field, so leave it alone there.
             effectType: isSpoolman ? nil : effectType,
-            netWeightGrams: Int(netWeightGrams) ?? spool.netWeightGrams,
+            netWeightGrams: Int(netWeightGrams) ?? current.netWeightGrams,
             nozzleTempMin: Int(nozzleTempMin),
             nozzleTempMax: Int(nozzleTempMax),
-            costPerKg: Double(costPerKg),
+            costPerKg: Self.parseDecimal(costPerKg),
             category: category.trimmingCharacters(in: .whitespaces).isEmpty ? nil : category.trimmingCharacters(in: .whitespaces),
             note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note.trimmingCharacters(in: .whitespaces)
         )

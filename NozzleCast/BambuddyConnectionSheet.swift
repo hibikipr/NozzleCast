@@ -8,6 +8,7 @@ struct BambuddyConnectionSheet: View {
     @State private var apiKey: String
     @State private var isTesting = false
     @State private var testResult: TestResult?
+    @State private var testTask: Task<Void, Never>?
 
     private enum TestResult: Equatable {
         case success(String)
@@ -51,7 +52,8 @@ struct BambuddyConnectionSheet: View {
 
                 Section {
                     Button {
-                        Task { await testAndSave() }
+                        testTask?.cancel()
+                        testTask = Task { await testAndSave() }
                     } label: {
                         HStack {
                             Spacer()
@@ -63,7 +65,11 @@ struct BambuddyConnectionSheet: View {
                             Spacer()
                         }
                     }
-                    .disabled(serverURLString.isEmpty || apiKey.isEmpty || isTesting)
+                    .disabled(
+                        serverURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || isTesting
+                    )
                     .listRowBackground(NCColor.accent)
                     .foregroundStyle(NCColor.onAccent)
                 }
@@ -91,36 +97,54 @@ struct BambuddyConnectionSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        testTask?.cancel()
+                        dismiss()
+                    }
                 }
             }
             .onAppear {
                 serverURLString = store.config.serverURLString
                 apiKey = store.config.apiKey
             }
+            .onDisappear {
+                testTask?.cancel()
+            }
         }
         .preferredColorScheme(.dark)
     }
 
     private func testAndSave() async {
+        let trimmedURL = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = BambuddyConfig.normalizedServerURL(from: trimmedURL) else {
+            testResult = .failure("Enter a valid http:// or https:// server URL.")
+            return
+        }
+
         isTesting = true
         testResult = nil
-        store.config.serverURLString = serverURLString
-        store.config.apiKey = apiKey
+        defer { isTesting = false }
 
-        let success = await store.testConnectionAndRefresh()
-        isTesting = false
+        do {
+            let probe = BambuddyAPIClient(baseURL: url, apiKey: trimmedKey)
+            let me = try await probe.me()
+            guard !Task.isCancelled else { return }
 
-        switch store.connectionStatus {
-        case .connected(let username):
-            testResult = .success(username)
+            store.config.serverURLString = trimmedURL
+            store.config.apiKey = trimmedKey
+            testResult = .success(me.username)
+
+            await store.testConnectionAndRefresh()
+            guard !Task.isCancelled else { return }
+
             try? await Task.sleep(for: .seconds(0.6))
+            guard !Task.isCancelled else { return }
             dismiss()
-        case .failed(let message):
-            testResult = .failure(message)
-        default:
-            break
+        } catch {
+            guard !Task.isCancelled else { return }
+            let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            testResult = .failure(msg)
         }
-        _ = success
     }
 }

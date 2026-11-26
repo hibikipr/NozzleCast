@@ -237,7 +237,7 @@ private struct StatusCard: View {
                 if snapshot.isActive {
                     SafeSection { JobSubtitle(state: state, font: .caption) }
                     SafeSection {
-                        Countdown(state: state)
+                        Countdown(state: state, referenceDate: now)
                             .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(.white)
                     }
@@ -317,6 +317,7 @@ private struct StatusStamp: View {
 
 private struct PrintStatusSmallView: View {
     let snapshot: PrintStatusSnapshot
+    let now: Date
 
     var body: some View {
         let state = snapshot.contentState
@@ -331,7 +332,7 @@ private struct PrintStatusSmallView: View {
                 .lineLimit(1)
             if snapshot.isActive {
                 SafeSection {
-                    Countdown(state: state)
+                    Countdown(state: state, referenceDate: now)
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(.white)
                 }
@@ -405,7 +406,7 @@ struct PrintStatusWidgetEntryView: View {
             if let first = entry.snapshots.first {
                 switch family {
                 case .systemSmall:
-                    PrintStatusSmallView(snapshot: first)
+                    PrintStatusSmallView(snapshot: first, now: entry.date)
                         .widgetURL(first.deepLink)
                 case .systemLarge:
                     PrintStatusLargeView(snapshots: entry.snapshots, capturedAt: entry.capturedAt, now: entry.date)
