@@ -190,11 +190,37 @@ struct PrinterCoverImage: View {
 
     @Environment(AppStore.self) private var store
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.scenePhase) private var scenePhase
     @State private var image: UIImage?
     @State private var backdrop: Color?
     /// The tile's size in pixels (capped at `maxPixelSize`): the relay composes the cover to this
     /// shape, so the model is centred and nothing of it is cropped.
     @State private var pixelSize: CGSize = .zero
+    @State private var resizeTask: Task<Void, Never>?
+    @State private var currentJobKey: JobKey?
+    @State private var loadedContentKey: ContentKey?
+
+    private struct JobKey: Equatable {
+        var printerID: String
+        var jobIdentity: String
+    }
+
+    private struct ContentKey: Equatable {
+        var printerID: String
+        var jobIdentity: String
+        var fallbackRecordID: String
+        var width: Int
+        var height: Int
+    }
+
+    private struct TaskKey: Hashable {
+        var printerID: String
+        var jobIdentity: String
+        var fallbackRecordID: String
+        var width: Int
+        var height: Int
+        var isSceneActive: Bool
+    }
 
     var body: some View {
         ZStack {
@@ -211,12 +237,54 @@ struct PrinterCoverImage: View {
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
             let scale = min(displayScale, maxPixelSize / max(size.width, size.height, 1))
-            pixelSize = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+            let next = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+            guard next.width >= 1, next.height >= 1 else { return }
+            if pixelSize == .zero {
+                resizeTask?.cancel()
+                resizeTask = nil
+                pixelSize = next
+                return
+            }
+            guard abs(next.width - pixelSize.width) > 16 || abs(next.height - pixelSize.height) > 16 else { return }
+            if image != nil {
+                resizeTask?.cancel()
+                resizeTask = Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    pixelSize = next
+                }
+            } else {
+                resizeTask?.cancel()
+                resizeTask = nil
+                pixelSize = next
+            }
         }
         // A new size (the picture-in-picture swap) keeps the old picture up until its replacement
         // arrives, rather than flashing the placeholder.
-        .task(id: "\(printerID)-\(jobIdentity)-\(fallbackRecord?.id ?? "")-\(Int(pixelSize.width))x\(Int(pixelSize.height))") {
-            guard pixelSize.width >= 1, pixelSize.height >= 1 else { return }
+        .task(id: TaskKey(
+            printerID: printerID,
+            jobIdentity: jobIdentity,
+            fallbackRecordID: fallbackRecord?.id ?? "",
+            width: Int(pixelSize.width),
+            height: Int(pixelSize.height),
+            isSceneActive: scenePhase == .active
+        )) {
+            let jobKey = JobKey(printerID: printerID, jobIdentity: jobIdentity)
+            if currentJobKey != jobKey {
+                image = nil
+                backdrop = nil
+                loadedContentKey = nil
+                currentJobKey = jobKey
+            }
+            guard scenePhase == .active, pixelSize.width >= 1, pixelSize.height >= 1 else { return }
+            let contentKey = ContentKey(
+                printerID: printerID,
+                jobIdentity: jobIdentity,
+                fallbackRecordID: fallbackRecord?.id ?? "",
+                width: Int(pixelSize.width),
+                height: Int(pixelSize.height)
+            )
+            if image != nil, loadedContentKey == contentKey { return }
             // A tile reports a few sizes while it settles (a push, a layout pass); waiting a beat
             // lets those cancel here instead of as relay requests.
             try? await Task.sleep(for: .milliseconds(150))
@@ -224,8 +292,11 @@ struct PrinterCoverImage: View {
             // thumbnail yet, so with nothing to show, look again every half minute for a while.
             for attempt in 0..<10 {
                 if attempt > 0 { try? await Task.sleep(for: .seconds(30)) }
-                guard !Task.isCancelled else { return }
-                if await loadImage() { return }
+                guard !Task.isCancelled, scenePhase == .active else { return }
+                if await loadImage() {
+                    loadedContentKey = contentKey
+                    return
+                }
             }
         }
     }
@@ -244,8 +315,6 @@ struct PrinterCoverImage: View {
             image = thumbnail
             return true
         }
-        image = nil
-        backdrop = nil
         return false
     }
 }

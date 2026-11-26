@@ -10,8 +10,8 @@ import NozzleCastShared
 /// whole activity (Lock Screen, compact, minimal, and expanded all tap through to it, since none
 /// of the Dynamic Island regions below override it with their own `Link`), which also satisfies
 /// "ensure both leading and trailing elements link to the same screen" — there's only one link.
-private func deepLinkURL(for attributes: PrintActivityAttributes) -> URL {
-    URL(string: "nozzlecast://printer/\(attributes.printerID)")!
+private func deepLinkURL(for attributes: PrintActivityAttributes) -> URL? {
+    URL(string: "nozzlecast://printer/\(attributes.printerID)")
 }
 
 struct PrintActivityWidget: Widget {
@@ -26,7 +26,7 @@ struct PrintActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     SafeSection {
                         BuildUpThumbnail(
-                            cover: coverArt(context.attributes, context.state),
+                            cover: coverArt(context.attributes, context.state, maxPixelSize: 240),
                             fraction: buildFraction(context.state),
                             width: 52, height: 52, cornerRadius: 14
                         )
@@ -87,7 +87,7 @@ struct PrintActivityWidget: Widget {
             } compactLeading: {
                 SafeSection {
                     BuildUpThumbnail(
-                        cover: coverArt(context.attributes, context.state),
+                        cover: coverArt(context.attributes, context.state, maxPixelSize: 66),
                         fraction: buildFraction(context.state),
                         width: 22, height: 22, cornerRadius: 6, showsBuildUp: false
                     )
@@ -114,7 +114,7 @@ struct PrintActivityWidget: Widget {
             } minimal: {
                 SafeSection {
                     BuildUpThumbnail(
-                        cover: coverArt(context.attributes, context.state),
+                        cover: coverArt(context.attributes, context.state, maxPixelSize: 66),
                         fraction: buildFraction(context.state),
                         width: 22, height: 22, cornerRadius: 6, showsBuildUp: false
                     )
@@ -133,7 +133,7 @@ private struct LockScreenView: View {
         HStack(alignment: .top, spacing: 14) {
             SafeSection {
                 BuildUpThumbnail(
-                    cover: coverArt(attributes, state),
+                    cover: coverArt(attributes, state, maxPixelSize: 240),
                     fraction: buildFraction(state),
                     width: 96, height: 128, cornerRadius: 16
                 )

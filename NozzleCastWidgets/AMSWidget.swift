@@ -116,15 +116,15 @@ struct AMSProvider: AppIntentTimelineProvider {
         // .relative)` renders two components, so a fresh timestamp reads "0 sec ago" and hides
         // exactly the width that made the medium footer clip to "Updated 10 min, 46...". This is
         // the reported case, and still a plausible age for a gallery preview.
-        let capturedAt = stored.isEmpty ? Date.now.addingTimeInterval(-646) : Date.now
+        let capturedAt = stored.isEmpty ? Date.now.addingTimeInterval(-646) : (AMSWidgetStore.lastSavedAt ?? .now)
         return AMSEntry(date: .now, capturedAt: capturedAt, printers: stored.isEmpty ? Self.mockPrinters() : stored)
     }
 
     func timeline(for configuration: AMSWidgetIntent, in context: Context) async -> Timeline<AMSEntry> {
         let printers = filtered(AMSWidgetStore.load(), by: configuration)
         let entry = AMSEntry(date: .now, capturedAt: AMSWidgetStore.lastSavedAt, printers: printers)
-        // One entry, 30 min out (~48 reloads/day) — inside WidgetKit's budget.
-        return Timeline(entries: [entry], policy: .after(.now.advanced(by: 1800)))
+        // App-driven via `WidgetCenter.shared.reloadTimelines`; `StaleStamp` ticks live with `.relative`.
+        return Timeline(entries: [entry], policy: .never)
     }
 
     private func filtered(_ all: [PrinterAMSSnapshot], by intent: AMSWidgetIntent) -> [PrinterAMSSnapshot] {
@@ -208,16 +208,39 @@ extension PrinterAMSSnapshot {
         return out
     }
 
-    var slotCount: Int { slots.count }
-    var loadedCount: Int { slots.filter { !$0.tray.isEmpty }.count }
-    var lowCount: Int { slots.filter { $0.tray.isLow == true }.count }
+    private var cappedTrays: LazySequence<FlattenSequence<LazyMapSequence<ArraySlice<AMSUnitSnapshot>, ArraySlice<AMSTraySnapshot>>>> {
+        amsUnits.prefix(maxUnitsPerPrinter).lazy.flatMap { $0.trays.prefix(4) }
+    }
+
+    var slotCount: Int {
+        amsUnits.prefix(maxUnitsPerPrinter).reduce(0) { $0 + min($1.trays.count, 4) }
+    }
+    var loadedCount: Int {
+        cappedTrays.reduce(0) { $0 + ($1.isEmpty ? 0 : 1) }
+    }
+    var lowCount: Int {
+        cappedTrays.reduce(0) { $0 + ($1.isLow == true ? 1 : 0) }
+    }
+    var hasLowStock: Bool {
+        cappedTrays.contains { $0.isLow == true }
+    }
     var hasSeveralUnits: Bool { min(amsUnits.count, maxUnitsPerPrinter) > 1 }
 
     /// "Feeding slot 2", or "Feeding A2 · 3" on a printer with more than one unit; nil when no slot
     /// is feeding.
     var feedingLabel: String? {
-        guard let slot = slots.first(where: { $0.tray.isFeeding == true }) else { return nil }
-        return hasSeveralUnits ? String(localized: "Feeding \(slot.unitTag) · \(slot.number)") : String(localized: "Feeding slot \(slot.number)")
+        var regular = 0
+        for unit in amsUnits.prefix(maxUnitsPerPrinter) {
+            if !unit.isHighTemp { regular += 1 }
+            for (t, tray) in unit.trays.prefix(4).enumerated() where tray.isFeeding == true {
+                if hasSeveralUnits {
+                    let tag = unit.isHighTemp ? "HT" : "A\(regular)"
+                    return String(localized: "Feeding \(tag) · \(t + 1)")
+                }
+                return String(localized: "Feeding slot \(t + 1)")
+            }
+        }
+        return nil
     }
 }
 
@@ -365,17 +388,20 @@ private struct SpoolRow: View {
 private struct AMSSmallView: View {
     let printer: PrinterAMSSnapshot
 
-    private var columns: Int { printer.slotCount <= 4 ? 2 : 3 }
-
     var body: some View {
+        let slots = printer.slots
+        let columns = slots.count <= 4 ? 2 : 3
+        let feeding = printer.feedingLabel
+        let loaded = slots.reduce(0) { $0 + ($1.tray.isEmpty ? 0 : 1) }
+
         VStack(alignment: .leading, spacing: 6) {
-            PrinterHeader(printer: printer, trailing: "\(printer.loadedCount)/\(printer.slotCount)")
-            Text(printer.feedingLabel ?? printer.stateLabel)
+            PrinterHeader(printer: printer, trailing: "\(loaded)/\(slots.count)")
+            Text(feeding ?? printer.stateLabel)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(printer.feedingLabel != nil ? accentLightBlue : Color.white.opacity(0.45))
+                .foregroundStyle(feeding != nil ? accentLightBlue : Color.white.opacity(0.45))
                 .lineLimit(1)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns), spacing: 6) {
-                ForEach(printer.slots) { slot in
+                ForEach(slots) { slot in
                     SpoolDisc(tray: slot.tray)
                         .frame(maxWidth: columns == 2 ? 42 : 30)
                 }
@@ -393,7 +419,8 @@ private struct AMSMediumView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if printers.count == 1, let printer = printers.first {
-                PrinterHeader(printer: printer, trailing: printer.feedingLabel ?? printer.stateLabel, trailingIsAccent: printer.feedingLabel != nil)
+                let feeding = printer.feedingLabel
+                PrinterHeader(printer: printer, trailing: feeding ?? printer.stateLabel, trailingIsAccent: feeding != nil)
                 Spacer(minLength: 0)
                 SpoolRow(printer: printer, maxDisc: 48)
                 Spacer(minLength: 0)
@@ -401,8 +428,9 @@ private struct AMSMediumView: View {
             } else {
                 ForEach(Array(printers.prefix(2).enumerated()), id: \.offset) { index, printer in
                     if index > 0 { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
+                    let feeding = printer.feedingLabel
                     VStack(alignment: .leading, spacing: 5) {
-                        PrinterHeader(printer: printer, trailing: printer.feedingLabel ?? printer.stateLabel, trailingIsAccent: printer.feedingLabel != nil)
+                        PrinterHeader(printer: printer, trailing: feeding ?? printer.stateLabel, trailingIsAccent: feeding != nil)
                         SpoolRow(printer: printer, maxDisc: 30, showsMaterial: false)
                     }
                 }
@@ -443,8 +471,9 @@ private struct AMSLargeView: View {
             }
             ForEach(Array(full.enumerated()), id: \.offset) { index, printer in
                 if index > 0 { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1) }
+                let feeding = printer.feedingLabel
                 VStack(alignment: .leading, spacing: 8) {
-                    PrinterHeader(printer: printer, trailing: printer.feedingLabel ?? printer.stateLabel, trailingIsAccent: printer.feedingLabel != nil)
+                    PrinterHeader(printer: printer, trailing: feeding ?? printer.stateLabel, trailingIsAccent: feeding != nil)
                     SpoolRow(printer: printer, maxDisc: 50)
                 }
             }

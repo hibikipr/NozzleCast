@@ -4,7 +4,7 @@ import Foundation
 /// GTINs joined to brand/material/colour/weight. Downloads the public data dump once,
 /// builds a barcode -> fields index on-device, and caches it with a 24h TTL. Ported from
 /// filament_to_bambuddy's `ofd.py`.
-final class OFDClient {
+actor OFDClient {
     static let shared = OFDClient()
 
     private struct RawBrand: Decodable { var id: String; var name: String? }
@@ -36,19 +36,18 @@ final class OFDClient {
         var sizes: [RawSize]
     }
 
-    private struct IndexEntry: Codable { var fields: FilamentDBFields; var variantId: String }
     private struct Cache: Codable {
         var version: Int
         var builtAt: Date
-        var gtinIndex: [String: IndexEntry]
-        var articleIndex: [String: IndexEntry]
-        var variantCodes: [String: [FilamentCodeEntry]]
+        var gtinIndex: [String: FilamentDBFields]
+        var articleIndex: [String: FilamentDBFields]
         var brands: [String]
     }
 
     private static let allURL = URL(string: "https://api.openfilamentdatabase.org/json/all.json")!
     private static let ttl: TimeInterval = 24 * 3600
-    private static let cacheVersion = 1
+    // 2: dropped unused variantCodes from disk cache.
+    private static let cacheVersion = 2
 
     private var cache: Cache?
     private var loadTask: Task<Cache, Error>?
@@ -67,14 +66,14 @@ final class OFDClient {
     /// found" with no way to tell the user which actually happened.
     func lookup(gtin: String) async throws -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
         let cache = try await ensureLoaded()
-        guard let entry = cache.gtinIndex[FilamentCode.canon(gtin)] else { return nil }
-        return (entry.fields, cache.variantCodes[entry.variantId] ?? [])
+        guard let fields = cache.gtinIndex[Self.canonicalGTIN(gtin)] else { return nil }
+        return (fields, [])
     }
 
     func lookupArticle(_ code: String) async throws -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
         let cache = try await ensureLoaded()
-        guard let entry = cache.articleIndex[code.trimmingCharacters(in: .whitespaces).uppercased()] else { return nil }
-        return (entry.fields, cache.variantCodes[entry.variantId] ?? [])
+        guard let fields = cache.articleIndex[code.trimmingCharacters(in: .whitespaces).uppercased()] else { return nil }
+        return (fields, [])
     }
 
     private func ensureLoaded() async throws -> Cache {
@@ -116,16 +115,20 @@ final class OFDClient {
     }
 
     private func refresh() async throws -> Cache {
-        let (data, _) = try await URLSession.shared.data(from: Self.allURL)
+        var request = URLRequest(url: Self.allURL)
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
         let all = try JSONDecoder().decode(AllJSON.self, from: data)
 
         let brandsByID = Dictionary(all.brands.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let filamentsByID = Dictionary(all.filaments.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let variantsByID = Dictionary(all.variants.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
-        var gtinIndex: [String: IndexEntry] = [:]
-        var articleIndex: [String: IndexEntry] = [:]
-        var variantCodes: [String: [FilamentCodeEntry]] = [:]
+        var gtinIndex: [String: FilamentDBFields] = [:]
+        var articleIndex: [String: FilamentDBFields] = [:]
 
         for size in all.sizes {
             guard size.gtin != nil || size.article_number != nil, let variantID = size.variant_id,
@@ -148,28 +151,18 @@ final class OFDClient {
             fields.nozzleTempMax = filament.max_print_temperature
             fields.title = [brandName, filament.name, variant.name].compactMap { $0 }.joined(separator: " ")
 
-            let isRefill = size.spool_refill ?? false
-            var codes = variantCodes[variantID] ?? []
-
             if let gtin = size.gtin {
-                let canonical = FilamentCode.canon(gtin)
-                gtinIndex[canonical] = IndexEntry(fields: fields, variantId: variantID)
-                if !codes.contains(where: { $0.code == canonical }) {
-                    codes.append(FilamentCodeEntry(code: canonical, kind: "gtin", isRefill: isRefill))
-                }
+                let canonical = Self.canonicalGTIN(gtin)
+                gtinIndex[canonical] = fields
             }
             if let article = size.article_number {
                 let normalized = article.trimmingCharacters(in: .whitespaces).uppercased()
-                articleIndex[normalized] = IndexEntry(fields: fields, variantId: variantID)
-                if !codes.contains(where: { $0.code == normalized }) {
-                    codes.append(FilamentCodeEntry(code: normalized, kind: "sku", isRefill: isRefill))
-                }
+                articleIndex[normalized] = fields
             }
-            variantCodes[variantID] = codes
         }
 
         let brandNames = Set(all.brands.compactMap(\.name)).sorted()
-        let fresh = Cache(version: Self.cacheVersion, builtAt: Date(), gtinIndex: gtinIndex, articleIndex: articleIndex, variantCodes: variantCodes, brands: brandNames)
+        let fresh = Cache(version: Self.cacheVersion, builtAt: Date(), gtinIndex: gtinIndex, articleIndex: articleIndex, brands: brandNames)
         writeDiskCache(fresh)
         return fresh
     }
@@ -187,7 +180,14 @@ final class OFDClient {
     private static func hexToRGBA(_ hex: String?) -> String? {
         guard var h = hex else { return nil }
         h = h.hasPrefix("#") ? String(h.dropFirst()) : h
-        guard h.count == 6, h.range(of: "^[0-9A-Fa-f]{6}$", options: .regularExpression) != nil else { return nil }
+        guard h.count == 6, h.allSatisfy(\.isHexDigit) else { return nil }
         return h.uppercased() + "FF"
+    }
+
+    /// Mirrors `FilamentCode.canon` without hopping to `@MainActor` during off-main indexing.
+    private static func canonicalGTIN(_ barcode: String) -> String {
+        let digits = barcode.filter(\.isNumber)
+        let stripped = digits.drop { $0 == "0" }
+        return stripped.isEmpty ? "0" : String(stripped)
     }
 }

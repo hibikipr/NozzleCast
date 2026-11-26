@@ -46,7 +46,7 @@ struct NotificationsView: View {
                         Text(entry.body)
                             .ncFont(size: 13, relativeTo: .footnote)
                             .foregroundStyle(NCColor.textSecondary)
-                        Text(entry.receivedAt, style: .relative)
+                        Text(entry.receivedAt.formatted(.relative(presentation: .named)))
                             .ncFont(size: 11, relativeTo: .caption2)
                             .foregroundStyle(NCColor.textTertiary)
                     }
@@ -89,13 +89,16 @@ struct NotificationsView: View {
         .fullScreenCover(item: $viewingImage) { viewing in
             NotificationImageViewer(entryID: viewing.id)
         }
-        .onAppear {
-            entries = ScreenshotMocks.isActive ? ScreenshotMocks.notificationHistory() : PushSharedStore.loadHistory()
+        .task {
             mutedAlerts = PushSharedStore.mutedAlerts
-            Task {
-                await PushSharedStore.markAllRead()
-                try? await UNUserNotificationCenter.current().setBadgeCount(0)
+            if ScreenshotMocks.isActive {
+                entries = ScreenshotMocks.notificationHistory()
+            } else {
+                let loaded = await Task.detached(priority: .utility) { PushSharedStore.loadHistory() }.value
+                entries = loaded
             }
+            await PushSharedStore.markAllRead()
+            try? await UNUserNotificationCenter.current().setBadgeCount(0)
         }
     }
 

@@ -35,7 +35,9 @@ enum ScannerMode {
 struct ScannerCameraGate: View {
     var mode: ScannerMode
     var bridge: ScannerBridge
+    var isActive: Bool = true
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var authStatus: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
 
     var body: some View {
@@ -48,14 +50,19 @@ struct ScannerCameraGate: View {
             } else {
                 switch authStatus {
                 case .authorized:
-                    if DataScannerViewController.isAvailable {
-                        DataScannerView(mode: mode, bridge: bridge)
+                    if isActive {
+                        if DataScannerViewController.isAvailable {
+                            DataScannerView(mode: mode, bridge: bridge)
+                        } else {
+                            unavailable(icon: "camera.metering.unknown", message: String(localized: "Camera unavailable right now"))
+                        }
                     } else {
-                        unavailable(icon: "camera.metering.unknown", message: String(localized: "Camera unavailable right now"))
+                        Color.clear
                     }
                 case .notDetermined:
                     Color.clear
-                        .task {
+                        .task(id: isActive) {
+                            guard isActive else { return }
                             let granted = await AVCaptureDevice.requestAccess(for: .video)
                             authStatus = granted ? .authorized : .denied
                         }
@@ -75,6 +82,11 @@ struct ScannerCameraGate: View {
             }
         }
         .onAppear { authStatus = AVCaptureDevice.authorizationStatus(for: .video) }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                authStatus = AVCaptureDevice.authorizationStatus(for: .video)
+            }
+        }
     }
 
     @ViewBuilder
@@ -130,23 +142,30 @@ private struct DataScannerView: UIViewControllerRepresentable {
         // a tight loop that hammers the capture session rather than surfacing one clear failure.
         guard !uiViewController.isScanning, !context.coordinator.didAttemptStart else { return }
         context.coordinator.didAttemptStart = true
-        attemptStart(uiViewController, retriesLeft: 1)
+        attemptStart(uiViewController, coordinator: context.coordinator, retriesLeft: 1)
     }
 
     static func dismantleUIViewController(_ uiViewController: DataScannerViewController, coordinator: Coordinator) {
+        coordinator.isDismantled = true
+        coordinator.retryTask?.cancel()
+        coordinator.retryTask = nil
         uiViewController.stopScanning()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(mode: mode, bridge: bridge) }
 
-    private func attemptStart(_ vc: DataScannerViewController, retriesLeft: Int) {
+    private func attemptStart(_ vc: DataScannerViewController, coordinator: Coordinator, retriesLeft: Int) {
+        guard !Task.isCancelled, !coordinator.isDismantled else { return }
         do {
             try vc.startScanning()
         } catch {
+            guard !Task.isCancelled, !coordinator.isDismantled else { return }
             if retriesLeft > 0 {
-                Task {
+                coordinator.retryTask?.cancel()
+                coordinator.retryTask = Task {
                     try? await Task.sleep(for: .milliseconds(400))
-                    attemptStart(vc, retriesLeft: retriesLeft - 1)
+                    guard !Task.isCancelled, !coordinator.isDismantled else { return }
+                    attemptStart(vc, coordinator: coordinator, retriesLeft: retriesLeft - 1)
                 }
             } else {
                 bridge.failureMessage = String(localized: "Couldn't start the camera: \(error.localizedDescription)")
@@ -158,6 +177,8 @@ private struct DataScannerView: UIViewControllerRepresentable {
         var mode: ScannerMode
         var bridge: ScannerBridge
         var didAttemptStart = false
+        var isDismantled = false
+        var retryTask: Task<Void, Never>?
 
         init(mode: ScannerMode, bridge: ScannerBridge) {
             self.mode = mode

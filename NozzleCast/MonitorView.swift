@@ -6,6 +6,7 @@ struct MonitorView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showNotifications = false
     @State private var unreadCount = 0
+    @State private var unreadCountTask: Task<Void, Never>?
     /// Drives the compact (iPhone, folded Duo) push/pop stack.
     @State private var path: [String] = []
     /// Drives the regular-width (iPad, unfolded Duo) split-view detail column.
@@ -17,12 +18,23 @@ struct MonitorView: View {
     @AppStorage(PrinterCardLayout.storageKey) private var cardLayout: PrinterCardLayout = .classic
     @Binding var selectedTab: RootTab
 
-    private var printingCount: Int { store.printers.filter { $0.state == .printing }.count }
-    private var attentionCount: Int { store.printers.filter(\.needsAttention).count }
+    private struct ListSnapshot {
+        var sortedPrinters: [Printer]
+        var printingCount: Int
+        var attentionCount: Int
+        var latestPrintByPrinterID: [String: PrintRecord]
+    }
 
     /// Grouped like Bambuddy's printer page: anything needing attention first, then what's
     /// printing, then what just finished, then idle and offline — each group in server order.
-    private var sortedPrinters: [Printer] {
+    private func makeListSnapshot() -> ListSnapshot {
+        let printers = store.printers
+        var printingCount = 0
+        var attentionCount = 0
+        for printer in printers {
+            if printer.state == .printing { printingCount += 1 }
+            if printer.needsAttention { attentionCount += 1 }
+        }
         func rank(_ printer: Printer) -> Int {
             if printer.needsAttention { return 0 }
             switch printer.state {
@@ -32,14 +44,28 @@ struct MonitorView: View {
             case .offline: return 4
             }
         }
-        return store.printers.enumerated()
+        let sortedPrinters = printers.enumerated()
             .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
             .map(\.element)
+
+        var latestPrintByPrinterID: [String: PrintRecord] = [:]
+        for record in store.printHistory {
+            if let printerID = record.printerID, latestPrintByPrinterID[printerID] == nil {
+                latestPrintByPrinterID[printerID] = record
+            }
+        }
+
+        return ListSnapshot(
+            sortedPrinters: sortedPrinters,
+            printingCount: printingCount,
+            attentionCount: attentionCount,
+            latestPrintByPrinterID: latestPrintByPrinterID
+        )
     }
 
-    /// The printer's most recent print from the loaded history, for its idle card.
-    private func lastPrint(for printerID: String) -> LastPrintSummary? {
-        store.printHistory.first { $0.printerID == printerID }.map {
+    /// The printer's most recent print from the precomputed map, for its idle card.
+    private func lastPrint(for printerID: String, in latestPrintByPrinterID: [String: PrintRecord]) -> LastPrintSummary? {
+        latestPrintByPrinterID[printerID].map {
             LastPrintSummary(name: $0.name, outcome: $0.outcome, verdict: $0.verdict, finishedAt: $0.finishedAt, record: $0)
         }
     }
@@ -47,17 +73,18 @@ struct MonitorView: View {
     private var isConnecting: Bool { store.isLoadingPrinters }
 
     var body: some View {
+        let snapshot = makeListSnapshot()
         Group {
             if horizontalSizeClass == .compact {
                 NavigationStack(path: $path) {
-                    printerList
+                    printerList(snapshot)
                         .navigationDestination(for: String.self) { id in
                             PrinterDetailView(printerID: id)
                         }
                 }
             } else {
                 NavigationSplitView(columnVisibility: $columnVisibility) {
-                    printerList
+                    printerList(snapshot)
                         // Cards need ~370pt to fit name, temperatures and progress footer on
                         // one line; the default sidebar width (and the open-pose overlay) is narrower.
                         .navigationSplitViewColumnWidth(min: 380, ideal: 400, max: 460)
@@ -90,7 +117,7 @@ struct MonitorView: View {
                 NotificationsView()
             }
         }
-        .onAppear { refreshUnreadCount() }
+        .task { await loadUnreadCount() }
         // Idle cards recap each printer's last print from the print history; a print that just
         // finished isn't in it until it's reloaded.
         .task(id: store.printers.map(\.state)) { await store.loadPrints() }
@@ -157,9 +184,10 @@ struct MonitorView: View {
     /// from before), and sets `selectedPrinterID` — which the split view's detail column reads —
     /// on regular width (iPad, unfolded Duo), so the printer list stays visible alongside the
     /// selected printer's detail instead of being replaced by it.
-    private var printerList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+    private func printerList(_ snapshot: ListSnapshot) -> some View {
+        let isMonitorLive = (selectedTab == .monitor) && !showNotifications && (horizontalSizeClass == .regular || path.isEmpty)
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("NozzleCast")
@@ -169,12 +197,12 @@ struct MonitorView: View {
                                 Text("Connecting to server…")
                             } else {
                                 // Automatic grammar agreement: "1 printer", "2 printers".
-                                if attentionCount == 1 {
-                                    Text("\(printingCount) printing · 1 needs attention", comment: "Monitor header when one printer needs attention")
-                                } else if attentionCount > 1 {
-                                    Text("\(printingCount) printing · \(attentionCount) need attention", comment: "Monitor header when several printers need attention")
+                                if snapshot.attentionCount == 1 {
+                                    Text("\(snapshot.printingCount) printing · 1 needs attention", comment: "Monitor header when one printer needs attention")
+                                } else if snapshot.attentionCount > 1 {
+                                    Text("\(snapshot.printingCount) printing · \(snapshot.attentionCount) need attention", comment: "Monitor header when several printers need attention")
                                 } else {
-                                    Text("\(printingCount) printing · ^[\(store.printers.count) printer](inflect: true)")
+                                    Text("\(snapshot.printingCount) printing · ^[\(snapshot.sortedPrinters.count) printer](inflect: true)")
                                 }
                             }
                         }
@@ -232,9 +260,13 @@ struct MonitorView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 80)
                 } else {
-                    ForEach(sortedPrinters) { printer in
-                        printerRow(printer)
-                            .padding(.horizontal, 16)
+                    ForEach(snapshot.sortedPrinters) { printer in
+                        printerRow(
+                            printer,
+                            lastPrint: lastPrint(for: printer.id, in: snapshot.latestPrintByPrinterID),
+                            isMonitorLive: isMonitorLive
+                        )
+                        .padding(.horizontal, 16)
                     }
                 }
             }
@@ -246,8 +278,7 @@ struct MonitorView: View {
     }
 
     @ViewBuilder
-    private func printerRow(_ printer: Printer) -> some View {
-        let isMonitorLive = (selectedTab == .monitor) && !showNotifications && (horizontalSizeClass == .regular || path.isEmpty)
+    private func printerRow(_ printer: Printer, lastPrint: LastPrintSummary?, isMonitorLive: Bool) -> some View {
         let card = PrinterCard(
             id: printer.id,
             name: printer.name,
@@ -264,11 +295,12 @@ struct MonitorView: View {
             nozzleTemp: printer.nozzle.current,
             bedTemp: printer.bed.current,
             awaitingPlateClear: printer.awaitingPlateClear,
-            lastPrint: lastPrint(for: printer.id),
+            lastPrint: lastPrint,
             allTrays: printer.allTrays,
             imageAssetName: printer.imageAssetName,
             layout: cardLayout,
-            isCameraPaused: !isMonitorLive
+            isCameraPaused: !isMonitorLive,
+            isActive: isMonitorLive
         )
         if horizontalSizeClass == .compact {
             NavigationLink(value: printer.id) { card }
@@ -280,7 +312,18 @@ struct MonitorView: View {
     }
 
     private func refreshUnreadCount() {
-        unreadCount = PushSharedStore.unreadCount()
+        unreadCountTask?.cancel()
+        unreadCountTask = Task {
+            await loadUnreadCount()
+        }
+    }
+
+    private func loadUnreadCount() async {
+        let count = await Task.detached(priority: .utility) {
+            PushSharedStore.unreadCount()
+        }.value
+        guard !Task.isCancelled else { return }
+        unreadCount = count
     }
 }
 
@@ -325,6 +368,7 @@ struct PrinterCard: View {
     var imageAssetName: String?
     var layout: PrinterCardLayout = .classic
     var isCameraPaused: Bool = false
+    var isActive: Bool = true
     @Environment(AppStore.self) private var store
     @State private var isCameraLive = false
     /// Picture in picture: whether a tap has brought the camera or cover up to the big tile.
@@ -553,7 +597,7 @@ struct PrinterCard: View {
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let imageAssetName {
-                AnimatedPrinterImage(assetName: imageAssetName, state: state)
+                AnimatedPrinterImage(assetName: imageAssetName, state: state, isActive: isActive)
                     .padding(10)
             } else {
                 PrinterThumbnailImage(assetName: nil)
@@ -582,7 +626,7 @@ struct PrinterCard: View {
     @ViewBuilder
     private var printerArt: some View {
         if let imageAssetName {
-            AnimatedPrinterImage(assetName: imageAssetName, state: state)
+            AnimatedPrinterImage(assetName: imageAssetName, state: state, isActive: isActive)
         } else {
             PrinterThumbnailImage(assetName: nil)
         }

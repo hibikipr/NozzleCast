@@ -316,7 +316,11 @@ struct ScanView: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(Color(hex: "#141414"))
 
-            ScannerCameraGate(mode: mode == .barcode ? .barcode : .text, bridge: scannerBridge)
+            ScannerCameraGate(
+                mode: mode == .barcode ? .barcode : .text,
+                bridge: scannerBridge,
+                isActive: isVisible && selectedTab == .scan && scenePhase == .active
+            )
                 .id(mode)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
 

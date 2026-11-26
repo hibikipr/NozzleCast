@@ -8,7 +8,7 @@ import Foundation
 /// their compiled `filaments.json` (a flat array with `eans`/`eans_refill`/`codes` intact,
 /// just without a separately-broken-out colour name — recovered here the same way OFD
 /// recovers a subtype, by stripping the material word out of `name`).
-final class SpoolmanDBCommunityClient {
+actor SpoolmanDBCommunityClient {
     static let shared = SpoolmanDBCommunityClient()
 
     private struct RawEntry: Decodable {
@@ -31,19 +31,18 @@ final class SpoolmanDBCommunityClient {
         var translucent: Bool?
     }
 
-    private struct IndexEntry: Codable { var fields: FilamentDBFields; var allCodes: [FilamentCodeEntry]; var rank: Int = 0 }
     private struct Cache: Codable {
         var version: Int
         var builtAt: Date
-        var gtinIndex: [String: IndexEntry]
-        var skuIndex: [String: IndexEntry]
+        var gtinIndex: [String: FilamentDBFields]
+        var skuIndex: [String: FilamentDBFields]
         var brands: [String]
     }
 
     private static let compiledURL = URL(string: "https://icezaza2543.github.io/SpoolmanDB-Community/filaments.json")!
     private static let ttl: TimeInterval = 24 * 3600
-    // 2: fields gained the effect and multicolour hexes. 3: a code shared by several sizes picks the likeliest.
-    private static let cacheVersion = 3
+    // 2: fields gained the effect and multicolour hexes. 3: a code shared by several sizes picks the likeliest. 4: dropped unused allCodes from disk cache.
+    private static let cacheVersion = 4
 
     private var cache: Cache?
     private var loadTask: Task<Cache, Error>?
@@ -62,14 +61,14 @@ final class SpoolmanDBCommunityClient {
     /// found" with no way to tell the user which actually happened.
     func lookup(gtin: String) async throws -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
         let cache = try await ensureLoaded()
-        guard let entry = cache.gtinIndex[FilamentCode.canon(gtin)] else { return nil }
-        return (entry.fields, entry.allCodes)
+        guard let fields = cache.gtinIndex[Self.canonicalGTIN(gtin)] else { return nil }
+        return (fields, [])
     }
 
     func lookupSKU(_ code: String) async throws -> (fields: FilamentDBFields, siblingCodes: [FilamentCodeEntry])? {
         let cache = try await ensureLoaded()
-        guard let entry = cache.skuIndex[code.trimmingCharacters(in: .whitespaces).uppercased()] else { return nil }
-        return (entry.fields, entry.allCodes)
+        guard let fields = cache.skuIndex[code.trimmingCharacters(in: .whitespaces).uppercased()] else { return nil }
+        return (fields, [])
     }
 
     private func ensureLoaded() async throws -> Cache {
@@ -110,19 +109,37 @@ final class SpoolmanDBCommunityClient {
     }
 
     private func refresh() async throws -> Cache {
-        let (data, _) = try await URLSession.shared.data(from: Self.compiledURL)
+        var request = URLRequest(url: Self.compiledURL)
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
         let entries = try JSONDecoder().decode([RawEntry].self, from: data)
 
-        var gtinIndex: [String: IndexEntry] = [:]
-        var skuIndex: [String: IndexEntry] = [:]
+        var gtinIndex: [String: FilamentDBFields] = [:]
+        var gtinRanks: [String: Int] = [:]
+        var skuIndex: [String: FilamentDBFields] = [:]
+        var skuRanks: [String: Int] = [:]
         var brandSet = Set<String>()
 
         for entry in entries {
             guard let manufacturer = entry.manufacturer else { continue }
             brandSet.insert(manufacturer)
 
-            let hasCodes = !(entry.eans?.isEmpty ?? true) || !(entry.eans_refill?.isEmpty ?? true) || !(entry.codes?.isEmpty ?? true)
-            guard hasCodes else { continue }
+            var gtins: [String] = []
+            for ean in entry.eans ?? [] where !ean.trimmingCharacters(in: .whitespaces).isEmpty {
+                gtins.append(Self.canonicalGTIN(ean))
+            }
+            for ean in entry.eans_refill ?? [] where !ean.trimmingCharacters(in: .whitespaces).isEmpty {
+                gtins.append(Self.canonicalGTIN(ean))
+            }
+            var skus: [String] = []
+            for code in entry.codes ?? [] {
+                let normalized = code.trimmingCharacters(in: .whitespaces).uppercased()
+                if !normalized.isEmpty { skus.append(normalized) }
+            }
+            guard !gtins.isEmpty || !skus.isEmpty else { continue }
 
             let material = entry.material ?? ""
             let colorName = Self.colorName(fromName: entry.name ?? "", material: material)
@@ -146,29 +163,20 @@ final class SpoolmanDBCommunityClient {
                 colorCount: hexes.count, glow: entry.glow ?? false, translucent: entry.translucent ?? false
             )
 
-            var allCodes: [FilamentCodeEntry] = []
-            for ean in entry.eans ?? [] where !ean.trimmingCharacters(in: .whitespaces).isEmpty {
-                allCodes.append(FilamentCodeEntry(code: FilamentCode.canon(ean), kind: "gtin", isRefill: false))
-            }
-            for ean in entry.eans_refill ?? [] where !ean.trimmingCharacters(in: .whitespaces).isEmpty {
-                allCodes.append(FilamentCodeEntry(code: FilamentCode.canon(ean), kind: "gtin", isRefill: true))
-            }
-            for code in entry.codes ?? [] {
-                let normalized = code.trimmingCharacters(in: .whitespaces).uppercased()
-                if !normalized.isEmpty { allCodes.append(FilamentCodeEntry(code: normalized, kind: "sku", isRefill: false)) }
-            }
-            guard !allCodes.isEmpty else { continue }
-
             // SpoolmanDB gives every size of a colour the same EAN and SKU (1, 3 and 5 kg, in 1.75
             // and 2.85 mm), so a code maps to several entries. Keep the likeliest box rather than
             // whichever came last: 1.75 mm first, then 1 kg.
             let rank = Self.sizeRank(diameter: entry.diameter, weight: entry.weight)
-            let indexEntry = IndexEntry(fields: fields, allCodes: allCodes, rank: rank)
-            for codeEntry in allCodes {
-                if codeEntry.kind == "gtin" {
-                    if (gtinIndex[codeEntry.code]?.rank ?? -1) < rank { gtinIndex[codeEntry.code] = indexEntry }
-                } else if (skuIndex[codeEntry.code]?.rank ?? -1) < rank {
-                    skuIndex[codeEntry.code] = indexEntry
+            for gtin in gtins {
+                if (gtinRanks[gtin] ?? -1) < rank {
+                    gtinRanks[gtin] = rank
+                    gtinIndex[gtin] = fields
+                }
+            }
+            for sku in skus {
+                if (skuRanks[sku] ?? -1) < rank {
+                    skuRanks[sku] = rank
+                    skuIndex[sku] = fields
                 }
             }
         }
@@ -193,11 +201,11 @@ final class SpoolmanDBCommunityClient {
     /// pattern, translucency, and matte last. Glossy is the default finish: no effect.
     /// How likely a size is to be the box in hand when one code covers several: 1.75 mm beats
     /// 2.85 mm, then 1 kg beats the bigger spools.
-    static func sizeRank(diameter: Double?, weight: Double?) -> Int {
+    nonisolated static func sizeRank(diameter: Double?, weight: Double?) -> Int {
         (diameter.map { abs($0 - 1.75) < 0.01 } == true ? 2 : 0) + (weight.map { abs($0 - 1000) < 1 } == true ? 1 : 0)
     }
 
-    static func effect(finish: String?, pattern: String?, multiColorDirection: String?, colorCount: Int, glow: Bool, translucent: Bool) -> String? {
+    nonisolated static func effect(finish: String?, pattern: String?, multiColorDirection: String?, colorCount: Int, glow: Bool, translucent: Bool) -> String? {
         switch multiColorDirection?.lowercased() {
         case "coaxial": return colorCount == 2 ? "dual-color" : colorCount == 3 ? "tri-color" : "multicolor"
         case "longitudinal": return "gradient"
@@ -227,7 +235,14 @@ final class SpoolmanDBCommunityClient {
     private static func hexToRGBA(_ hex: String?) -> String? {
         guard var h = hex else { return nil }
         h = h.hasPrefix("#") ? String(h.dropFirst()) : h
-        guard h.count == 6, h.range(of: "^[0-9A-Fa-f]{6}$", options: .regularExpression) != nil else { return nil }
+        guard h.count == 6, h.allSatisfy(\.isHexDigit) else { return nil }
         return h.uppercased() + "FF"
+    }
+
+    /// Mirrors `FilamentCode.canon` without hopping to `@MainActor` during off-main indexing.
+    private static func canonicalGTIN(_ barcode: String) -> String {
+        let digits = barcode.filter(\.isNumber)
+        let stripped = digits.drop { $0 == "0" }
+        return stripped.isEmpty ? "0" : String(stripped)
     }
 }

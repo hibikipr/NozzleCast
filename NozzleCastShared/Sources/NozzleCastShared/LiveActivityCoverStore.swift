@@ -19,32 +19,83 @@ public enum LiveActivityCoverStore {
             .appendingPathComponent("LiveActivityCovers", isDirectory: true)
     }
 
+    public struct LoadedCover: Equatable, Sendable {
+        public var data: Data
+        public var backdropIsLight: Bool?
+
+        public init(data: Data, backdropIsLight: Bool? = nil) {
+            self.data = data
+            self.backdropIsLight = backdropIsLight
+        }
+    }
+
     private struct Metadata: Codable {
         var job: String
+        var backdropIsLight: Bool?
+        var imageFilename: String?
     }
 
-    public static func save(_ data: Data, printerID: String, jobName: String?) {
-        guard let directory else { return }
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        guard let metadata = try? JSONEncoder().encode(Metadata(job: jobKey(jobName))) else { return }
-        // Image first: a reader that found new metadata beside an old image would show the old
-        // print's cover under the new job.
-        try? data.write(to: fileURL(directory, printerID, "jpg"), options: .atomic)
-        try? metadata.write(to: fileURL(directory, printerID, "json"), options: .atomic)
+    public static func save(
+        _ data: Data,
+        printerID: String,
+        jobName: String?,
+        backdropIsLight: Bool? = nil,
+        directory: URL? = nil
+    ) {
+        guard let targetDirectory = directory ?? Self.directory else { return }
+        let safeID = safePrinterID(printerID)
+        let imageFilename = "\(safeID)-\(UUID().uuidString).jpg"
+        let metadata = Metadata(
+            job: jobKey(jobName),
+            backdropIsLight: backdropIsLight,
+            imageFilename: imageFilename
+        )
+        guard let metadataData = try? JSONEncoder().encode(metadata) else { return }
+
+        let imageURL = targetDirectory.appendingPathComponent(imageFilename)
+        do {
+            try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
+            // Write the job-specific image first; if this fails, abort before touching metadata so
+            // readers never see new metadata pointing at a missing or stale image.
+            try data.write(to: imageURL, options: .atomic)
+        } catch {
+            return
+        }
+
+        do {
+            try metadataData.write(to: metadataURL(targetDirectory, safeID), options: .atomic)
+        } catch {
+            try? FileManager.default.removeItem(at: imageURL)
+            return
+        }
+
+        cleanupOldImages(in: targetDirectory, safeID: safeID, keeping: imageFilename)
     }
 
-    /// The saved cover for this printer's job, or nil if there's none or it's another job's.
-    public static func load(printerID: String, jobName: String?) -> Data? {
-        guard let directory,
-              let metadataData = try? Data(contentsOf: fileURL(directory, printerID, "json")),
+    /// The saved cover and backdrop hint for this printer's job, or nil if there's none or it's
+    /// another job's.
+    public static func loadCover(printerID: String, jobName: String?, directory: URL? = nil) -> LoadedCover? {
+        guard let targetDirectory = directory ?? Self.directory else { return nil }
+        let safeID = safePrinterID(printerID)
+        guard let metadataData = try? Data(contentsOf: metadataURL(targetDirectory, safeID)),
               let metadata = try? JSONDecoder().decode(Metadata.self, from: metadataData),
               metadata.job == jobKey(jobName)
         else { return nil }
-        return try? Data(contentsOf: fileURL(directory, printerID, "jpg"))
+
+        let filename = metadata.imageFilename.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "\(safeID).jpg"
+        guard !filename.isEmpty,
+              let data = try? Data(contentsOf: targetDirectory.appendingPathComponent(filename))
+        else { return nil }
+        return LoadedCover(data: data, backdropIsLight: metadata.backdropIsLight)
     }
 
-    public static func has(printerID: String, jobName: String?) -> Bool {
-        load(printerID: printerID, jobName: jobName) != nil
+    /// The saved cover for this printer's job, or nil if there's none or it's another job's.
+    public static func load(printerID: String, jobName: String?, directory: URL? = nil) -> Data? {
+        loadCover(printerID: printerID, jobName: jobName, directory: directory)?.data
+    }
+
+    public static func has(printerID: String, jobName: String?, directory: URL? = nil) -> Bool {
+        load(printerID: printerID, jobName: jobName, directory: directory) != nil
     }
 
     /// A job name reduced to what both sides agree on: the app reads the job's file name
@@ -59,8 +110,25 @@ public enum LiveActivityCoverStore {
 
     /// Printer ids are `PrintActivityAttributes.normalizedID`s (letters and digits only already);
     /// filtered the same way regardless before one becomes a file name.
-    private static func fileURL(_ directory: URL, _ printerID: String, _ fileExtension: String) -> URL {
+    private static func safePrinterID(_ printerID: String) -> String {
         let safe = printerID.lowercased().filter { $0.isLetter || $0.isNumber }
-        return directory.appendingPathComponent("\(safe.isEmpty ? "printer" : safe).\(fileExtension)")
+        return safe.isEmpty ? "printer" : safe
+    }
+
+    private static func metadataURL(_ directory: URL, _ safeID: String) -> URL {
+        directory.appendingPathComponent("\(safeID).json")
+    }
+
+    private static func cleanupOldImages(in directory: URL, safeID: String, keeping currentFilename: String) {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+        let legacyFilename = "\(safeID).jpg"
+        let prefix = "\(safeID)-"
+        for url in files {
+            let name = url.lastPathComponent
+            guard name != currentFilename else { continue }
+            if name == legacyFilename || (name.hasPrefix(prefix) && name.hasSuffix(".jpg")) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
     }
 }

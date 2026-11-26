@@ -1,7 +1,9 @@
+import ActivityKit
 import BackgroundTasks
 import UIKit
 import UserNotifications
 import FirebaseMessaging
+import NozzleCastShared
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     /// Owned here, not as a SwiftUI `@State` in `MyApp`: `UIApplicationDelegateAdaptor` guarantees
@@ -11,7 +13,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     /// isn't already running. A `WindowGroup`'s `@State` has no such guarantee; relying on it here
     /// meant `didReceiveRemoteNotification` could find no store to refresh on exactly the launches
     /// this whole push-to-start path exists for.
-    let store = AppStore(config: BambuddyConfig())
+    ///
+    /// Initialized with `autoConnect: false` so headless background wakes don't fire a full
+    /// `testConnectionAndRefresh()` alongside `refreshForBackgroundWake()`. Normal foreground
+    /// launches start initial connection in `didFinishLaunchingWithOptions` / `appDidBecomeActive`.
+    let store = AppStore(config: BambuddyConfig(), autoConnect: false)
+    private var hasStartedInitialConnection = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         PushNotificationManager.shared.configureFirebaseIfNeeded()
@@ -28,6 +35,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             MainActor.assumeIsolated { self?.appDidBecomeActive() }
         }
 
+        let launchedInBackground = application.applicationState == .background
+        if !launchedInBackground, store.config.isConfigured {
+            hasStartedInitialConnection = true
+            Task { await store.testConnectionAndRefresh() }
+        }
+
         // Must be registered before launch finishes. Runs a full printer refresh, which also checks for
         // alerts (the relay's feed or Bambuddy's notification log; see BambuddyAlertFeed) and rewrites
         // the widget snapshots, so Home Screen widgets stay current while the app is closed.
@@ -37,6 +50,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                 let work = Task {
                     let before = store.lastSuccessfulRefreshAt
                     await store.refresh()
+                    guard !Task.isCancelled else { return }
                     // A refresh checks alerts only when it succeeds; if it didn't, still check them.
                     if store.lastSuccessfulRefreshAt == before { _ = await store.checkBambuddyAlerts() }
                 }
@@ -89,6 +103,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     /// alert photos kept on the relay were never fetched.
     private func appDidBecomeActive() {
         store.config.reloadIfStorageWasUnavailable()
+        if !hasStartedInitialConnection, store.config.isConfigured {
+            hasStartedInitialConnection = true
+            if case .connected = store.connectionStatus {} else {
+                Task { await store.testConnectionAndRefresh() }
+            }
+        }
         // Foreground means unlocked, so the relay config is readable — mirror whether it exists
         // for the notification extension, which can't read the app's own container.
         PushSharedStore.relayConfigured = RelayConfigStore.isConfigured
@@ -148,48 +168,95 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // only started while there is clearly time left for one to finish.
         let wakeStartedAt = Date()
         let completion = BackgroundFetchCompletion(completionHandler)
-        Task {
+        let coordinator = WakeTaskCoordinator()
+        coordinator.deadlineTask = Task {
             try? await Task.sleep(for: .seconds(25))
+            guard !Task.isCancelled else { return }
+            coordinator.syncTask?.cancel()
             if completion.finish(.failed) {
                 NSLog("NCDEBUG AppDelegate background sync hit its 25s deadline, completing early")
             }
         }
 
-        Task {
-            await store.refresh()
+        coordinator.syncTask = Task {
+            defer { coordinator.deadlineTask?.cancel() }
+
+            // Run token registration checks in parallel with the lightweight background refresh so
+            // token registration is never starved behind a slow cover fetch.
+            async let pushToStartRecheck: Void = PushNotificationManager.shared.recheckPushToStartToken(force: true)
+            async let initialActivityTokens = PushNotificationManager.shared.recheckActivityTokens()
+            async let backgroundRefresh: Void = store.refreshForBackgroundWake()
+
+            _ = await pushToStartRecheck
+            _ = await initialActivityTokens
+            await backgroundRefresh
+            guard !Task.isCancelled else { return }
             NSLog("NCDEBUG AppDelegate background sync complete (printingCount=%d)", store.printers.filter { $0.state == .printing }.count)
 
             // pushTokenUpdates may not fire while the app is suspended — poll the synchronous
             // pushToken property on every wakeup so we catch the token as soon as iOS generates it.
             //
-            // The retry condition is the token, not the printer count. It used to retry while
-            // `printingCount == 0`, on the reasoning that Bambuddy's REST API lags 5-10s behind
-            // the print-start event that triggered this push — but printer state was never what
-            // this wake needs. Registering the activity's push token is, and the two come apart
-            // in both directions: with another printer already mid-print the count is non-zero
-            // immediately, so the loop was skipped and the token could be missed; and a non-zero
-            // count says nothing about whether iOS has generated a token yet. Retrying on the
-            // token itself also covers the wake arriving before push-to-start has created the
-            // activity at all, which the old condition could not see.
-            // Forced, unlike the activation path: the relay deletes a push-to-start token on a
-            // 400/410, and nothing local can tell that happened -- the app still believes its
-            // token is registered. A wake is rare (roughly one per print start) and is the one
-            // moment worth spending a POST to re-assert it, so a dropped token heals by the next
-            // print instead of never. See recheckPushToStartToken.
-            await PushNotificationManager.shared.recheckPushToStartToken(force: true)
-
-            var registered = await PushNotificationManager.shared.recheckActivityTokens()
-            for attempt in 1...2 where registered == 0 {
+            // Retry only when an active print still needs a per-activity token (i.e. not already
+            // registered and not subscribed via a broadcast channel), and without re-running a
+            // full store refresh on each retry.
+            for attempt in 1...2 {
+                guard !Task.isCancelled else { return }
+                let shouldRetry = await needsActivityTokenRetry(
+                    printers: store.printers,
+                    didRefresh: store.lastSuccessfulRefreshAt != nil
+                )
+                guard shouldRetry else { break }
                 guard Date().timeIntervalSince(wakeStartedAt) < 12 else {
                     NSLog("NCDEBUG AppDelegate skipping token recheck retry %d: not enough background time left", attempt)
                     break
                 }
                 try? await Task.sleep(for: .seconds(5))
-                await store.refresh()
-                registered = await PushNotificationManager.shared.recheckActivityTokens()
+                guard !Task.isCancelled else { return }
+                let registered = await PushNotificationManager.shared.recheckActivityTokens()
                 NSLog("NCDEBUG AppDelegate token recheck retry %d (registered=%d)", attempt, registered)
             }
-            completion.finish(.newData)
+            if !Task.isCancelled {
+                completion.finish(.newData)
+            }
+        }
+    }
+
+    private func needsActivityTokenRetry(printers: [Printer], didRefresh: Bool) async -> Bool {
+        let activeActivities = Activity<PrintActivityAttributes>.activities.filter { $0.activityState == .active }
+        let activityByPrinterID = Dictionary(activeActivities.map { ($0.attributes.printerID, $0) }, uniquingKeysWith: { first, _ in first })
+        let printingPrinterIDs = Set(printers.filter { $0.state == .printing }.map { PrintActivityAttributes.normalizedID($0.name) })
+
+        var printerIDsNeedingTokenCheck: [String] = []
+        if !printingPrinterIDs.isEmpty {
+            for id in printingPrinterIDs {
+                if let activity = activityByPrinterID[id] {
+                    if activity.pushToken == nil {
+                        printerIDsNeedingTokenCheck.append(id)
+                    }
+                } else {
+                    printerIDsNeedingTokenCheck.append(id)
+                }
+            }
+        } else if !didRefresh {
+            for activity in activeActivities where activity.pushToken == nil {
+                printerIDsNeedingTokenCheck.append(activity.attributes.printerID)
+            }
+        }
+
+        guard !printerIDsNeedingTokenCheck.isEmpty else { return false }
+        guard RelayConfigStore.isConfigured else { return true }
+
+        return await withTaskGroup(of: Bool.self) { group in
+            for id in printerIDsNeedingTokenCheck {
+                group.addTask {
+                    await PushNotificationManager.shared.broadcastChannelID(printerID: id) == nil
+                }
+            }
+            for await lacksChannel in group where lacksChannel {
+                group.cancelAll()
+                return true
+            }
+            return false
         }
     }
 }
@@ -221,4 +288,10 @@ private final class BackgroundFetchCompletion {
         handler(result)
         return true
     }
+}
+
+@MainActor
+private final class WakeTaskCoordinator {
+    var syncTask: Task<Void, Never>?
+    var deadlineTask: Task<Void, Never>?
 }

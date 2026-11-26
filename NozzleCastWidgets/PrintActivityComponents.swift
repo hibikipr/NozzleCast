@@ -36,19 +36,53 @@ struct CoverArt {
 /// `coverImage` from the content-state (a relay-started activity can be showing before the app
 /// has woken to save it). Both are trimmed to the model and flattened onto one of
 /// `CoverImageProcessing`'s two backdrops.
-func coverArt(_ attributes: PrintActivityAttributes, _ state: PrintActivityAttributes.ContentState) -> CoverArt? {
-    coverArt(printerID: attributes.printerID, jobName: state.jobName, fallback: state.coverImage)
+func coverArt(
+    _ attributes: PrintActivityAttributes,
+    _ state: PrintActivityAttributes.ContentState,
+    maxPixelSize: CGFloat? = nil
+) -> CoverArt? {
+    coverArt(
+        printerID: attributes.printerID,
+        jobName: state.jobName,
+        fallback: state.coverImage,
+        maxPixelSize: maxPixelSize
+    )
 }
 
 /// The saved cover for a printer's job, or `fallback` (a content-state's small cover) when none is saved.
-func coverArt(printerID: String, jobName: String?, fallback: Data? = nil) -> CoverArt? {
-    let data = LiveActivityCoverStore.load(printerID: printerID, jobName: jobName) ?? fallback
-    guard let data,
-          let source = CGImageSourceCreateWithData(data as CFData, nil),
-          let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil),
-          cgImage.width > 0, cgImage.height > 0
+func coverArt(
+    printerID: String,
+    jobName: String?,
+    fallback: Data? = nil,
+    maxPixelSize: CGFloat? = nil
+) -> CoverArt? {
+    let loaded = LiveActivityCoverStore.loadCover(printerID: printerID, jobName: jobName)
+        ?? fallback.map { LiveActivityCoverStore.LoadedCover(data: $0, backdropIsLight: nil) }
+    guard let loaded,
+          let source = CGImageSourceCreateWithData(loaded.data as CFData, nil)
     else { return nil }
-    let backdrop = CoverImageProcessing.backdrop(of: cgImage)
+
+    let cgImage: CGImage?
+    if let maxPixelSize {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(1, Int(maxPixelSize.rounded(.up))),
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    } else {
+        cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    guard let cgImage, cgImage.width > 0, cgImage.height > 0 else { return nil }
+
+    let backdrop: CoverImageProcessing.RGB
+    if let backdropIsLight = loaded.backdropIsLight {
+        backdrop = backdropIsLight ? CoverImageProcessing.backdropLight : CoverImageProcessing.backdropDark
+    } else {
+        backdrop = CoverImageProcessing.backdrop(of: cgImage)
+    }
     return CoverArt(
         image: Image(decorative: cgImage, scale: 1.0),
         aspectRatio: CGFloat(cgImage.width) / CGFloat(cgImage.height),
