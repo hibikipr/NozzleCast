@@ -16,7 +16,7 @@ enum PrinterArtBackdrop {
         blue: Double(CoverImageProcessing.backdropLight.blue) / 255
     )
 
-    /// Precomputed via `CoverImageProcessing.backdrop(forRender:)` for all 12 bundled `Printer*`
+    /// Precomputed via `CoverImageProcessing.backdrop(forRender:)` for all 13 bundled `Printer*`
     /// assets so `color(for:)` is an instant O(1) lookup with zero main-thread pixel scans.
     private static var cache: [String: Color] = [
         "PrinterA1": darkBackdrop,
@@ -28,6 +28,7 @@ enum PrinterArtBackdrop {
         "PrinterP1P": darkBackdrop,
         "PrinterP1S": darkBackdrop,
         "PrinterP2S": darkBackdrop,
+        "PrinterP3C": lightBackdrop,
         "PrinterX1C": darkBackdrop,
         "PrinterX1E": lightBackdrop,
         "PrinterX2D": darkBackdrop,
@@ -150,6 +151,7 @@ struct PrinterArtGeometry {
         case "PrinterX1E": narrow(strip: CGRect(x: 538, y: 212, width: 12, height: 140), greyBody: true)
         case "PrinterP1P": p1p
         case "PrinterH3C": h3c
+        case "PrinterP3C": p3c
         case "PrinterA1": openFrame(strip: CGRect(x: 551, y: 381, width: 70, height: 32))
         case "PrinterA2L": openFrame(strip: CGRect(x: 591, y: 381, width: 49, height: 32))
         default: nil
@@ -178,6 +180,34 @@ struct PrinterArtGeometry {
             partCenterX: 273,
             floorY: 500,
             partSize: CGSize(width: 60, height: 80),
+            addedHead: head,
+            addedRail: rail,
+            headColor: Color(hex: "#B9BFC9")
+        )
+    }
+
+    /// P3C: dark enclosed body under its built-in AMS, with a dark door window at x 183-342,
+    /// y 311-546 and no toolhead drawn inside, so the animation adds a head and rail across the
+    /// window beneath the top LEDs and clear of the door handle. The vertical bar right of the door
+    /// is the status light, and the small screen above the door's top-left corner is the display.
+    private static var p3c: PrinterArtGeometry {
+        let rail = CGRect(x: 193, y: 368, width: 140, height: 5)
+        let head = CGRect(x: 250, y: 355, width: 26, height: 30)
+        let margin: CGFloat = 4
+        return PrinterArtGeometry(
+            kind: .enclosed,
+            heads: [],
+            travel: (rail.minX + margin - head.minX)...(rail.maxX - margin - head.maxX),
+            rail: rail,
+            windowColor: Color(hex: "#272532"),
+            railColor: Color(hex: "#5C6272"),
+            strip: CGRect(x: 353, y: 331, width: 8, height: 87),
+            stripBase: Color(hex: "#3565B2"),
+            screen: CGRect(x: 184, y: 278, width: 44, height: 8),
+            screenBase: Color(hex: "#323849"),
+            partCenterX: 263,
+            floorY: 532,
+            partSize: CGSize(width: 62, height: 82),
             addedHead: head,
             addedRail: rail,
             headColor: Color(hex: "#B9BFC9")
@@ -422,7 +452,7 @@ private struct PrinterArtLayers: View {
 #Preview("Every status") {
     ScrollView {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 110))], spacing: 16) {
-            ForEach(["PrinterH2C", "PrinterH3C", "PrinterH2D", "PrinterP1S", "PrinterA1"], id: \.self) { asset in
+            ForEach(["PrinterH2C", "PrinterH3C", "PrinterP3C", "PrinterH2D", "PrinterP1S", "PrinterA1"], id: \.self) { asset in
                 ForEach(PrinterState.allCases, id: \.self) { state in
                     VStack {
                         AnimatedPrinterImage(assetName: asset, state: state)
