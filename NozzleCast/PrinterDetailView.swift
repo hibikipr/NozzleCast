@@ -425,11 +425,11 @@ struct PrinterInfoPillRow: View {
 
     /// Bambuddy's `door_open` field defaults to false for every printer model rather than
     /// being nil when a model has no door to report on, so it can't tell us on its own whether
-    /// a "closed" reading is meaningful or just the default. The H2 series (H2C/H2D/H2S) and H3C
-    /// are enclosed printers with an actual front-door sensor Bambuddy surfaces this for.
+    /// a "closed" reading is meaningful or just the default. The H2 series (H2C/H2D/H2S), H3C, and
+    /// P3C are enclosed printers with an actual front-door sensor Bambuddy surfaces this for.
     private var hasDoorSensor: Bool {
         let m = model.uppercased()
-        return m.contains("H2") || m.contains("H3C")
+        return m.contains("H2") || m.contains("H3C") || m.contains("P3C")
     }
 
     var body: some View {
