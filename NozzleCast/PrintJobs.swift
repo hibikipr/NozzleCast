@@ -37,6 +37,25 @@ struct QueuedPrint: Identifiable, Equatable {
     var filamentType: String?
     var filamentColorHex: String?
     var thumbnail: Thumbnail?
+
+    /// A pending job that is not staged but waits only because a spool is too short (Bambuddy's
+    /// "Loaded filament first" setting, #3587). It has no Start, but it can be released with
+    /// "Print Anyway", which asks the same insufficient-filament question as a staged one (#3659).
+    var waitsForShortFilament: Bool {
+        status == .pending && !isStaged && Self.isShortFilamentWait(waitingReason)
+    }
+
+    /// Whether a `waiting_reason` says a spool is too short, as Bambuddy's queue page reads it
+    /// (`isShortFilamentWaitingReason`): a "Waiting for filament: " part naming "(needs more
+    /// filament)", "(20 g left, needs 300 g)" or "(needs 300 g)". A filament that isn't loaded
+    /// at all reads "PLA #FFFFFF" and is not one.
+    static func isShortFilamentWait(_ reason: String?) -> Bool {
+        guard let reason, !reason.isEmpty else { return false }
+        let short = #"\(needs more filament\)|\(\d+ g left, needs \d+ g\)|\(needs \d+ g\)"#
+        return reason.components(separatedBy: " | ").contains { part in
+            part.contains("Waiting for filament: ") && part.range(of: short, options: .regularExpression) != nil
+        }
+    }
 }
 
 /// One run in Bambuddy's print history. Reprints of the same file are separate records sharing an

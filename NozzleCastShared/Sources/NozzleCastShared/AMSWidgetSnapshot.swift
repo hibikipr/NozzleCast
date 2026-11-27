@@ -53,20 +53,30 @@ public struct AMSUnitSnapshot: Codable, Sendable {
     /// Mirrors `AMSUnit.isHT` — Bambu's high-temperature unit is tagged and styled separately
     /// from numbered AMS units rather than counted alongside them.
     public var isHighTemp: Bool
+    /// A rack printer's own AMS, the H3C's AMS 3H (nine slots) or the P3C's AMS 3P (seven):
+    /// one slot per hotend rather than the four of a regular unit.
+    public var isRack: Bool
     public var trays: [AMSTraySnapshot]
 
-    public init(displayName: String, isHighTemp: Bool = false, trays: [AMSTraySnapshot]) {
+    public init(displayName: String, isHighTemp: Bool = false, isRack: Bool = false, trays: [AMSTraySnapshot]) {
         self.displayName = displayName
         self.isHighTemp = isHighTemp
+        self.isRack = isRack
         self.trays = trays
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         displayName = try c.decode(String.self, forKey: .displayName)
-        // Tolerate snapshots cached by a previous app version that predates this field.
+        // Tolerate snapshots cached by a previous app version that predates these fields.
         isHighTemp = try c.decodeIfPresent(Bool.self, forKey: .isHighTemp) ?? false
+        isRack = try c.decodeIfPresent(Bool.self, forKey: .isRack) ?? false
         trays = try c.decode([AMSTraySnapshot].self, forKey: .trays)
+    }
+
+    /// The slots a widget draws: all of a rack unit's, else at most a regular unit's four.
+    public var visibleTrays: [AMSTraySnapshot] {
+        isRack ? trays : Array(trays.prefix(4))
     }
 }
 

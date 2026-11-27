@@ -23,7 +23,7 @@ struct AMSAssignSheet: View {
 
     private var slotLabel: String {
         guard let printer, let unit else { return String(localized: "this slot", comment: "Fallback AMS slot reference when no better label is available") }
-        let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
+        let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter(\.isRegular).enumerated().map { ($1.id, $0) })
         return unit.displayName(position: standardUnitOrder[unit.id] ?? 0)
     }
 
@@ -63,7 +63,7 @@ struct AMSAssignSheet: View {
 
     private var unitLabel: String {
         guard let printer, printer.amsUnits.count > 1, let unit else { return "" }
-        let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
+        let standardUnitOrder = Dictionary(uniqueKeysWithValues: printer.amsUnits.filter(\.isRegular).enumerated().map { ($1.id, $0) })
         return String(localized: "\(unit.displayName(position: standardUnitOrder[unit.id] ?? 0)) · ", comment: "AMS unit label prefix, followed by a slot number")
     }
 
