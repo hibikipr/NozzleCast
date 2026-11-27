@@ -45,6 +45,9 @@ nonisolated struct BambuddyAMSUnitDTO: Codable, Sendable {
     var dryStatus: Int?
     var dryTargetTemp: Int?
     var dryFilament: String?
+    /// Bambu Studio's AMS type (`ams_type`; 6 is the H3C's AMS 3H, 7 the P3C's AMS 3P). Absent
+    /// from Bambuddy versions before the P3C.
+    var amsType: Int?
 }
 
 nonisolated struct BambuddyHMSErrorDTO: Codable, Sendable {

@@ -300,6 +300,26 @@ private struct QueueRow: View {
                     .foregroundStyle(NCColor.textSecondary)
                 PrintFacts(duration: item.estimatedDuration, grams: item.filamentGrams, type: item.filamentType, colorHex: item.filamentColorHex)
                 statusLine
+                if item.waitsForShortFilament {
+                    if let startBlockedReason {
+                        Text(startBlockedReason)
+                            .ncFont(size: 11.5, relativeTo: .caption2)
+                            .foregroundStyle(NCColor.textTertiary)
+                    } else {
+                        // Waiting for a short spool isn't staged, so there's no Start: this asks the
+                        // same insufficient-filament question Start does, then offers Print Anyway.
+                        Button(action: onStart) {
+                            Label("Print Anyway", systemImage: "play.fill")
+                                .ncFont(size: 13, weight: .semibold, relativeTo: .footnote)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .overlay(Capsule().stroke(NCColor.statusWarning, lineWidth: 1.5))
+                                .foregroundStyle(NCColor.statusWarning)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 4)
+                    }
+                }
                 if item.isStaged && item.status == .pending {
                     if let startBlockedReason {
                         Text(startBlockedReason)
@@ -345,6 +365,8 @@ private struct QueueRow: View {
     private var menuItems: some View {
         if item.isStaged && startBlockedReason == nil {
             Button(action: onStart) { Label("Start", systemImage: "play.fill") }
+        } else if item.waitsForShortFilament && startBlockedReason == nil {
+            Button(action: onStart) { Label("Print Anyway", systemImage: "play.fill") }
         }
         Button { store.moveQueuedPrint(item.id, by: -1) } label: { Label("Move Up", systemImage: "arrow.up") }
             .disabled(!store.canMoveQueuedPrint(item.id, by: -1))

@@ -48,6 +48,12 @@ struct AMSTray: Identifiable, Equatable {
     var isLoaded: Bool = false
     var rawColorHex: String?
     var rawMaterialLabel: String?
+    /// Bambu's AMS type of the unit this slot sits in (Bambuddy's `ams_type`; 6 is the H3C's
+    /// AMS 3H, 7 the P3C's AMS 3P). It decides the slot's global id, see `globalID`.
+    var amsType: Int? = nil
+    /// An external input's own global id as Bambuddy reports it (254, 255, or 247-253 on a rack
+    /// printer's other hotends). Nil falls back to `254 + trayIndex`.
+    var externalGlobalID: Int? = nil
 
     /// True when the printer reports a spool physically loaded but it hasn't been matched to
     /// an inventory spool — Bambuddy's own "Assign Spool" case.
@@ -70,14 +76,24 @@ struct AMSUnit: Identifiable, Equatable {
     var isDrying: Bool = false
     var dryTargetTemp: Int?
     var dryFilament: String?
+    /// Bambu's AMS type of the unit (Bambuddy's `ams_type`), when Bambuddy sends it.
+    var amsType: Int? = nil
 
     var id: Int { index }
+
+    /// The rack AMS this unit is (the H3C's AMS 3H or the P3C's AMS 3P), else nil.
+    var rack: RackAMS? { RackAMS.of(unitID: index, amsType: amsType) }
+
+    /// A regular AMS: neither an AMS-HT nor a rack AMS. These are the units that get numbered
+    /// "AMS 1", "AMS 2", ... by position.
+    var isRegular: Bool { !isHT && rack == nil }
 
     /// Bambu's high-temperature AMS unit carries an unrelated raw unit id (e.g. 129), so it
     /// gets a fixed label instead of being numbered alongside the regular AMS units. When a
     /// printer has more than one AMS-HT unit (`htCount > 1`), they are numbered `AMS-HT 1`,
-    /// `AMS-HT 2`, etc.
+    /// `AMS-HT 2`, etc. A rack AMS is named for its model, "AMS 3H" or "AMS 3P".
     func displayName(position: Int, htCount: Int = 1) -> String {
+        if let rack { return rack.displayName }
         if isHT {
             return htCount > 1
                 ? String(localized: "AMS-HT \(position + 1)", comment: "Label for a numbered high-temperature AMS unit, e.g. 'AMS-HT 1'")
@@ -543,12 +559,13 @@ extension Printer {
     /// "AMS 2"), an AMS HT unit labelled "AMS-HT" regardless of its raw id (128+).
     func amsUnitName(amsIndex: Int) -> String? {
         guard let unit = amsUnits.first(where: { $0.index == amsIndex }) else { return nil }
+        if unit.rack != nil { return unit.displayName(position: 0) }
         if unit.isHT {
             let htUnits = amsUnits.filter(\.isHT)
             let position = htUnits.firstIndex { $0.index == amsIndex } ?? 0
             return unit.displayName(position: position, htCount: htUnits.count)
         }
-        let position = amsUnits.filter { !$0.isHT }.firstIndex { $0.index == amsIndex } ?? 0
+        let position = amsUnits.filter(\.isRegular).firstIndex { $0.index == amsIndex } ?? 0
         return unit.displayName(position: position)
     }
 }
@@ -612,11 +629,49 @@ struct MaintenanceTask: Identifiable, Equatable {
 
 extension AMSTray {
     /// Bambu's global id for this slot, the form `tray_now` reports the feeding slot in — the
-    /// same mapping as Bambuddy's `getGlobalTrayId`: an AMS HT unit (raw id 128+) has a single
-    /// slot and uses its unit id, a regular AMS `unit * 4 + slot`, an external spool 254 + slot.
+    /// same mapping as Bambuddy's `utils/tray_ids.py`: an AMS HT unit (raw id 128+) has a single
+    /// slot and uses its unit id, a rack AMS its base plus the slot (AMS 3H 28, AMS 3P 37), a
+    /// regular AMS `unit * 4 + slot`, an external input its own id (254, 255, or 247-253).
     func globalID(isExternal: Bool = false) -> Int {
-        if isExternal { return 254 + trayIndex }
+        if isExternal { return externalGlobalID ?? 254 + trayIndex }
+        if let rack = RackAMS.of(unitID: amsIndex, amsType: amsType) { return rack.trayBase + trayIndex }
         if amsIndex >= 128 { return amsIndex }
         return amsIndex * 4 + trayIndex
+    }
+}
+
+/// The AMS that comes with a rack printer, one slot per hotend: the H3C's AMS 3H (unit 32, nine
+/// slots) and the P3C's AMS 3P (unit 33, seven slots). Their global tray ids don't follow the
+/// regular `unit * 4 + slot`, so telling them apart decides which slot is feeding.
+enum RackAMS: Equatable {
+    case ams3H
+    case ams3P
+
+    /// The unit's rack kind from Bambuddy's `ams_type` (6 and 7), or from its unit id (32 and 33)
+    /// when Bambuddy doesn't send a type. Any other type is a regular AMS, whatever its id.
+    static func of(unitID: Int, amsType: Int?) -> RackAMS? {
+        switch amsType {
+        case 6: return .ams3H
+        case 7: return .ams3P
+        case .some(let type) where type != 0: return nil
+        default:
+            switch unitID {
+            case 32: return .ams3H
+            case 33: return .ams3P
+            default: return nil
+            }
+        }
+    }
+
+    /// Global tray id of slot 0.
+    var trayBase: Int { self == .ams3H ? 28 : 37 }
+
+    var slotCount: Int { self == .ams3H ? 9 : 7 }
+
+    var displayName: String {
+        switch self {
+        case .ams3H: String(localized: "AMS 3H", comment: "Label for the H3C's nine-slot rack AMS")
+        case .ams3P: String(localized: "AMS 3P", comment: "Label for the P3C's seven-slot rack AMS")
+        }
     }
 }

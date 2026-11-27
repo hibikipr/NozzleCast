@@ -148,7 +148,7 @@ struct AssignPickerSheet: View {
                     .padding(.horizontal, 20)
             }
 
-            let standardUnitOrder = Dictionary(uniqueKeysWithValues: (printer?.amsUnits ?? []).filter { !$0.isHT }.enumerated().map { ($1.id, $0) })
+            let standardUnitOrder = Dictionary(uniqueKeysWithValues: (printer?.amsUnits ?? []).filter(\.isRegular).enumerated().map { ($1.id, $0) })
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {

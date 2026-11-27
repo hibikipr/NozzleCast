@@ -176,6 +176,23 @@ struct AMSProvider: AppIntentTimelineProvider {
                     ]),
                 ]
             ),
+            // A rack printer's own AMS: seven slots, one per hotend, the fifth one feeding.
+            PrinterAMSSnapshot(
+                printerName: "Studio P3C",
+                stateLabel: "Printing",
+                isPrinting: true,
+                amsUnits: [
+                    AMSUnitSnapshot(displayName: "AMS 3P", isRack: true, trays: [
+                        AMSTraySnapshot(colorHex: "#E8622C", materialLabel: "PLA", colorName: "Sunset Orange", remainingGrams: 720, remainingFraction: 0.72, isLow: false),
+                        AMSTraySnapshot(colorHex: "#2A5FCC", materialLabel: "PLA", colorName: "Cobalt Blue", remainingGrams: 880, remainingFraction: 0.88, isLow: false),
+                        AMSTraySnapshot(colorHex: "#22C55E", materialLabel: "PETG"),
+                        AMSTraySnapshot(colorHex: nil, materialLabel: nil),
+                        AMSTraySnapshot(colorHex: "#141414", effectType: "sparkle", materialLabel: "PLA", isFeeding: true, colorName: "Galaxy Black", remainingGrams: 400, remainingFraction: 0.4, isLow: false),
+                        AMSTraySnapshot(colorHex: "#D9A426", materialLabel: "PLA", colorName: "Amber Gold", remainingGrams: 90, remainingFraction: 0.09, isLow: true),
+                        AMSTraySnapshot(colorHex: "#F2F2F2", materialLabel: "ABS"),
+                    ]),
+                ]
+            ),
         ]
     }
 }
@@ -194,26 +211,37 @@ struct AMSSlot: Identifiable {
     let startsUnit: Bool
 }
 
+extension AMSUnitSnapshot {
+    /// A regular unit: numbered "A1", "A2", ... among the regular units only.
+    var isRegular: Bool { !isHighTemp && !isRack }
+
+    /// "A1", "HT", or a rack AMS's own name ("AMS 3P").
+    func tag(regularNumber: Int) -> String {
+        if isRack { return displayName }
+        return isHighTemp ? "HT" : "A\(regularNumber)"
+    }
+}
+
 extension PrinterAMSSnapshot {
     var slots: [AMSSlot] {
         var out: [AMSSlot] = []
         var regular = 0
         for (u, unit) in amsUnits.prefix(maxUnitsPerPrinter).enumerated() {
-            if !unit.isHighTemp { regular += 1 }
-            let tag = unit.isHighTemp ? "HT" : "A\(regular)"
-            for (t, tray) in unit.trays.prefix(4).enumerated() {
+            if unit.isRegular { regular += 1 }
+            let tag = unit.tag(regularNumber: regular)
+            for (t, tray) in unit.visibleTrays.enumerated() {
                 out.append(AMSSlot(id: out.count, tray: tray, unitTag: tag, number: t + 1, startsUnit: u > 0 && t == 0))
             }
         }
         return out
     }
 
-    private var cappedTrays: LazySequence<FlattenSequence<LazyMapSequence<ArraySlice<AMSUnitSnapshot>, ArraySlice<AMSTraySnapshot>>>> {
-        amsUnits.prefix(maxUnitsPerPrinter).lazy.flatMap { $0.trays.prefix(4) }
+    private var cappedTrays: [AMSTraySnapshot] {
+        amsUnits.prefix(maxUnitsPerPrinter).flatMap(\.visibleTrays)
     }
 
     var slotCount: Int {
-        amsUnits.prefix(maxUnitsPerPrinter).reduce(0) { $0 + min($1.trays.count, 4) }
+        amsUnits.prefix(maxUnitsPerPrinter).reduce(0) { $0 + $1.visibleTrays.count }
     }
     var loadedCount: Int {
         cappedTrays.reduce(0) { $0 + ($1.isEmpty ? 0 : 1) }
@@ -231,10 +259,10 @@ extension PrinterAMSSnapshot {
     var feedingLabel: String? {
         var regular = 0
         for unit in amsUnits.prefix(maxUnitsPerPrinter) {
-            if !unit.isHighTemp { regular += 1 }
-            for (t, tray) in unit.trays.prefix(4).enumerated() where tray.isFeeding == true {
+            if unit.isRegular { regular += 1 }
+            for (t, tray) in unit.visibleTrays.enumerated() where tray.isFeeding == true {
                 if hasSeveralUnits {
-                    let tag = unit.isHighTemp ? "HT" : "A\(regular)"
+                    let tag = unit.tag(regularNumber: regular)
                     return String(localized: "Feeding \(tag) · \(t + 1)")
                 }
                 return String(localized: "Feeding slot \(t + 1)")
@@ -489,7 +517,7 @@ private struct AMSLargeView: View {
                         .foregroundStyle(Color.white.opacity(0.45))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    ForEach(printer.slots.prefix(8)) { slot in
+                    ForEach(printer.slots.prefix(9)) { slot in
                         SpoolDisc(tray: slot.tray).frame(width: 20, height: 20)
                     }
                 }

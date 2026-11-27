@@ -1048,7 +1048,8 @@ final class AppStore {
                         spoolID: assignment.map { "bb-\($0.spoolId)" },
                         isLoaded: tray.exists ?? false,
                         rawColorHex: tray.trayColor.flatMap { $0.isEmpty ? nil : "#" + $0.prefix(6).uppercased() },
-                        rawMaterialLabel: tray.trayType?.isEmpty == false ? tray.trayType : nil
+                        rawMaterialLabel: tray.trayType?.isEmpty == false ? tray.trayType : nil,
+                        amsType: unit.amsType
                     )
                 },
                 isHT: unit.isAmsHt ?? false,
@@ -1057,7 +1058,8 @@ final class AppStore {
                 feedsRightNozzle: feedsRightNozzle(unitID: unit.id),
                 isDrying: (unit.dryStatus ?? 0) != 0,
                 dryTargetTemp: unit.dryTargetTemp,
-                dryFilament: unit.dryFilament?.isEmpty == false ? unit.dryFilament : nil
+                dryFilament: unit.dryFilament?.isEmpty == false ? unit.dryFilament : nil,
+                amsType: unit.amsType
             )
         }
 
@@ -1068,7 +1070,8 @@ final class AppStore {
                 spoolID: nil,
                 isLoaded: tray.exists ?? false,
                 rawColorHex: tray.trayColor.flatMap { $0.isEmpty ? nil : "#" + $0.prefix(6).uppercased() },
-                rawMaterialLabel: tray.trayType?.isEmpty == false ? tray.trayType : nil
+                rawMaterialLabel: tray.trayType?.isEmpty == false ? tray.trayType : nil,
+                externalGlobalID: tray.id
             )
         }
 
@@ -1437,8 +1440,11 @@ final class AppStore {
             guard !printer.amsUnits.isEmpty else { return nil }
             let unitSnapshots = printer.amsUnits.enumerated().map { position, unit in
                 AMSUnitSnapshot(
-                    displayName: unit.displayName(position: position),
+                    // Numbered among regular units only, so an AMS-HT or a rack AMS in front of
+                    // them doesn't shift "AMS 2" to "AMS 3".
+                    displayName: printer.amsUnitName(amsIndex: unit.index) ?? unit.displayName(position: position),
                     isHighTemp: unit.isHT,
+                    isRack: unit.rack != nil,
                     trays: unit.trays.map { tray in
                         let key = "\(printer.id)-\(tray.amsIndex)-\(tray.trayIndex)"
                         let isFeeding = printer.activeTrayID != nil && tray.globalID() == printer.activeTrayID
@@ -2406,7 +2412,8 @@ final class AppStore {
     /// `skipFilamentCheck` is Bambuddy's "Print Anyway": the answer to `filamentHold`. Without it,
     /// a job Bambuddy holds over its filament comes back as `filamentHold` for the user to decide.
     func startQueuedPrint(_ itemID: String, skipFilamentCheck: Bool = false) {
-        guard let item = queue.first(where: { $0.id == itemID }), item.isStaged else { return }
+        guard let item = queue.first(where: { $0.id == itemID }), item.isStaged || item.waitsForShortFilament else { return }
+        let wasStaged = item.isStaged
         if let printerID = item.printerID, refuseWithoutDeveloperMode(printerID) { return }
         if isShowingDemoData, ScreenshotMocks.isActive, !skipFilamentCheck, let hold = ScreenshotMocks.filamentHold {
             filamentHold = FilamentHoldPrompt(itemID: itemID, name: item.name, destination: item.destination, hold: hold)
@@ -2416,9 +2423,9 @@ final class AppStore {
             if let index = self.queue.firstIndex(where: { $0.id == itemID }) { self.queue[index].isStaged = false }
         }, onError: { error in
             guard let hold = error as? QueueStartFilamentHold else { return false }
-            // Still staged on the server: put it back so "Print Anyway" passes the guard above
-            // without waiting for the reload.
-            if let index = self.queue.firstIndex(where: { $0.id == itemID }) { self.queue[index].isStaged = true }
+            // Still held on the server: put it back so "Print Anyway" passes the guard above
+            // without waiting for the reload (a job that only waits for filament was never staged).
+            if let index = self.queue.firstIndex(where: { $0.id == itemID }) { self.queue[index].isStaged = wasStaged }
             self.filamentHold = FilamentHoldPrompt(itemID: itemID, name: item.name, destination: item.destination, hold: hold)
             return true
         }) { client in
